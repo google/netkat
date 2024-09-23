@@ -1,0 +1,67 @@
+# go/google3metadata
+# proto-file: devtools/metadata/metadata.proto
+# proto-message: MetaData
+
+name: "NetKAT"
+description: "Framework for describing and reasoning about packet-switched networks"
+
+third_party {
+  identifier {
+    type: "Piper"
+    value: "http://google3/third_party/netkat"
+    primary_source: true
+  }
+}
+
+# Block submissions on SpongeMonitor findings.
+presubmit: {
+  include_presubmit: "//depot/google3/testing/tools/sponge_monitor/blocking_presubmit.METADATA"
+  check_tests: {
+    project: "netkat"
+  }
+}
+
+# Block submissions on Linter findings.
+presubmit: {
+  check_lint {
+    base {
+      disable_tags: "ROLLBACK_OF"
+      disable_tags: "CLEANUP"
+    }
+    failure_status: ERROR
+  }
+}
+
+presubmit: {
+  check_tricorder: {
+    action: SUBMIT
+    categories: "ClangTidy"
+    categories: "ErrorProne"
+    categories: "UnusedDeps"
+    categories: "TODONT"  # go/todont
+    categories: "CppDefensiveCoding"  # go/cpp-defensive-coding
+  }
+}
+
+tricorder {
+  enable: TODONT  # go/todont
+  enable: CppDefensiveCoding  # go/cpp-defensive-coding
+  enable: TargetSizeLimits  # go/targetsizelimits-presubmit
+  options {
+    cpp_defensive_coding: {
+      # Most critical CDC checks:
+      applicable_rules: POINTER_CHECKS
+      applicable_rules: MAYBE_NULL_CHECKS
+
+      # Next most critical:
+      applicable_rules: OPTIONAL_CHECKS
+      applicable_rules: STATUS_OR_CHECKS
+
+      # These checks have been shown to prevent crashes, but can be quite noisy
+      # on certain codebases. We recommend codebases enable them to gauge their
+      # effectiveness, and then disable them if they find them to be too noisy.
+      applicable_rules: VECTOR_CHECKS
+      applicable_rules: PROTO_CHECKS
+    }
+  }
+}
