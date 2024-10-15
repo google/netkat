@@ -66,5 +66,5 @@ Apache header:
 This can be done automatically using
 [addlicense](https://github.com/google/addlicense) as follows:
 ```sh
-addlicense -c "The P4-Constraints Authors" -l apache ./p4_constraints
+addlicense -c "The NetKAT Authors" -l apache ./netkat
 ```
