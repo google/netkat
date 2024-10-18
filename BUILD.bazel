@@ -1,8 +1,11 @@
 # NetKAT, a framework for describing and reasoning about packet-switched networks.
 
-load("//tools/build_defs/license:license.bzl", "license")
+load("@rules_license//rules:license.bzl", "license")
 
-package(default_applicable_licenses = [":license"])
+package(
+    default_applicable_licenses = [":license"],
+    default_visibility = [":__subpackages__"],
+)
 
 # Define the license for this package, which is used as the default license
 # for all targets in this package based on default_applicable_licenses above.

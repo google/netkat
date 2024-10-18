@@ -1,0 +1,88 @@
+// Copyright 2024 The NetKAT authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// -----------------------------------------------------------------------------
+
+// Proto representation of NetKAT programs (predicates and policies).
+//
+// This representation is NOT intended as a user-facing API. Instead, it serves
+// as an intermdiate representation (IR) that is produced by user-facing
+// NetKAT APIs (NetKAT frontend(s)) and consumed by NetKAT backends.
+//
+// This reprensentation is expected to lack the convenience and type safety of
+// the user-facing API.
+//
+// Why have an IR?
+// * Designing an ergonomic user-facing API is hard, and requires resolving many
+//   design questions without an obvious "best" answer.
+// * By having an IR, we can immediately work on the backend without waiting for
+//   the user-facing API to be finalized. More generally, it decouples the
+//   frontend design from the backend design.
+// * Given that there is likely not a single best user-facing API, we may want
+//   to explore multiple ones (but share the IR and backend).
+// * It may make sense to have a specialized frontend API tailroed to Google's
+//   internal needs, but it will likely not be open-sourceable.
+//
+// Why use protobufs for the IR?
+// * It provides many useful features out of the box:
+//   serialization/deserialization, pretty-printing, a text format, fuzzing
+//   (e.g. using https://github.com/google/fuzztest), diffing.
+// * It makes it easy to implement frontends and backends in different
+//   programming languages.
+// * It makes it easy to run backends as (gRPC) services.
+
+syntax = "proto3";
+
+package netkat;
+
+// A NetKAT predicate (internal intermdiate representation).
+message PredicateProto {
+  oneof predicate {
+    Bool bool_constant = 1;
+    Match match = 3;
+    And and_operation = 4;
+    Or or_operation = 5;
+    Not not_operation = 6;
+  }
+
+  // A boolean constant (true or false).
+  message Bool {
+    bool value = 1;
+  }
+
+  // Checks if a field has a specific value.
+  //
+  // NOTE: This message is expected to change in the future! E.g., the type of
+  // `value` will change to support things like 128-bit IPv6 addresses.
+  message Match {
+    string field = 1;
+    int32 value = 2;
+  }
+
+  // Boolean conjunction (&&) of two predicates.
+  message And {
+    PredicateProto left = 1;
+    PredicateProto right = 2;
+  }
+
+  // Boolean disjunction (||) of two predicates.
+  message Or {
+    PredicateProto left = 1;
+    PredicateProto right = 2;
+  }
+
+  // Boolean negation (!) of a predicate.
+  message Not {
+    PredicateProto negand = 1;
+  }
+}

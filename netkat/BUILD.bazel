@@ -1,0 +1,26 @@
+
+
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = [":__subpackages__"],
+)
+
+proto_library(
+    name = "netkat_proto",
+    srcs = ["netkat.proto"],
+)
+
+cc_proto_library(
+    name = "netkat_cc_proto",
+    deps = [":netkat_proto"],
+)
+
+cc_test(
+    name = "netkat_test",
+    srcs = ["netkat_test.cc"],
+    deps = [
+        ":netkat_cc_proto",
+        "@com_google_absl//absl/log",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

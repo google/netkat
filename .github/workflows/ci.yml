@@ -1,0 +1,48 @@
+name: build
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push or pull request events but only for the "main" branch
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    # Run daily at midnight to ensure we catch regressions.
+    - cron: "0 0 * * *"
+  # Manual
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mount bazel cache
+        uses: actions/cache/restore@v4
+        with:
+          path: "~/.cache/bazel"
+          key: bazel-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bazel', '.bazelrc') }}-${{ github.ref_name }}
+          restore-keys: |
+            bazel-${{hashFiles('MODULE.bazel', 'WORKSPACE.bazel', '.bazelrc') }}-${{ github.ref_name }}
+            bazel-${{hashFiles('MODULE.bazel', 'WORKSPACE.bazel', '.bazelrc') }}
+            bazel-
+
+
+      - name: Build
+        run: ./bazel build --test_output=errors //...
+      - name: Test
+        run: ./bazel test --test_output=errors //...
+
+      - name: Compress cache
+        run: rm -rf $(./bazel info repository_cache)
+
+      - name: Save bazel cache
+        uses: actions/cache/save@v4
+        # Only create a new cache entry if we're on the main branch or the build takes >5mins.
+        if: github.ref_name == "main" || env.duration > 300
+        with:
+          path: "~/.cache/bazel"
+          key: bazel-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bazel', '.bazelrc') }}-${{ github.ref_name }}-${{ github.run_id }}
