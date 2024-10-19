@@ -42,7 +42,7 @@ jobs:
       - name: Save bazel cache
         uses: actions/cache/save@v4
         # Only create a new cache entry if we're on the main branch or the build takes >5mins.
-        if: github.ref_name == "main" || env.duration > 300
+        if: github.ref_name == 'main' || env.duration > 300
         with:
           path: "~/.cache/bazel"
           key: bazel-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bazel', '.bazelrc') }}-${{ github.ref_name }}-${{ github.run_id }}

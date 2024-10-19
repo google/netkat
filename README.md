@@ -11,7 +11,7 @@ programming, and reasoning about packet-switched networks. Key features include:
 *   Strong mathematical foundation.
 
 If you want to learn more, you may check out the list of
-[pulbications on NetKAT](#academic-publications-on-netkat) below. In the future,
+[publications on NetKAT](#academic-publications-on-netkat) below. In the future,
 we also hope to provide a gentler introduction to NetKAT in the form of a
 tutorial.
 
