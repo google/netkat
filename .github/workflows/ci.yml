@@ -32,12 +32,12 @@ jobs:
 
 
       - name: Build
-        run: ./bazel build --test_output=errors //...
+        run: bazel build --test_output=errors //...
       - name: Test
-        run: ./bazel test --test_output=errors //...
+        run: bazel test --test_output=errors //...
 
       - name: Compress cache
-        run: rm -rf $(./bazel info repository_cache)
+        run: rm -rf $(bazel info repository_cache)
 
       - name: Save bazel cache
         uses: actions/cache/save@v4
