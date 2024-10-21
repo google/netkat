@@ -17,7 +17,9 @@ tutorial.
 
 Note: We expect that this NetKAT implementation may diverge from NetKAT as
 described [in the literature](#academic-publications-on-netkat) over time, as we
-take liberty to optimize and adjust the language for industrial use.
+take liberty to optimize and adjust the language for industrial use. Build
+rules/targets will also be kept restricted for the time being to discourage any
+active external dependents.
 
 ## Disclaimer
 
