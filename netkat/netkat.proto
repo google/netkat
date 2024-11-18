@@ -45,17 +45,21 @@ syntax = "proto3";
 
 package netkat;
 
-// A NetKAT predicate (internal intermdiate representation).
+// The intermediate representation of a NetKAT predicate.
 message PredicateProto {
+  // A predicate is defined as some Boolean combination of matches and/or
+  // constants.
   oneof predicate {
     Bool bool_constant = 1;
-    Match match = 3;
-    And and_operation = 4;
-    Or or_operation = 5;
-    Not not_operation = 6;
+    Match match = 2;
+
+    // Combinators.
+    And and_op = 3;
+    Or or_op = 4;
+    Not not_op = 5;
   }
 
-  // A boolean constant (true or false).
+  // A boolean constant, i.e. true or false. Equivalent to Accept/Drop.
   message Bool {
     bool value = 1;
   }
@@ -69,20 +73,69 @@ message PredicateProto {
     int32 value = 2;
   }
 
-  // Boolean conjunction (&&) of two predicates.
+  // Boolean conjunction of two predicates, i.e. a && b.
   message And {
     PredicateProto left = 1;
     PredicateProto right = 2;
   }
 
-  // Boolean disjunction (||) of two predicates.
+  // Boolean disjunction of two predicates, i.e. a || b.
   message Or {
     PredicateProto left = 1;
     PredicateProto right = 2;
   }
 
-  // Boolean negation (!) of a predicate.
+  // Boolean negation of a predicate, i.e. !a.
   message Not {
     PredicateProto negand = 1;
   }
+}
+
+// The intermediate representation of a NetKAT policy.
+message PolicyProto {
+  // A policy is defined as some combination of actions and predicates.
+  oneof policy {
+    PredicateProto filter = 1;
+    Modification modification = 2;
+    Record record = 3;
+
+    // Combinators.
+    Sequence sequence_op = 4;
+    Union union_op = 5;
+    Iterate iterate_op = 6;
+  }
+
+  // Sets the field to the given value.
+  //
+  // NOTE: This message is expected to change in the future! E.g., the type of
+  // `value` will change to support things like 128-bit IPv6 addresses.
+  message Modification {
+    string field = 1;
+    int32 value = 2;
+  }
+
+  // Represents the sequential composition of a policy, i.e. a; b.
+  //
+  // Semantically, this behaves like a function composition in which we feed the
+  // program inputs into a and forward each output of a into b.
+  message Sequence {
+    PolicyProto left = 1;
+    PolicyProto right = 2;
+  }
+
+  // Represents the union of two policies, i.e. a + b.
+  message Union {
+    PolicyProto left = 1;
+    PolicyProto right = 2;
+  }
+
+  // Represents iteration of a given policy, a.k.a the Kleene Star. E.g. p*.
+  // I.e. Iterate(p) == Union(Accept, p, Sequence(p,p), Sequence(p,p,p), ...)
+  message Iterate {
+    PolicyProto iterable = 1;
+  }
+
+  // Records the packet, at the given point, into the history. Referred to as
+  // "dup" in the literature.
+  message Record {}
 }

@@ -28,19 +28,19 @@ namespace {
 TEST(NetkatProtoTest, PredicateOneOfFieldNamesDontRequireUnderscores) {
   PredicateProto predicate;
   switch (predicate.predicate_case()) {
-    case PredicateProto::kAndOperation: {
-      const PredicateProto::And& and_operation = predicate.and_operation();
-      LOG(INFO) << "and_operation: " << and_operation;
+    case PredicateProto::kAndOp: {
+      const PredicateProto::And& and_op = predicate.and_op();
+      LOG(INFO) << "and_op: " << and_op;
       break;
     }
-    case PredicateProto::kOrOperation: {
-      const PredicateProto::Or& or_operation = predicate.or_operation();
-      LOG(INFO) << "or_operation: " << or_operation;
+    case PredicateProto::kOrOp: {
+      const PredicateProto::Or& or_op = predicate.or_op();
+      LOG(INFO) << "or_op: " << or_op;
       break;
     }
-    case PredicateProto::kNotOperation: {
-      const PredicateProto::Not& not_operation = predicate.not_operation();
-      LOG(INFO) << "not_operation: " << not_operation;
+    case PredicateProto::kNotOp: {
+      const PredicateProto::Not& not_op = predicate.not_op();
+      LOG(INFO) << "not_op: " << not_op;
       break;
     }
     case PredicateProto::kMatch: {
@@ -54,6 +54,44 @@ TEST(NetkatProtoTest, PredicateOneOfFieldNamesDontRequireUnderscores) {
       break;
     }
     case PredicateProto::PREDICATE_NOT_SET:
+      break;
+  }
+}
+
+TEST(NetkatProtoTest, PolicyOneOfFieldNamesDontRequireUnderscores) {
+  PolicyProto policy;
+  switch (policy.policy_case()) {
+    case PolicyProto::kFilter: {
+      const PredicateProto& filter = policy.filter();
+      LOG(INFO) << "filter: " << filter;
+      break;
+    }
+    case PolicyProto::kModification: {
+      const PolicyProto::Modification& modification = policy.modification();
+      LOG(INFO) << "modification: " << modification;
+      break;
+    }
+    case PolicyProto::kRecord: {
+      const PolicyProto::Record& record = policy.record();
+      LOG(INFO) << "record: " << record;
+      break;
+    }
+    case PolicyProto::kSequenceOp: {
+      const PolicyProto::Sequence& sequence_op = policy.sequence_op();
+      LOG(INFO) << "sequence: " << sequence_op;
+      break;
+    }
+    case PolicyProto::kUnionOp: {
+      const PolicyProto::Union& union_op = policy.union_op();
+      LOG(INFO) << "union: " << union_op;
+      break;
+    }
+    case PolicyProto::kIterateOp: {
+      const PolicyProto::Iterate& iter = policy.iterate_op();
+      LOG(INFO) << "iterate: " << iter;
+      break;
+    }
+    case PolicyProto::POLICY_NOT_SET:
       break;
   }
 }
