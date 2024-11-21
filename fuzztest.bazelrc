@@ -1,0 +1,44 @@
+### DO NOT EDIT. Generated file.
+#
+# To regenerate, run the following from your project's workspace:
+#
+#  bazel run @com_google_fuzztest//bazel:setup_configs > fuzztest.bazelrc
+#
+# And don't forget to add the following to your project's .bazelrc:
+#
+#  try-import %workspace%/fuzztest.bazelrc
+### Common options.
+#
+# Do not use directly.
+
+# Standard define for \"ifdef-ing\" any fuzz test specific code.
+build:fuzztest-common --copt=-DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+
+# In fuzz tests, we want to catch assertion violations even in optimized builds.
+build:fuzztest-common --copt=-UNDEBUG
+
+# Enable libc++ assertions.
+# See https://libcxx.llvm.org/UsingLibcxx.html#enabling-the-safe-libc-mode
+build:fuzztest-common --copt=-D_LIBCPP_ENABLE_ASSERTIONS=1
+### ASan (Address Sanitizer) build configuration.
+#
+# Use with: --config=asan
+
+build:asan --linkopt=-fsanitize=address
+build:asan --copt=-fsanitize=address
+### FuzzTest build configuration.
+#
+# Use with: --config=fuzztest
+#
+# Note that this configuration includes the ASan configuration.
+
+build:fuzztest --config=asan
+build:fuzztest --config=fuzztest-common
+
+# Link statically.
+build:fuzztest --dynamic_mode=off
+
+# We rely on the following flag instead of the compiler provided
+# __has_feature(address_sanitizer) to know that we have an ASAN build even in
+# the uninstrumented runtime.
+build:fuzztest --copt=-DADDRESS_SANITIZER

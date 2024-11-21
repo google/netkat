@@ -16,9 +16,17 @@
 #include "absl/log/log.h"
 #include "gtest/gtest.h"
 #include "netkat/netkat.pb.h"
+#include "fuzztest/fuzztest.h"
 
 namespace netkat {
 namespace {
+
+// Sanity fuzz test to show that the FuzzTest library works.
+void DummmyFuzzTest(PredicateProto pred, PolicyProto pol) {
+  LOG_EVERY_N_SEC(INFO, 1) << "pred = " << pred;
+  LOG_EVERY_N_SEC(INFO, 1) << "pol = " << pol;
+}
+FUZZ_TEST(NetkatProtoTest, DummmyFuzzTest);
 
 // Ensures that the protobuf C++ compiler does not add underscores to the
 // generated code for sub messages and oneof fields of `PredicateProto`.

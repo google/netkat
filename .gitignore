@@ -1,0 +1,5 @@
+# Don't track lock files.
+*.lock
+
+# Don't track Bazel output folders.
+bazel-*
