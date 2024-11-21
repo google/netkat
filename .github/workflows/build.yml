@@ -25,9 +25,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: "~/.cache/bazel"
-          key: bazel-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bazel', '.bazelrc') }}-${{ github.ref_name }}
+          key: bazel-${{ hashFiles('*.bazel', '*.bazelrc') }}-${{ github.ref_name }}
           restore-keys: |
-            bazel-${{hashFiles('MODULE.bazel', 'WORKSPACE.bazel', '.bazelrc') }}
+            bazel-${{hashFiles('*.bazel', '*.bazelrc') }}
             bazel-
 
       - name: Save start time
@@ -66,4 +66,4 @@ jobs:
         if: github.ref_name == 'main' || env.duration > 300
         with:
           path: "~/.cache/bazel"
-          key: bazel-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bazel', '.bazelrc') }}-${{ github.ref_name }}-${{ github.run_id }}
+          key: bazel-${{ hashFiles('*.bazel', '*.bazelrc') }}-${{ github.ref_name }}-${{ github.run_id }}

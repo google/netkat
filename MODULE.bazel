@@ -21,7 +21,10 @@ module(
     compatibility_level = 1,
 )
 
-bazel_dep(name = "rules_license", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "28.2", repo_name = "com_google_protobuf")
 bazel_dep(name = "abseil-cpp", version = "20240116.2", repo_name = "com_google_absl")
-bazel_dep(name = "googletest", version = "1.15.2", repo_name = "com_google_googletest")
+
+# Dev Depdencies.
+bazel_dep(name = "rules_license", version = "1.0.0", dev_dependency = True)
+bazel_dep(name = "googletest", version = "1.15.2", dev_dependency = True, repo_name = "com_google_googletest")
+bazel_dep(name = "fuzztest", version = "20241028.0", dev_dependency = True, repo_name = "com_google_fuzztest")
