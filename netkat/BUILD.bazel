@@ -46,3 +46,23 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_library(
+    name = "evaluator",
+    srcs = ["evaluator.cc"],
+    hdrs = ["evaluator.h"],
+    deps = [
+        ":netkat_cc_proto",
+        "@com_google_absl//absl/container:flat_hash_map",
+    ],
+)
+
+cc_test(
+    name = "evaluator_test",
+    srcs = ["evaluator_test.cc"],
+    deps = [
+        ":evaluator",
+        ":netkat_cc_proto",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
