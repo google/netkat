@@ -41,6 +41,15 @@ TEST(EvaluatorTest, FalseIsFalseOnAnyPacket) {
                         Packet({{"field1", 1}, {"field2", 2}, {"field3", 3}})));
 }
 
+TEST(EvaluatorTest, EmptyPredicateIsFalseOnAnyPacket) {
+  PredicateProto empty_predicate;
+
+  EXPECT_FALSE(Evaluate(empty_predicate, Packet()));
+  EXPECT_FALSE(Evaluate(empty_predicate, Packet({{"field1", 1}})));
+  EXPECT_FALSE(Evaluate(empty_predicate,
+                        Packet({{"field1", 1}, {"field2", 2}, {"field3", 3}})));
+}
+
 TEST(EvaluatorTest, NotTrueIsFalseOnAnyPackets) {
   PredicateProto not_true_predicate;
   not_true_predicate.mutable_not_op()

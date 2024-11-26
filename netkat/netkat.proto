@@ -49,6 +49,7 @@ syntax = "proto3";
 package netkat;
 
 // The intermediate representation of a NetKAT predicate.
+// By convention, uninitialized predicates must be treated as `false`.
 message PredicateProto {
   // A predicate is defined as some Boolean combination of matches and/or
   // constants.

@@ -15,6 +15,7 @@
 
 #include "netkat/evaluator.h"
 
+#include "absl/log/log.h"
 #include "netkat/netkat.pb.h"
 
 namespace netkat {
@@ -41,6 +42,8 @@ bool Evaluate(const PredicateProto& predicate, const Packet& packet) {
     case PredicateProto::PREDICATE_NOT_SET:
       return false;
   }
+  LOG(FATAL) << "Unexpected value for PredicateProto predicate_case: "
+             << static_cast<int>(predicate.predicate_case());
 }
 
 }  // namespace netkat
