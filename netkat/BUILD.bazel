@@ -58,6 +58,29 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "netkat_proto_constructors",
+    srcs = ["netkat_proto_constructors.cc"],
+    hdrs = ["netkat_proto_constructors.h"],
+    deps = [
+        ":netkat_cc_proto",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "netkat_proto_constructors_test",
+    srcs = ["netkat_proto_constructors_test.cc"],
+    deps = [
+        ":netkat_cc_proto",
+        ":netkat_proto_constructors",
+        "//gutil:proto_matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_fuzztest//fuzztest",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "evaluator_test",
     srcs = ["evaluator_test.cc"],
