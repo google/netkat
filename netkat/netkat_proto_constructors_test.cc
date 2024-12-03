@@ -70,5 +70,65 @@ void NotProtoReturnsNot(PredicateProto negand) {
 }
 FUZZ_TEST(NotProtoTest, NotProtoReturnsNot);
 
+// -- Basic Policy constructors ------------------------------------------------
+
+void FilterProtoReturnsFilter(PredicateProto filter) {
+  PolicyProto expected_policy;
+  *expected_policy.mutable_filter() = filter;
+  EXPECT_THAT(FilterProto(filter), EqualsProto(expected_policy));
+}
+FUZZ_TEST(PolicyProtoTest, FilterProtoReturnsFilter);
+
+void ModificationProtoReturnsModification(std::string field, int value) {
+  PolicyProto expected_policy;
+  expected_policy.mutable_modification()->set_field(field);
+  expected_policy.mutable_modification()->set_value(value);
+
+  EXPECT_THAT(ModificationProto(field, value), EqualsProto(expected_policy));
+}
+FUZZ_TEST(PolicyProtoTest, ModificationProtoReturnsModification);
+
+TEST(PolicyProtoTest, RecordProtoReturnsRecordPolicy) {
+  EXPECT_THAT(RecordProto(), EqualsProto(R"pb(record {})pb"));
+}
+
+void SequenceProtoReturnsSequence(PolicyProto left, PolicyProto right) {
+  PolicyProto expected_policy;
+  *expected_policy.mutable_sequence_op()->mutable_left() = left;
+  *expected_policy.mutable_sequence_op()->mutable_right() = right;
+
+  EXPECT_THAT(SequenceProto(left, right), EqualsProto(expected_policy));
+}
+FUZZ_TEST(PolicyProtoTest, SequenceProtoReturnsSequence);
+
+void UnionProtoReturnsUnion(PolicyProto left, PolicyProto right) {
+  PolicyProto expected_policy;
+  *expected_policy.mutable_union_op()->mutable_left() = left;
+  *expected_policy.mutable_union_op()->mutable_right() = right;
+
+  EXPECT_THAT(UnionProto(left, right), EqualsProto(expected_policy));
+}
+FUZZ_TEST(PolicyProtoTest, UnionProtoReturnsUnion);
+
+void IterateProtoReturnsIterate(PolicyProto iterable) {
+  PolicyProto expected_policy;
+  *expected_policy.mutable_iterate_op()->mutable_iterable() = iterable;
+
+  EXPECT_THAT(IterateProto(iterable), EqualsProto(expected_policy));
+}
+FUZZ_TEST(PolicyProtoTest, IterateProtoReturnsIterate);
+
+// -- Derived Policy tests -----------------------------------------------------
+
+TEST(PolicyProtoTest, DenyProtoFiltersOnFalse) {
+  EXPECT_THAT(DenyProto(),
+              EqualsProto(R"pb(filter { bool_constant { value: false } })pb"));
+}
+
+TEST(PolicyProtoTest, AcceptProtoFiltersOnTrue) {
+  EXPECT_THAT(AcceptProto(),
+              EqualsProto(R"pb(filter { bool_constant { value: true } })pb"));
+}
+
 }  // namespace
 }  // namespace netkat

@@ -36,9 +36,19 @@ PredicateProto AndProto(PredicateProto left, PredicateProto right);
 PredicateProto OrProto(PredicateProto left, PredicateProto right);
 PredicateProto NotProto(PredicateProto negand);
 
-// -- Policy constructors ------------------------------------------------------
+// -- Basic Policy constructors ------------------------------------------------
 
-// TODO - smolkaj: Add policy constructors when needed.
+PolicyProto FilterProto(PredicateProto filter);
+PolicyProto ModificationProto(absl::string_view field, int value);
+PolicyProto RecordProto();
+PolicyProto SequenceProto(PolicyProto left, PolicyProto right);
+PolicyProto UnionProto(PolicyProto left, PolicyProto right);
+PolicyProto IterateProto(PolicyProto iterable);
+
+// -- Derived Policy constructors ----------------------------------------------
+
+PolicyProto DenyProto();
+PolicyProto AcceptProto();
 
 }  // namespace netkat
 

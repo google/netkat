@@ -63,4 +63,51 @@ PredicateProto NotProto(PredicateProto negand) {
   return proto;
 }
 
+// -- Basic Policy constructors ------------------------------------------------
+
+PolicyProto FilterProto(PredicateProto filter) {
+  PolicyProto policy;
+  *policy.mutable_filter() = std::move(filter);
+  return policy;
+}
+
+PolicyProto ModificationProto(absl::string_view field, int value) {
+  PolicyProto policy;
+  policy.mutable_modification()->set_field(field);
+  policy.mutable_modification()->set_value(value);
+  return policy;
+}
+
+PolicyProto RecordProto() {
+  PolicyProto policy;
+  policy.mutable_record();
+  return policy;
+}
+
+PolicyProto SequenceProto(PolicyProto left, PolicyProto right) {
+  PolicyProto policy;
+  *policy.mutable_sequence_op()->mutable_left() = std::move(left);
+  *policy.mutable_sequence_op()->mutable_right() = std::move(right);
+  return policy;
+}
+
+PolicyProto UnionProto(PolicyProto left, PolicyProto right) {
+  PolicyProto policy;
+  *policy.mutable_union_op()->mutable_left() = std::move(left);
+  *policy.mutable_union_op()->mutable_right() = std::move(right);
+  return policy;
+}
+
+PolicyProto IterateProto(PolicyProto iterable) {
+  PolicyProto policy;
+  *policy.mutable_iterate_op()->mutable_iterable() = std::move(iterable);
+  return policy;
+}
+
+// -- Derived Policy constructors ----------------------------------------------
+
+PolicyProto DenyProto() { return FilterProto(FalseProto()); }
+
+PolicyProto AcceptProto() { return FilterProto(TrueProto()); }
+
 }  // namespace netkat

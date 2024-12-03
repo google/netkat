@@ -96,6 +96,8 @@ message PredicateProto {
 }
 
 // The intermediate representation of a NetKAT policy.
+// By convention, uninitialized policies must be treated as "DENY" (i.e. the
+// false filter). We call the true filter "ACCEPT".
 message PolicyProto {
   // A policy is defined as some combination of actions and predicates.
   oneof policy {
