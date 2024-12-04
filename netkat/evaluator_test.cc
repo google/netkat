@@ -32,278 +32,152 @@ using ::testing::IsEmpty;
 using ::testing::IsSupersetOf;
 using ::testing::UnorderedElementsAre;
 
-TEST(EvaluatePredicateProtoTest, TrueIsTrueOnAnyPackets) {
-  PredicateProto true_predicate;
-  true_predicate.mutable_bool_constant()->set_value(true);
+/*--- Basic predicate properties ---------------------------------------------*/
 
-  EXPECT_TRUE(Evaluate(true_predicate, Packet()));
-  EXPECT_TRUE(Evaluate(true_predicate, Packet({{"field1", 1}})));
-  EXPECT_TRUE(Evaluate(true_predicate,
-                       Packet({{"field1", 1}, {"field2", 2}, {"field3", 3}})));
+void TrueIsTrueOnAnyPackets(Packet packet) {
+  EXPECT_TRUE(Evaluate(TrueProto(), packet));
 }
+FUZZ_TEST(EvaluatePredicateProtoTest, TrueIsTrueOnAnyPackets);
 
-TEST(EvaluatePredicateProtoTest, FalseIsFalseOnAnyPacket) {
-  PredicateProto false_predicate;
-  false_predicate.mutable_bool_constant()->set_value(false);
-
-  EXPECT_FALSE(Evaluate(false_predicate, Packet()));
-  EXPECT_FALSE(Evaluate(false_predicate, Packet({{"field1", 1}})));
-  EXPECT_FALSE(Evaluate(false_predicate,
-                        Packet({{"field1", 1}, {"field2", 2}, {"field3", 3}})));
+void FalseIsFalseOnAnyPackets(Packet packet) {
+  EXPECT_FALSE(Evaluate(FalseProto(), packet));
 }
+FUZZ_TEST(EvaluatePredicateProtoTest, FalseIsFalseOnAnyPackets);
 
-TEST(EvaluatePredicateProtoTest, EmptyPredicateIsFalseOnAnyPacket) {
-  PredicateProto empty_predicate;
-
-  EXPECT_FALSE(Evaluate(empty_predicate, Packet()));
-  EXPECT_FALSE(Evaluate(empty_predicate, Packet({{"field1", 1}})));
-  EXPECT_FALSE(Evaluate(empty_predicate,
-                        Packet({{"field1", 1}, {"field2", 2}, {"field3", 3}})));
+void EmptyPredicateIsFalseOnAnyPackets(Packet packet) {
+  EXPECT_FALSE(Evaluate(PredicateProto(), packet));
 }
+FUZZ_TEST(EvaluatePredicateProtoTest, EmptyPredicateIsFalseOnAnyPackets);
 
-TEST(EvaluatePredicateProtoTest, NotTrueIsFalseOnAnyPackets) {
-  PredicateProto not_true_predicate;
-  not_true_predicate.mutable_not_op()
-      ->mutable_negand()
-      ->mutable_bool_constant()
-      ->set_value(true);
-
-  EXPECT_FALSE(Evaluate(not_true_predicate, Packet()));
-  EXPECT_FALSE(Evaluate(not_true_predicate, Packet({{"field1", 1}})));
-  EXPECT_FALSE(Evaluate(not_true_predicate,
-                        Packet({{"field1", 1}, {"field2", 2}, {"field3", 3}})));
+void NotIsLogicalNot(Packet packet, PredicateProto negand) {
+  EXPECT_EQ(Evaluate(NotProto(negand), packet), !Evaluate(negand, packet));
 }
+FUZZ_TEST(EvaluatePredicateProtoTest, NotIsLogicalNot);
 
-TEST(EvaluatePredicateProtoTest, NotFalseIsTrueOnAnyPacket) {
-  PredicateProto not_false_predicate;
-  not_false_predicate.mutable_not_op()
-      ->mutable_negand()
-      ->mutable_bool_constant()
-      ->set_value(false);
+void MatchOnlyMatchesPacketsWithCorrectValueAndField(Packet packet,
+                                                     std::string field,
+                                                     int value) {
+  packet[field] = value;
+  EXPECT_TRUE(Evaluate(MatchProto(field, value), packet));
 
-  EXPECT_TRUE(Evaluate(not_false_predicate, Packet()));
-  EXPECT_TRUE(Evaluate(not_false_predicate, Packet({{"field1", 1}})));
-  EXPECT_TRUE(Evaluate(not_false_predicate,
-                       Packet({{"field1", 1}, {"field2", 2}, {"field3", 3}})));
+  packet[field] = value - 1;
+  EXPECT_FALSE(Evaluate(MatchProto(field, value), packet));
+
+  packet.erase(field);
+  EXPECT_FALSE(Evaluate(MatchProto(field, value), packet));
 }
+FUZZ_TEST(EvaluatePredicateProtoTest,
+          MatchOnlyMatchesPacketsWithCorrectValueAndField);
 
-TEST(EvaluatePredicateProtoTest, NotNotTrueIsTrueOnAnyPackets) {
-  PredicateProto not_not_true_predicate;
-  not_not_true_predicate.mutable_not_op()
-      ->mutable_negand()
-      ->mutable_not_op()
-      ->mutable_negand()
-      ->mutable_bool_constant()
-      ->set_value(true);
-
-  EXPECT_TRUE(Evaluate(not_not_true_predicate, Packet()));
-  EXPECT_TRUE(Evaluate(not_not_true_predicate, Packet({{"field1", 1}})));
-  EXPECT_TRUE(Evaluate(not_not_true_predicate,
-                       Packet({{"field1", 1}, {"field2", 2}, {"field3", 3}})));
+void AndIsLogicalAnd(Packet packet, PredicateProto left, PredicateProto right) {
+  EXPECT_EQ(Evaluate(AndProto(left, right), packet),
+            Evaluate(left, packet) && Evaluate(right, packet));
 }
+FUZZ_TEST(EvaluatePredicateProtoTest, AndIsLogicalAnd);
 
-TEST(EvaluatePredicateProtoTest, MatchesFieldWithCorrectValue) {
-  PredicateProto match_predicate;
-  match_predicate.mutable_match()->set_field("field1");
-  match_predicate.mutable_match()->set_value(1);
-
-  EXPECT_FALSE(Evaluate(match_predicate, Packet()));
-  EXPECT_TRUE(Evaluate(match_predicate, Packet({{"field1", 1}})));
-  EXPECT_TRUE(Evaluate(match_predicate,
-                       Packet({{"field1", 1}, {"field2", 2}, {"field3", 3}})));
+void OrIsLogicalOr(Packet packet, PredicateProto left, PredicateProto right) {
+  EXPECT_EQ(Evaluate(OrProto(left, right), packet),
+            Evaluate(left, packet) || Evaluate(right, packet));
 }
+FUZZ_TEST(EvaluatePredicateProtoTest, OrIsLogicalOr);
 
-TEST(EvaluatePredicateProtoTest, DoesNotMatchFieldWithWrongValue) {
-  PredicateProto match_predicate;
-  match_predicate.mutable_match()->set_field("field1");
-  match_predicate.mutable_match()->set_value(2);
+/*--- Boolean algebra axioms and equivalences --------------------------------*/
 
-  EXPECT_FALSE(Evaluate(match_predicate, Packet()));
-  EXPECT_FALSE(Evaluate(match_predicate, Packet({{"field1", 1}})));
-  EXPECT_FALSE(Evaluate(match_predicate,
-                        Packet({{"field1", 1}, {"field2", 2}, {"field3", 3}})));
+void PredOrItsNegationIsTrue(Packet packet, PredicateProto predicate) {
+  EXPECT_TRUE(Evaluate(OrProto(predicate, NotProto(predicate)), packet));
 }
+FUZZ_TEST(EvaluatePredicateProtoTest, PredOrItsNegationIsTrue);
 
-TEST(EvaluatePredicateProtoTest, AndIsLogicallyCorrect) {
-  PredicateProto true_and_true_predicate;
-  true_and_true_predicate.mutable_and_op()
-      ->mutable_left()
-      ->mutable_bool_constant()
-      ->set_value(true);
-  true_and_true_predicate.mutable_and_op()
-      ->mutable_right()
-      ->mutable_bool_constant()
-      ->set_value(true);
-
-  EXPECT_TRUE(Evaluate(true_and_true_predicate, Packet()));
-  EXPECT_TRUE(Evaluate(true_and_true_predicate, Packet({{"field1", 1}})));
-  EXPECT_TRUE(Evaluate(true_and_true_predicate,
-                       Packet({{"field1", 1}, {"field2", 2}, {"field3", 3}})));
-
-  PredicateProto false_and_true_predicate;
-  false_and_true_predicate.mutable_and_op()
-      ->mutable_left()
-      ->mutable_bool_constant()
-      ->set_value(false);
-  false_and_true_predicate.mutable_and_op()
-      ->mutable_right()
-      ->mutable_bool_constant()
-      ->set_value(true);
-
-  EXPECT_FALSE(Evaluate(false_and_true_predicate, Packet()));
-  EXPECT_FALSE(Evaluate(false_and_true_predicate, Packet({{"field1", 1}})));
-  EXPECT_FALSE(Evaluate(false_and_true_predicate,
-                        Packet({{"field1", 1}, {"field2", 2}, {"field3", 3}})));
-
-  PredicateProto false_and_false_predicate;
-  false_and_false_predicate.mutable_and_op()
-      ->mutable_left()
-      ->mutable_bool_constant()
-      ->set_value(false);
-  false_and_false_predicate.mutable_and_op()
-      ->mutable_right()
-      ->mutable_bool_constant()
-      ->set_value(false);
-
-  EXPECT_FALSE(Evaluate(false_and_false_predicate, Packet()));
-  EXPECT_FALSE(Evaluate(false_and_false_predicate, Packet({{"field1", 1}})));
-  EXPECT_FALSE(Evaluate(false_and_false_predicate,
-                        Packet({{"field1", 1}, {"field2", 2}, {"field3", 3}})));
+void PredAndItsNegationIsFalse(Packet packet, PredicateProto predicate) {
+  EXPECT_FALSE(Evaluate(AndProto(predicate, NotProto(predicate)), packet));
 }
+FUZZ_TEST(EvaluatePredicateProtoTest, PredAndItsNegationIsFalse);
 
-TEST(EvaluatePredicateProtoTest, OrIsLogicallyCorrect) {
-  PredicateProto true_or_true_predicate;
-  true_or_true_predicate.mutable_or_op()
-      ->mutable_left()
-      ->mutable_bool_constant()
-      ->set_value(true);
-  true_or_true_predicate.mutable_or_op()
-      ->mutable_right()
-      ->mutable_bool_constant()
-      ->set_value(true);
-
-  EXPECT_TRUE(Evaluate(true_or_true_predicate, Packet()));
-  EXPECT_TRUE(Evaluate(true_or_true_predicate, Packet({{"field1", 1}})));
-  EXPECT_TRUE(Evaluate(true_or_true_predicate,
-                       Packet({{"field1", 1}, {"field2", 2}, {"field3", 3}})));
-
-  PredicateProto false_or_true_predicate;
-  false_or_true_predicate.mutable_or_op()
-      ->mutable_left()
-      ->mutable_bool_constant()
-      ->set_value(false);
-  false_or_true_predicate.mutable_or_op()
-      ->mutable_right()
-      ->mutable_bool_constant()
-      ->set_value(true);
-
-  EXPECT_TRUE(Evaluate(false_or_true_predicate, Packet()));
-  EXPECT_TRUE(Evaluate(false_or_true_predicate, Packet({{"field1", 1}})));
-  EXPECT_TRUE(Evaluate(false_or_true_predicate,
-                       Packet({{"field1", 1}, {"field2", 2}, {"field3", 3}})));
-
-  PredicateProto false_or_false_predicate;
-  false_or_false_predicate.mutable_or_op()
-      ->mutable_left()
-      ->mutable_bool_constant()
-      ->set_value(false);
-  false_or_false_predicate.mutable_or_op()
-      ->mutable_right()
-      ->mutable_bool_constant()
-      ->set_value(false);
-
-  EXPECT_FALSE(Evaluate(false_or_false_predicate, Packet()));
-  EXPECT_FALSE(Evaluate(false_or_false_predicate, Packet({{"field1", 1}})));
-  EXPECT_FALSE(Evaluate(false_or_false_predicate,
-                        Packet({{"field1", 1}, {"field2", 2}, {"field3", 3}})));
+void AndIsIdempotent(Packet packet, PredicateProto predicate) {
+  EXPECT_EQ(Evaluate(AndProto(predicate, predicate), packet),
+            Evaluate(predicate, packet));
 }
+FUZZ_TEST(EvaluatePredicateProtoTest, AndIsIdempotent);
 
-TEST(EvaluatePredicateProtoTest, DeMorganHolds) {
-  const Packet kEmptyPacket = Packet();
-  const Packet kOneFieldPacket = Packet({{"field1", 1}});
-  const Packet kThreeFieldsPacket =
-      Packet({{"field1", 1}, {"field2", 2}, {"field3", 3}});
+void AndTrueIsIdentity(Packet packet, PredicateProto predicate) {
+  EXPECT_EQ(Evaluate(AndProto(predicate, TrueProto()), packet),
+            Evaluate(predicate, packet));
+}
+FUZZ_TEST(EvaluatePredicateProtoTest, AndTrueIsIdentity);
 
+void AndFalseIsFalse(Packet packet, PredicateProto predicate) {
+  EXPECT_FALSE(Evaluate(AndProto(predicate, FalseProto()), packet));
+}
+FUZZ_TEST(EvaluatePredicateProtoTest, AndFalseIsFalse);
+
+void AndIsCommutative(Packet packet, PredicateProto left,
+                      PredicateProto right) {
+  EXPECT_EQ(Evaluate(AndProto(left, right), packet),
+            Evaluate(AndProto(right, left), packet));
+}
+FUZZ_TEST(EvaluatePredicateProtoTest, AndIsCommutative);
+
+void AndIsAssociative(Packet packet, PredicateProto left, PredicateProto middle,
+                      PredicateProto right) {
+  EXPECT_EQ(Evaluate(AndProto(AndProto(left, middle), right), packet),
+            Evaluate(AndProto(left, AndProto(middle, right)), packet));
+}
+FUZZ_TEST(EvaluatePredicateProtoTest, AndIsAssociative);
+
+void OrIsIdempotent(Packet packet, PredicateProto predicate) {
+  EXPECT_EQ(Evaluate(OrProto(predicate, predicate), packet),
+            Evaluate(predicate, packet));
+}
+FUZZ_TEST(EvaluatePredicateProtoTest, OrIsIdempotent);
+
+void OrFalseIsIdentity(Packet packet, PredicateProto predicate) {
+  EXPECT_EQ(Evaluate(OrProto(predicate, FalseProto()), packet),
+            Evaluate(predicate, packet));
+}
+FUZZ_TEST(EvaluatePredicateProtoTest, OrFalseIsIdentity);
+
+void OrTrueIsTrue(Packet packet, PredicateProto predicate) {
+  EXPECT_TRUE(Evaluate(OrProto(predicate, TrueProto()), packet));
+}
+FUZZ_TEST(EvaluatePredicateProtoTest, OrTrueIsTrue);
+
+void OrIsCommutative(Packet packet, PredicateProto left, PredicateProto right) {
+  EXPECT_EQ(Evaluate(OrProto(left, right), packet),
+            Evaluate(OrProto(right, left), packet));
+}
+FUZZ_TEST(EvaluatePredicateProtoTest, OrIsCommutative);
+
+void OrIsAssociative(Packet packet, PredicateProto left, PredicateProto middle,
+                     PredicateProto right) {
+  EXPECT_EQ(Evaluate(OrProto(OrProto(left, middle), right), packet),
+            Evaluate(OrProto(left, OrProto(middle, right)), packet));
+}
+FUZZ_TEST(EvaluatePredicateProtoTest, OrIsAssociative);
+
+void DistributiveLawHolds(Packet packet, PredicateProto first,
+                          PredicateProto second, PredicateProto third) {
+  // (a || b) && c == (a && c) || (b && c)
+  EXPECT_EQ(Evaluate(AndProto(OrProto(first, second), third), packet),
+            Evaluate(OrProto(AndProto(first, third), AndProto(second, third)),
+                     packet));
+
+  // (a && b) || c == (a || c) && (b || c)
+  EXPECT_EQ(Evaluate(OrProto(AndProto(first, second), third), packet),
+            Evaluate(AndProto(OrProto(first, third), OrProto(second, third)),
+                     packet));
+}
+FUZZ_TEST(EvaluatePredicateProtoTest, DistributiveLawHolds);
+
+void DeMorganHolds(Packet packet, PredicateProto left, PredicateProto right) {
   // Not(a && b) == Not(a) || Not(b)
-  for (bool left : {true, false}) {
-    for (bool right : {true, false}) {
-      PredicateProto not_and_predicate;
-      not_and_predicate.mutable_not_op()
-          ->mutable_negand()
-          ->mutable_and_op()
-          ->mutable_left()
-          ->mutable_bool_constant()
-          ->set_value(left);
-      not_and_predicate.mutable_not_op()
-          ->mutable_negand()
-          ->mutable_and_op()
-          ->mutable_right()
-          ->mutable_bool_constant()
-          ->set_value(right);
-
-      PredicateProto or_not_predicate;
-      or_not_predicate.mutable_or_op()
-          ->mutable_left()
-          ->mutable_not_op()
-          ->mutable_negand()
-          ->mutable_bool_constant()
-          ->set_value(left);
-      or_not_predicate.mutable_or_op()
-          ->mutable_right()
-          ->mutable_not_op()
-          ->mutable_negand()
-          ->mutable_bool_constant()
-          ->set_value(right);
-
-      EXPECT_EQ(Evaluate(not_and_predicate, kEmptyPacket),
-                Evaluate(or_not_predicate, kEmptyPacket));
-      EXPECT_EQ(Evaluate(not_and_predicate, kOneFieldPacket),
-                Evaluate(or_not_predicate, kOneFieldPacket));
-      EXPECT_EQ(Evaluate(not_and_predicate, kThreeFieldsPacket),
-                Evaluate(or_not_predicate, kThreeFieldsPacket));
-    }
-  }
+  EXPECT_EQ(Evaluate(NotProto(AndProto(left, right)), packet),
+            Evaluate(OrProto(NotProto(left), NotProto(right)), packet));
 
   // Not(a || b) == Not(a) && Not(b)
-  for (bool left : {true, false}) {
-    for (bool right : {true, false}) {
-      PredicateProto not_or_predicate;
-      not_or_predicate.mutable_not_op()
-          ->mutable_negand()
-          ->mutable_or_op()
-          ->mutable_left()
-          ->mutable_bool_constant()
-          ->set_value(left);
-      not_or_predicate.mutable_not_op()
-          ->mutable_negand()
-          ->mutable_or_op()
-          ->mutable_right()
-          ->mutable_bool_constant()
-          ->set_value(right);
-
-      PredicateProto and_not_predicate;
-      and_not_predicate.mutable_and_op()
-          ->mutable_left()
-          ->mutable_not_op()
-          ->mutable_negand()
-          ->mutable_bool_constant()
-          ->set_value(left);
-      and_not_predicate.mutable_and_op()
-          ->mutable_right()
-          ->mutable_not_op()
-          ->mutable_negand()
-          ->mutable_bool_constant()
-          ->set_value(right);
-
-      EXPECT_EQ(Evaluate(not_or_predicate, kEmptyPacket),
-                Evaluate(and_not_predicate, kEmptyPacket));
-      EXPECT_EQ(Evaluate(not_or_predicate, kOneFieldPacket),
-                Evaluate(and_not_predicate, kOneFieldPacket));
-      EXPECT_EQ(Evaluate(not_or_predicate, kThreeFieldsPacket),
-                Evaluate(and_not_predicate, kThreeFieldsPacket));
-    }
-  }
+  EXPECT_EQ(Evaluate(NotProto(OrProto(left, right)), packet),
+            Evaluate(AndProto(NotProto(left), NotProto(right)), packet));
 }
+FUZZ_TEST(EvaluatePredicateProtoTest, DeMorganHolds);
 
 /*--- Basic policy properties ------------------------------------------------*/
 
