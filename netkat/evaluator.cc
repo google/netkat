@@ -15,6 +15,7 @@
 
 #include "netkat/evaluator.h"
 
+#include "absl/container/flat_hash_set.h"
 #include "absl/log/log.h"
 #include "netkat/netkat.pb.h"
 
@@ -44,6 +45,58 @@ bool Evaluate(const PredicateProto& predicate, const Packet& packet) {
   }
   LOG(FATAL) << "Unexpected value for PredicateProto predicate_case: "
              << static_cast<int>(predicate.predicate_case());
+}
+
+absl::flat_hash_set<Packet> Evaluate(
+    const PolicyProto& policy, const absl::flat_hash_set<Packet>& packets) {
+  absl::flat_hash_set<Packet> result;
+  for (const Packet& packet : packets) {
+    result.merge(Evaluate(policy, packet));
+  }
+  return result;
+}
+
+absl::flat_hash_set<Packet> Evaluate(const PolicyProto& policy,
+                                     const Packet& packet) {
+  switch (policy.policy_case()) {
+    case PolicyProto::kFilter:
+      return Evaluate(policy.filter(), packet)
+                 ? absl::flat_hash_set<Packet>({packet})
+                 : absl::flat_hash_set<Packet>();
+    case PolicyProto::kModification: {
+      Packet modified_packet = packet;
+      // Adds field if it doesn't exist, and modifies it otherwise.
+      modified_packet[policy.modification().field()] =
+          policy.modification().value();
+      return {modified_packet};
+    }
+    case PolicyProto::kRecord:
+      // Record is treated as a no-op.
+      return {packet};
+    case PolicyProto::kSequenceOp:
+      return Evaluate(policy.sequence_op().right(),
+                      Evaluate(policy.sequence_op().left(), packet));
+    case PolicyProto::kUnionOp: {
+      absl::flat_hash_set<Packet> result =
+          Evaluate(policy.union_op().left(), packet);
+      result.merge(Evaluate(policy.union_op().right(), packet));
+      return result;
+    }
+    case PolicyProto::kIterateOp: {
+      // p* = 1 + p + p;p + p;p;p + ...
+      absl::flat_hash_set<Packet> result = {packet};  // 1
+      // Evaluate p on result until fixed point, marked by no change in size.
+      int last_size;
+      do {
+        last_size = result.size();
+        result.merge(Evaluate(policy.iterate_op().iterable(), result));  // p^n
+      } while (last_size != result.size());
+      return result;
+    }
+    case PolicyProto::POLICY_NOT_SET:
+      // Unset policy is treated as DENY.
+      return {};
+  }
 }
 
 }  // namespace netkat
