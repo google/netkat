@@ -60,7 +60,7 @@ void MatchOnlyMatchesPacketsWithCorrectValueAndField(Packet packet,
   packet[field] = value;
   EXPECT_TRUE(Evaluate(MatchProto(field, value), packet));
 
-  packet[field] = value - 1;
+  packet[field] = ~value;
   EXPECT_FALSE(Evaluate(MatchProto(field, value), packet));
 
   packet.erase(field);
