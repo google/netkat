@@ -11,6 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// IWYU pragma: always_keep, since outside of Google this defines key macros.
 
 #ifndef GOOGLE_NETKAT_GUTIL_STATUS_MATCHERS_H
 #define GOOGLE_NETKAT_GUTIL_STATUS_MATCHERS_H
