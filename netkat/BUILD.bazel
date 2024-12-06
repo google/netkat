@@ -29,9 +29,21 @@ cc_test(
 
 cc_library(
     name = "symbolic_packet",
+    srcs = ["symbolic_packet.cc"],
     hdrs = ["symbolic_packet.h"],
     deps = [
+        ":evaluator",
+        ":interned_field",
         ":netkat_cc_proto",
+        ":paged_stable_vector",
+        "//gutil:status",
+        "@com_google_absl//absl/container:fixed_array",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
     ],
 )
@@ -40,9 +52,14 @@ cc_test(
     name = "symbolic_packet_test",
     srcs = ["symbolic_packet_test.cc"],
     deps = [
+        ":evaluator",
+        ":netkat_proto_constructors",
         ":symbolic_packet",
+        "//gutil:status_matchers",
+        "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
+        "@com_google_fuzztest//fuzztest",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -66,6 +83,48 @@ cc_library(
     deps = [
         ":netkat_cc_proto",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "interned_field",
+    srcs = ["interned_field.cc"],
+    hdrs = ["interned_field.h"],
+    deps = [
+        "//gutil:status",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "interned_field_test",
+    srcs = ["interned_field_test.cc"],
+    deps = [
+        ":interned_field",
+        "//gutil:status_matchers",
+        "@com_google_absl//absl/base:no_destructor",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "paged_stable_vector",
+    hdrs = ["paged_stable_vector.h"],
+)
+
+cc_test(
+    name = "paged_stable_vector_test",
+    srcs = ["paged_stable_vector_test.cc"],
+    deps = [
+        ":paged_stable_vector",
+        "@com_google_fuzztest//fuzztest",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
