@@ -96,6 +96,33 @@ cc_test(
 )
 
 cc_library(
+    name = "interned_field",
+    srcs = ["interned_field.cc"],
+    hdrs = ["interned_field.h"],
+    deps = [
+        "//gutil:status",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "interned_field_test",
+    srcs = ["interned_field_test.cc"],
+    deps = [
+        ":interned_field",
+        "//gutil:status_matchers",
+        "@com_google_absl//absl/base:no_destructor",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "paged_stable_vector",
     hdrs = ["paged_stable_vector.h"],
 )
