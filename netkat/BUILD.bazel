@@ -16,6 +16,31 @@ cc_proto_library(
     deps = [":netkat_proto"],
 )
 
+cc_library(
+    name = "frontend",
+    srcs = ["frontend.cc"],
+    hdrs = ["frontend.h"],
+    deps = [
+        ":netkat_cc_proto",
+        ":netkat_proto_constructors",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "frontend_test",
+    srcs = ["frontend_test.cc"],
+    deps = [
+        ":frontend",
+        ":netkat_cc_proto",
+        ":netkat_proto_constructors",
+        "//gutil:proto_matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_fuzztest//fuzztest",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "netkat_test",
     srcs = ["netkat_test.cc"],
