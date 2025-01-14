@@ -17,6 +17,8 @@
 #include <string>
 #include <utility>
 
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "netkat/netkat.pb.h"
 
@@ -109,5 +111,52 @@ PolicyProto IterateProto(PolicyProto iterable) {
 PolicyProto DenyProto() { return FilterProto(FalseProto()); }
 
 PolicyProto AcceptProto() { return FilterProto(TrueProto()); }
+
+std::string AsShorthandString(PredicateProto predicate) {
+  switch (predicate.predicate_case()) {
+    case PredicateProto::kBoolConstant:
+      return predicate.bool_constant().value() ? "true" : "false";
+    case PredicateProto::kMatch:
+      return absl::StrFormat("@%s==%d", predicate.match().field(),
+                             predicate.match().value());
+    case PredicateProto::kAndOp:
+      return absl::StrFormat("(%s && %s)",
+                             AsShorthandString(predicate.and_op().left()),
+                             AsShorthandString(predicate.and_op().right()));
+    case PredicateProto::kOrOp:
+      return absl::StrFormat("(%s || %s)",
+                             AsShorthandString(predicate.or_op().left()),
+                             AsShorthandString(predicate.or_op().right()));
+    case PredicateProto::kNotOp:
+      return absl::StrCat("!", AsShorthandString(predicate.not_op().negand()));
+    case PredicateProto::PREDICATE_NOT_SET:
+      return "false";
+  }
+}
+
+std::string AsShorthandString(PolicyProto policy) {
+  switch (policy.policy_case()) {
+    case PolicyProto::kFilter:
+      return AsShorthandString(policy.filter());
+    case PolicyProto::kModification:
+      return absl::StrFormat("@%s:=%d", policy.modification().field(),
+                             policy.modification().value());
+    case PolicyProto::kRecord:
+      return "record";
+    case PolicyProto::kSequenceOp:
+      return absl::StrFormat("(%s; %s)",
+                             AsShorthandString(policy.sequence_op().left()),
+                             AsShorthandString(policy.sequence_op().right()));
+    case PolicyProto::kUnionOp:
+      return absl::StrFormat("(%s + %s)",
+                             AsShorthandString(policy.union_op().left()),
+                             AsShorthandString(policy.union_op().right()));
+    case PolicyProto::kIterateOp:
+      return absl::StrFormat("(%s)*",
+                             AsShorthandString(policy.iterate_op().iterable()));
+    case PolicyProto::POLICY_NOT_SET:
+      return "deny";
+  }
+}
 
 }  // namespace netkat

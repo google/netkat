@@ -130,5 +130,78 @@ TEST(PolicyProtoTest, AcceptProtoFiltersOnTrue) {
               EqualsProto(R"pb(filter { bool_constant { value: true } })pb"));
 }
 
+// -- Short hand tests ---------------------------------------------------------
+
+TEST(AsShorthandStringTest, RecordStringIsCorrect) {
+  EXPECT_EQ(AsShorthandString(RecordProto()), "record");
+}
+
+TEST(AsShorthandStringTest, UnsetPredicateIsFalse) {
+  EXPECT_EQ(AsShorthandString(PredicateProto()), "false");
+}
+
+TEST(AsShorthandStringTest, UnsetPolicyIsDeny) {
+  EXPECT_EQ(AsShorthandString(PolicyProto()), "deny");
+}
+
+void FilterIsJustPredicate(PredicateProto predicate) {
+  EXPECT_EQ(AsShorthandString(FilterProto(predicate)),
+            AsShorthandString(predicate));
+}
+FUZZ_TEST(AsShorthandStringTest, FilterIsJustPredicate);
+
+TEST(AsShorthandStringTest, BoolConstantIsCorrect) {
+  EXPECT_EQ(AsShorthandString(FalseProto()), "false");
+  EXPECT_EQ(AsShorthandString(TrueProto()), "true");
+}
+
+TEST(AsShorthandStringTest, AndIsOkay) {
+  EXPECT_EQ(AsShorthandString(AndProto(TrueProto(), FalseProto())),
+            "(true && false)");
+}
+
+TEST(AsShorthandStringTest, SequenceIsOkay) {
+  EXPECT_EQ(AsShorthandString(SequenceProto(AcceptProto(), DenyProto())),
+            "(true; false)");
+}
+
+TEST(AsShorthandStringTest, OrIsOkay) {
+  EXPECT_EQ(AsShorthandString(OrProto(TrueProto(), FalseProto())),
+            "(true || false)");
+}
+
+TEST(AsShorthandStringTest, UnionIsOkay) {
+  EXPECT_EQ(AsShorthandString(UnionProto(AcceptProto(), DenyProto())),
+            "(true + false)");
+}
+
+TEST(AsShorthandStringTest, NegationIsOkay) {
+  EXPECT_EQ(AsShorthandString(NotProto(OrProto(TrueProto(), FalseProto()))),
+            "!(true || false)");
+}
+
+TEST(AsShorthandStringTest, ModifyIsCorrect) {
+  EXPECT_EQ(AsShorthandString(ModificationProto("field", 2)), "@field:=2");
+}
+
+TEST(AsShorthandStringTest, IterateIsCorrect) {
+  EXPECT_EQ(AsShorthandString(IterateProto(AcceptProto())), "(true)*");
+}
+
+TEST(AsShorthandStringTest, MixedPolicyOrderIsPreserved) {
+  const PredicateProto a = MatchProto("a", 1);
+  const PredicateProto b = MatchProto("b", 2);
+  const PredicateProto c = MatchProto("c", 3);
+  EXPECT_EQ(
+      AsShorthandString(IterateProto(UnionProto(
+          SequenceProto(SequenceProto(FilterProto(OrProto(OrProto(a, b), c)),
+                                      AcceptProto()),
+                        RecordProto()),
+          SequenceProto(SequenceProto(FilterProto(a), FilterProto(b)),
+                        RecordProto())))),
+      "((((((@a==1 || @b==2) || @c==3); true); record) + ((@a==1; @b==2); "
+      "record)))*");
+}
+
 }  // namespace
 }  // namespace netkat

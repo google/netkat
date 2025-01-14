@@ -22,6 +22,8 @@
 #ifndef GOOGLE_NETKAT_NETKAT_NETKAT_PROTO_CONSTRUCTORS_H_
 #define GOOGLE_NETKAT_NETKAT_NETKAT_PROTO_CONSTRUCTORS_H_
 
+#include <string>
+
 #include "absl/strings/string_view.h"
 #include "netkat/netkat.pb.h"
 
@@ -49,6 +51,27 @@ PolicyProto IterateProto(PolicyProto iterable);
 
 PolicyProto DenyProto();
 PolicyProto AcceptProto();
+
+// Returns a shorthand string from a given NetKAT policy/predicate. This follows
+// roughly the shorthand typically used in literature. Specifically:
+//
+//   Predicate And -> '&&'
+//   Predicate Or -> '||'
+//   Policy Sequence -> ';'
+//   Policy Or -> '+'
+//   Iterate -> '*'
+//   Record -> 'record'
+//   Match -> '@field==value'
+//   Modify -> '@field:=value'
+//   True -> 'true'
+//   False -> 'false'
+//
+// Note that parenthesis elimination is not performed.
+//
+// TODO(anthonyroy): Refactor this out to a different helper filer and/or widen
+// the scope of this one.
+std::string AsShorthandString(PolicyProto policy);
+std::string AsShorthandString(PredicateProto predicate);
 
 }  // namespace netkat
 

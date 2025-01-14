@@ -103,6 +103,8 @@ cc_library(
     hdrs = ["netkat_proto_constructors.h"],
     deps = [
         ":netkat_cc_proto",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
