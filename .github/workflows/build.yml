@@ -16,10 +16,22 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # TODO(anthonyroy): Bump to 24.04 once llvm+absl issues are resolved. https://github.com/llvm/llvm-project/issues/102443
+    runs-on: ubuntu-22.04
 
     steps:
+      # TODO(anthonyroy): Remove once the following is fixed:
+      # https://github.com/actions/runner-images/issues/9491
+      - name: Reduce ASLR entropy as a temporary workaround
+        run: |
+          sudo sysctl -w vm.mmap_rnd_bits=28
+
       - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -yq \
+            clang
 
       - name: Mount bazel cache
         uses: actions/cache/restore@v4
