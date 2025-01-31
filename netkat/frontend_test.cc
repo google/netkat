@@ -145,7 +145,8 @@ FUZZ_TEST(FrontEndTest, SequencePreservesOrder)
     .WithDomains(
         /*policies=*/ContainerOf<std::vector<Policy>>(
             FilterOrModifyPolicyDomain())
-            .WithMinSize(2));
+            .WithMinSize(2)
+            .WithMaxSize(64));  // Limit the max size to avoid stack crash.
 
 void SequenceNArgsIsSameAsList(Policy a, Policy b, Policy c) {
   EXPECT_THAT(Sequence(a, b, c).ToProto(),
@@ -185,7 +186,8 @@ FUZZ_TEST(FrontEndTest, UnionPreservesOrder)
     .WithDomains(
         /*policies=*/ContainerOf<std::vector<Policy>>(
             FilterOrModifyPolicyDomain())
-            .WithMinSize(2));
+            .WithMinSize(2)
+            .WithMaxSize(64));  // Limit the max size to avoid stack crash.
 
 void UnionNArgsIsSameAsList(Policy a, Policy b, Policy c) {
   EXPECT_THAT(Union(a, b, c).ToProto(),
