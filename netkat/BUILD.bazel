@@ -55,6 +55,34 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "table",
+    srcs = ["table.cc"],
+    hdrs = ["table.h"],
+    deps = [
+        "//netkat:frontend",
+        "@com_google_absl//absl/container:btree",
+        "@com_google_absl//absl/functional:any_invocable",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_test(
+    name = "table_test",
+    srcs = ["table_test.cc"],
+    deps = [
+        ":frontend",
+        ":netkat_proto_constructors",
+        ":table",
+        "//gutil:proto_matchers",
+        "//gutil:status_matchers",
+        "@com_google_absl//absl/status",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "netkat_test",
     srcs = ["netkat_test.cc"],
