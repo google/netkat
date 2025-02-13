@@ -5,17 +5,16 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "gutil/proto_matchers.h"
+#include "netkat/gmock_utils.h"
 #include "netkat/netkat.pb.h"
 #include "netkat/netkat_proto_constructors.h"
 
 namespace netkat {
 namespace {
 
-using ::fuzztest::Arbitrary;
 using ::fuzztest::ContainerOf;
-using ::fuzztest::Just;
-using ::fuzztest::Map;
-using ::fuzztest::OneOf;
+using ::netkat_test::FilterOrModifyPolicyDomain;
+using ::netkat_test::SingleLevelPredicateDomain;
 
 void MatchToProtoIsCorrect(absl::string_view field, int value) {
   EXPECT_THAT(Match(field, value).ToProto(),
@@ -29,14 +28,6 @@ TEST(FrontEndTest, TrueToProtoIsCorrect) {
 
 TEST(FrontEndTest, FalseToProtoIsCorrect) {
   EXPECT_THAT(Predicate::False().ToProto(), EqualsProto(FalseProto()));
-}
-
-// Returns a FUZZ_TEST domain that returns an arbitrary Match, True or False
-// predicate. This allows us to provide fuzz tests with arbitrary Predicates to
-// test on.
-fuzztest::Domain<Predicate> SingleLevelPredicateDomain() {
-  return OneOf(Just(Predicate::True()), Just(Predicate::False()),
-               Map(Match, Arbitrary<absl::string_view>(), Arbitrary<int>()));
 }
 
 void NegateToProtoIsCorrect(Predicate predicate) {
@@ -76,14 +67,6 @@ FUZZ_TEST(FrontEndTest, OperationOrderIsPreserved)
     .WithDomains(/*a=*/SingleLevelPredicateDomain(),
                  /*b=*/SingleLevelPredicateDomain(),
                  /*c=*/SingleLevelPredicateDomain());
-
-// Returns a FUZZ_TEST domain that returns an arbitrary Policy. This policy may
-// contain an arbitrary predicate or modification. This allows us to provide
-// fuzz tests with arbitrary concrete policies.
-fuzztest::Domain<Policy> FilterOrModifyPolicyDomain() {
-  return OneOf(Map(Filter, SingleLevelPredicateDomain()),
-               Map(Modify, Arbitrary<absl::string_view>(), Arbitrary<int>()));
-}
 
 TEST(FrontEndTest, AcceptToProtoIsCorrect) {
   EXPECT_THAT(Policy::Accept().ToProto(), EqualsProto(AcceptProto()));
