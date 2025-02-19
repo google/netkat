@@ -54,9 +54,21 @@ cc_test(
 
 cc_library(
     name = "symbolic_packet",
+    srcs = ["symbolic_packet.cc"],
     hdrs = ["symbolic_packet.h"],
     deps = [
+        ":evaluator",
+        ":interned_field",
         ":netkat_cc_proto",
+        ":paged_stable_vector",
+        "//gutil:status",
+        "@com_google_absl//absl/container:fixed_array",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
     ],
 )
@@ -65,9 +77,14 @@ cc_test(
     name = "symbolic_packet_test",
     srcs = ["symbolic_packet_test.cc"],
     deps = [
+        ":evaluator",
+        ":netkat_proto_constructors",
         ":symbolic_packet",
+        "//gutil:status_matchers",
+        "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
+        "@com_google_fuzztest//fuzztest",
         "@com_google_googletest//:gtest_main",
     ],
 )

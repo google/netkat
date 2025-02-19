@@ -13,7 +13,7 @@
 // limitations under the License.
 //
 // -----------------------------------------------------------------------------
-// netkat.proto
+// File: netkat.proto
 // -----------------------------------------------------------------------------
 //
 // Proto representation of NetKAT programs (predicates and policies).
