@@ -5,17 +5,16 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "gutil/proto_matchers.h"
+#include "netkat/gtest_utils.h"
 #include "netkat/netkat.pb.h"
 #include "netkat/netkat_proto_constructors.h"
 
 namespace netkat {
 namespace {
 
-using ::fuzztest::Arbitrary;
 using ::fuzztest::ContainerOf;
-using ::fuzztest::Just;
-using ::fuzztest::Map;
-using ::fuzztest::OneOf;
+using ::netkat::netkat_test::AtomicDupFreePolicyDomain;
+using ::netkat::netkat_test::AtomicPredicateDomain;
 
 void MatchToProtoIsCorrect(absl::string_view field, int value) {
   EXPECT_THAT(Match(field, value).ToProto(),
@@ -31,20 +30,12 @@ TEST(FrontEndTest, FalseToProtoIsCorrect) {
   EXPECT_THAT(Predicate::False().ToProto(), EqualsProto(FalseProto()));
 }
 
-// Returns a FUZZ_TEST domain that returns an arbitrary Match, True or False
-// predicate. This allows us to provide fuzz tests with arbitrary Predicates to
-// test on.
-fuzztest::Domain<Predicate> SingleLevelPredicateDomain() {
-  return OneOf(Just(Predicate::True()), Just(Predicate::False()),
-               Map(Match, Arbitrary<absl::string_view>(), Arbitrary<int>()));
-}
-
 void NegateToProtoIsCorrect(Predicate predicate) {
   Predicate negand = !predicate;
   EXPECT_THAT(negand.ToProto(), EqualsProto(NotProto(predicate.ToProto())));
 }
 FUZZ_TEST(FrontEndTest, NegateToProtoIsCorrect)
-    .WithDomains(SingleLevelPredicateDomain());
+    .WithDomains(AtomicPredicateDomain());
 
 void AndToProtoIsCorrect(Predicate lhs, Predicate rhs) {
   Predicate and_pred = lhs && rhs;
@@ -52,8 +43,8 @@ void AndToProtoIsCorrect(Predicate lhs, Predicate rhs) {
               EqualsProto(AndProto(lhs.ToProto(), rhs.ToProto())));
 }
 FUZZ_TEST(FrontEndTest, AndToProtoIsCorrect)
-    .WithDomains(/*lhs=*/SingleLevelPredicateDomain(),
-                 /*rhs=*/SingleLevelPredicateDomain());
+    .WithDomains(/*lhs=*/AtomicPredicateDomain(),
+                 /*rhs=*/AtomicPredicateDomain());
 
 void OrToProtoIsCorrect(Predicate lhs, Predicate rhs) {
   Predicate or_pred = lhs || rhs;
@@ -61,8 +52,8 @@ void OrToProtoIsCorrect(Predicate lhs, Predicate rhs) {
               EqualsProto(OrProto(lhs.ToProto(), rhs.ToProto())));
 }
 FUZZ_TEST(FrontEndTest, OrToProtoIsCorrect)
-    .WithDomains(/*lhs=*/SingleLevelPredicateDomain(),
-                 /*rhs=*/SingleLevelPredicateDomain());
+    .WithDomains(/*lhs=*/AtomicPredicateDomain(),
+                 /*rhs=*/AtomicPredicateDomain());
 
 void OperationOrderIsPreserved(Predicate a, Predicate b, Predicate c) {
   Predicate abc = !(a || b) && c || a;
@@ -73,17 +64,9 @@ void OperationOrderIsPreserved(Predicate a, Predicate b, Predicate c) {
           a.ToProto())));
 }
 FUZZ_TEST(FrontEndTest, OperationOrderIsPreserved)
-    .WithDomains(/*a=*/SingleLevelPredicateDomain(),
-                 /*b=*/SingleLevelPredicateDomain(),
-                 /*c=*/SingleLevelPredicateDomain());
-
-// Returns a FUZZ_TEST domain that returns an arbitrary Policy. This policy may
-// contain an arbitrary predicate or modification. This allows us to provide
-// fuzz tests with arbitrary concrete policies.
-fuzztest::Domain<Policy> FilterOrModifyPolicyDomain() {
-  return OneOf(Map(Filter, SingleLevelPredicateDomain()),
-               Map(Modify, Arbitrary<absl::string_view>(), Arbitrary<int>()));
-}
+    .WithDomains(/*a=*/AtomicPredicateDomain(),
+                 /*b=*/AtomicPredicateDomain(),
+                 /*c=*/AtomicPredicateDomain());
 
 TEST(FrontEndTest, AcceptToProtoIsCorrect) {
   EXPECT_THAT(Policy::Accept().ToProto(), EqualsProto(AcceptProto()));
@@ -102,7 +85,7 @@ void FilteredPredicateToProtoIsCorrect(Predicate predicate) {
               EqualsProto(FilterProto(predicate.ToProto())));
 }
 FUZZ_TEST(FrontEndTest, FilteredPredicateToProtoIsCorrect)
-    .WithDomains(/*predicate=*/SingleLevelPredicateDomain());
+    .WithDomains(/*predicate=*/AtomicPredicateDomain());
 
 void ModifyToProtoIsCorrect(absl::string_view field, int value) {
   EXPECT_THAT(Modify(field, value).ToProto(),
@@ -115,7 +98,7 @@ void IterateToProtoIsCorrect(Policy policy) {
               EqualsProto(IterateProto(policy.ToProto())));
 }
 FUZZ_TEST(FrontEndTest, IterateToProtoIsCorrect)
-    .WithDomains(/*policy=*/FilterOrModifyPolicyDomain());
+    .WithDomains(/*policy=*/AtomicDupFreePolicyDomain());
 
 TEST(FrontEndTest, SequenceWithNoElementsIsAccept) {
   EXPECT_THAT(Sequence().ToProto(), EqualsProto(AcceptProto()));
@@ -125,7 +108,7 @@ void SequenceWithOneElementIsSelf(Policy policy) {
   EXPECT_THAT(Sequence(policy).ToProto(), EqualsProto(policy.ToProto()));
 }
 FUZZ_TEST(FrontEndTest, SequenceWithOneElementIsSelf)
-    .WithDomains(/*policy=*/FilterOrModifyPolicyDomain());
+    .WithDomains(/*policy=*/AtomicDupFreePolicyDomain());
 
 void SequencePreservesOrder(std::vector<Policy> policies) {
   if (policies.size() < 2) GTEST_SKIP();
@@ -144,7 +127,7 @@ void SequencePreservesOrder(std::vector<Policy> policies) {
 FUZZ_TEST(FrontEndTest, SequencePreservesOrder)
     .WithDomains(
         /*policies=*/ContainerOf<std::vector<Policy>>(
-            FilterOrModifyPolicyDomain())
+            AtomicDupFreePolicyDomain())
             .WithMinSize(2)
             .WithMaxSize(64));  // Limit the max size to avoid stack crash.
 
@@ -154,9 +137,9 @@ void SequenceNArgsIsSameAsList(Policy a, Policy b, Policy c) {
 }
 FUZZ_TEST(FrontEndTest, SequenceNArgsIsSameAsList)
     .WithDomains(
-        /*a=*/FilterOrModifyPolicyDomain(),
-        /*b=*/FilterOrModifyPolicyDomain(),
-        /*c=*/FilterOrModifyPolicyDomain());
+        /*a=*/AtomicDupFreePolicyDomain(),
+        /*b=*/AtomicDupFreePolicyDomain(),
+        /*c=*/AtomicDupFreePolicyDomain());
 
 TEST(FrontEndTest, UnionWithNoElementsIsDeny) {
   EXPECT_THAT(Union().ToProto(), EqualsProto(DenyProto()));
@@ -166,7 +149,7 @@ void UnionWithOneElementIsSelf(Policy policy) {
   EXPECT_THAT(Union(policy).ToProto(), EqualsProto(policy.ToProto()));
 }
 FUZZ_TEST(FrontEndTest, UnionWithOneElementIsSelf)
-    .WithDomains(/*policy=*/FilterOrModifyPolicyDomain());
+    .WithDomains(/*policy=*/AtomicDupFreePolicyDomain());
 
 void UnionPreservesOrder(std::vector<Policy> policies) {
   if (policies.size() < 2) GTEST_SKIP();
@@ -185,7 +168,7 @@ void UnionPreservesOrder(std::vector<Policy> policies) {
 FUZZ_TEST(FrontEndTest, UnionPreservesOrder)
     .WithDomains(
         /*policies=*/ContainerOf<std::vector<Policy>>(
-            FilterOrModifyPolicyDomain())
+            AtomicDupFreePolicyDomain())
             .WithMinSize(2)
             .WithMaxSize(64));  // Limit the max size to avoid stack crash.
 
@@ -195,9 +178,9 @@ void UnionNArgsIsSameAsList(Policy a, Policy b, Policy c) {
 }
 FUZZ_TEST(FrontEndTest, UnionNArgsIsSameAsList)
     .WithDomains(
-        /*a=*/FilterOrModifyPolicyDomain(),
-        /*b=*/FilterOrModifyPolicyDomain(),
-        /*c=*/FilterOrModifyPolicyDomain());
+        /*a=*/AtomicDupFreePolicyDomain(),
+        /*b=*/AtomicDupFreePolicyDomain(),
+        /*c=*/AtomicDupFreePolicyDomain());
 
 void MixedPolicyOperationsHasCorrectOrder(Policy a, Policy b, Policy c) {
   // Create an arbitrary policy,
@@ -219,9 +202,9 @@ void MixedPolicyOperationsHasCorrectOrder(Policy a, Policy b, Policy c) {
 }
 FUZZ_TEST(FrontEndTest, MixedPolicyOperationsHasCorrectOrder)
     .WithDomains(
-        /*a=*/FilterOrModifyPolicyDomain(),
-        /*b=*/FilterOrModifyPolicyDomain(),
-        /*c=*/FilterOrModifyPolicyDomain());
+        /*a=*/AtomicDupFreePolicyDomain(),
+        /*b=*/AtomicDupFreePolicyDomain(),
+        /*c=*/AtomicDupFreePolicyDomain());
 
 }  // namespace
 }  // namespace netkat

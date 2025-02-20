@@ -17,6 +17,17 @@ cc_proto_library(
 )
 
 cc_library(
+    name = "gtest_utils",
+    testonly = 1,
+    srcs = ["gtest_utils.cc"],
+    hdrs = ["gtest_utils.h"],
+    deps = [
+        ":frontend",
+        "@com_google_fuzztest//fuzztest",
+    ],
+)
+
+cc_library(
     name = "frontend",
     srcs = ["frontend.cc"],
     hdrs = ["frontend.h"],
@@ -32,6 +43,7 @@ cc_test(
     srcs = ["frontend_test.cc"],
     deps = [
         ":frontend",
+        ":gtest_utils",
         ":netkat_cc_proto",
         ":netkat_proto_constructors",
         "//gutil:proto_matchers",
