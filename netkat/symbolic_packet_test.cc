@@ -15,6 +15,8 @@
 
 #include "netkat/symbolic_packet.h"
 
+#include <ostream>
+
 #include "absl/base/no_destructor.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_cat.h"
@@ -26,16 +28,27 @@
 #include "netkat/netkat_proto_constructors.h"
 
 namespace netkat {
-namespace {
-
-using ::testing::StartsWith;
 
 // We use a global manager object to exercise statefulness more deeply across
-// test cases.
+// test cases. This also enables better pretty printing for debugging, see
+// `PrintTo`.
 SymbolicPacketManager& Manager() {
   static absl::NoDestructor<SymbolicPacketManager> manager;
   return *manager;
 }
+
+// The default `SymbolicPacket` pretty printer sucks! It does not have access to
+// the graph structure representing the packet, since that is stored in the
+// manager object. Thus, it returns opaque strings like "SymbolicPacket<123>".
+//
+// We define this much better override, which GoogleTest gives precedence to.
+void PrintTo(const SymbolicPacket& packet, std::ostream* os) {
+  *os << Manager().PrettyPrint(packet);
+}
+
+namespace {
+
+using ::testing::StartsWith;
 
 // After executing all tests, we check once that no invariants are violated, for
 // defense in depth. Checking invariants after each test (e.g. using a fixture)

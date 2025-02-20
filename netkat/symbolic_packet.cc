@@ -16,14 +16,18 @@
 
 #include <cstdint>
 #include <limits>
+#include <queue>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/container/fixed_array.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
+#include "absl/strings/escaping.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "gutil/status.h"
@@ -88,11 +92,12 @@ SymbolicPacket SymbolicPacketManager::NodeToPacket(DecisionNode&& node) {
 // expensive.
 #ifndef NDEBUG
   for (const auto& [value, branch] : node.branch_by_field_value) {
-    CHECK(branch != node.default_branch);
+    CHECK(branch != node.default_branch) << PrettyPrint(node);
     if (!IsEmptySet(branch) && !IsFullSet(branch)) {
       auto& branch_node = GetNodeOrDie(branch);
-      CHECK(branch_node.field > node.field)
-          << absl::StreamFormat("(%v > %v)", branch_node.field, node.field);
+      CHECK(branch_node.field > node.field) << absl::StreamFormat(
+          "(%v > %v)\n---branch---\n%s\n---node---\n%s", branch_node.field,
+          node.field, PrettyPrint(branch), PrettyPrint(node));
     }
   }
 #endif
@@ -282,6 +287,61 @@ SymbolicPacket SymbolicPacketManager::Or(SymbolicPacket left,
   //
   // TODO(b/382380335, b/382379263): Implement complement edges and memoization.
   return Not(And(Not(left), Not(right)));
+}
+
+std::string SymbolicPacketManager::PrettyPrint(SymbolicPacket packet) const {
+  std::string result;
+  std::queue<SymbolicPacket> work_list{{packet}};
+  absl::flat_hash_set<SymbolicPacket> visited{packet};
+  while (!work_list.empty()) {
+    SymbolicPacket packet = work_list.front();
+    work_list.pop();
+    absl::StrAppend(&result, packet);
+
+    if (IsFullSet(packet) || IsEmptySet(packet)) continue;
+
+    const DecisionNode& node = GetNodeOrDie(packet);
+    absl::StrAppend(&result, ":\n");
+    std::string field =
+        absl::StrFormat("%v:'%s'", node.field,
+                        absl::CEscape(field_manager_.GetFieldName(node.field)));
+    for (const auto& [value, branch] : node.branch_by_field_value) {
+      absl::StrAppendFormat(&result, "  %s == %d -> %v\n", field, value,
+                            branch);
+      if (IsFullSet(branch) || IsEmptySet(branch)) continue;
+      bool new_branch = visited.insert(branch).second;
+      if (new_branch) work_list.push(branch);
+    }
+    SymbolicPacket fallthrough = node.default_branch;
+    absl::StrAppendFormat(&result, "  %s == * -> %v\n", field, fallthrough);
+    if (IsFullSet(fallthrough) || IsEmptySet(fallthrough)) continue;
+    bool new_branch = visited.insert(fallthrough).second;
+    if (new_branch) work_list.push(fallthrough);
+  }
+  return result;
+}
+
+std::string SymbolicPacketManager::PrettyPrint(const DecisionNode& node) const {
+  std::string result;
+  std::vector<SymbolicPacket> work_list;
+  std::string field =
+      absl::StrFormat("%v:'%s'", node.field,
+                      absl::CEscape(field_manager_.GetFieldName(node.field)));
+  for (const auto& [value, branch] : node.branch_by_field_value) {
+    absl::StrAppendFormat(&result, "  %s == %d -> %v\n", field, value, branch);
+    if (!IsFullSet(branch) || !IsEmptySet(branch)) work_list.push_back(branch);
+  }
+  SymbolicPacket fallthrough = node.default_branch;
+  absl::StrAppendFormat(&result, "  %s == * -> %v\n", field, fallthrough);
+  if (!IsFullSet(fallthrough) && !IsEmptySet(fallthrough)) {
+    work_list.push_back(fallthrough);
+  }
+
+  for (const SymbolicPacket& branch : work_list) {
+    absl::StrAppend(&result, PrettyPrint(branch));
+  }
+
+  return result;
 }
 
 absl::Status SymbolicPacketManager::CheckInternalInvariants() const {
