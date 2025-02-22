@@ -1,6 +1,8 @@
 
 
 
+
+
 package(
     default_applicable_licenses = ["//:license"],
     default_visibility = [":__subpackages__"],
@@ -181,6 +183,26 @@ cc_test(
 cc_library(
     name = "paged_stable_vector",
     hdrs = ["paged_stable_vector.h"],
+)
+
+cc_library(
+    name = "analysis_engine",
+    srcs = ["analysis_engine.cc"],
+    hdrs = ["analysis_engine.h"],
+    deps = [
+        ":frontend",
+        ":symbolic_packet",
+    ],
+)
+
+cc_test(
+    name = "analysis_engine_test",
+    srcs = ["analysis_engine_test.cc"],
+    deps = [
+        ":analysis_engine",
+        ":frontend",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 cc_test(

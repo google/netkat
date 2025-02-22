@@ -167,6 +167,10 @@ static_assert(sizeof(SymbolicPacket) <= 4);
 //
 // CAUTION: Using a `SymbolicPacket` returned by one `SymbolicPacketManager`
 // object with a different manager is undefined behavior.
+//
+// TODO(b/398303840): Persistent use of an `SymbolicPacketManager` object can
+// incur unbounded memory growth. Consider adding some garbage collection
+// mechanism.
 class SymbolicPacketManager {
  public:
   SymbolicPacketManager() = default;
