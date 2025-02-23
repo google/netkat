@@ -145,4 +145,14 @@ IsOkAndHoldsMatcher<InnerMatcher> IsOkAndHolds(InnerMatcher&& inner_matcher) {
 
 }  // namespace netkat
 
+#ifndef EXPECT_OK
+#define EXPECT_OK(x) \
+  EXPECT_THAT(x, ::netkat::StatusIs(absl::StatusCode::kOk, ::testing::_))
+#endif
+
+#ifndef ASSERT_OK
+#define ASSERT_OK(x) \
+  ASSERT_THAT(x, ::netkat::StatusIs(absl::StatusCode::kOk, ::testing::_))
+#endif
+
 #endif  // GOOGLE_NETKAT_GUTIL_STATUS_MATCHERS_H
