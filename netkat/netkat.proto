@@ -61,6 +61,7 @@ message PredicateProto {
     And and_op = 3;
     Or or_op = 4;
     Not not_op = 5;
+    Xor xor_op = 6;
   }
 
   // A boolean constant, i.e. true or false. Equivalent to Accept/Drop.
@@ -92,6 +93,12 @@ message PredicateProto {
   // Boolean negation of a predicate, i.e. !a.
   message Not {
     PredicateProto negand = 1;
+  }
+
+  // Boolean exclusive Or of two predicates, i.e. a (+) b.
+  message Xor {
+    PredicateProto left = 1;
+    PredicateProto right = 2;
   }
 }
 

@@ -64,6 +64,13 @@ PredicateProto NotProto(PredicateProto negand) {
   *not_op.mutable_negand() = std::move(negand);
   return proto;
 }
+PredicateProto XorProto(PredicateProto left, PredicateProto right) {
+  PredicateProto proto;
+  PredicateProto::Xor& xor_op = *proto.mutable_xor_op();
+  *xor_op.mutable_left() = std::move(left);
+  *xor_op.mutable_right() = std::move(right);
+  return proto;
+}
 
 // -- Basic Policy constructors ------------------------------------------------
 
@@ -129,6 +136,10 @@ std::string AsShorthandString(PredicateProto predicate) {
                              AsShorthandString(predicate.or_op().right()));
     case PredicateProto::kNotOp:
       return absl::StrCat("!", AsShorthandString(predicate.not_op().negand()));
+    case PredicateProto::kXorOp:
+      return absl::StrFormat("(%s (+) %s)",
+                             AsShorthandString(predicate.xor_op().left()),
+                             AsShorthandString(predicate.xor_op().right()));
     case PredicateProto::PREDICATE_NOT_SET:
       return "false";
   }

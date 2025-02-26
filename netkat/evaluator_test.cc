@@ -154,6 +154,32 @@ void OrIsAssociative(Packet packet, PredicateProto left, PredicateProto middle,
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, OrIsAssociative);
 
+void XorFalseIsIdentity(Packet packet, PredicateProto predicate) {
+  EXPECT_EQ(Evaluate(XorProto(predicate, FalseProto()), packet),
+            Evaluate(predicate, packet));
+}
+FUZZ_TEST(EvaluatePredicateProtoTest, XorFalseIsIdentity);
+
+void XorSelfIsFalse(Packet packet, const PredicateProto& pred) {
+  EXPECT_EQ(Evaluate(XorProto(pred, pred), packet),
+            Evaluate(FalseProto(), packet));
+}
+FUZZ_TEST(SymbolicPacketManagerTest, XorSelfIsFalse);
+
+void XorIsCommutative(Packet packet, PredicateProto left,
+                      PredicateProto right) {
+  EXPECT_EQ(Evaluate(XorProto(left, right), packet),
+            Evaluate(XorProto(right, left), packet));
+}
+FUZZ_TEST(EvaluatePredicateProtoTest, XorIsCommutative);
+
+void XorIsAssociative(Packet packet, PredicateProto left, PredicateProto middle,
+                      PredicateProto right) {
+  EXPECT_EQ(Evaluate(XorProto(XorProto(left, middle), right), packet),
+            Evaluate(XorProto(left, XorProto(middle, right)), packet));
+}
+FUZZ_TEST(EvaluatePredicateProtoTest, XorIsAssociative);
+
 void DistributiveLawHolds(Packet packet, PredicateProto first,
                           PredicateProto second, PredicateProto third) {
   // (a || b) && c == (a && c) || (b && c)
