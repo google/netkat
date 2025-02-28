@@ -1,5 +1,8 @@
 #include "netkat/frontend.h"
 
+#include <cstdint>
+#include <limits>
+
 #include "absl/strings/string_view.h"
 #include "fuzztest/fuzztest.h"
 #include "gmock/gmock.h"
@@ -15,6 +18,8 @@ namespace {
 using ::fuzztest::ContainerOf;
 using ::netkat::netkat_test::AtomicDupFreePolicyDomain;
 using ::netkat::netkat_test::AtomicPredicateDomain;
+using UlongTernaryField =
+    ::netkat::TernaryField<std::numeric_limits<uint32_t>::digits>;
 
 void MatchToProtoIsCorrect(absl::string_view field, int value) {
   EXPECT_THAT(Match(field, value).ToProto(),
@@ -205,6 +210,38 @@ FUZZ_TEST(FrontEndTest, MixedPolicyOperationsHasCorrectOrder)
         /*a=*/AtomicDupFreePolicyDomain(),
         /*b=*/AtomicDupFreePolicyDomain(),
         /*c=*/AtomicDupFreePolicyDomain());
+
+TEST(FrontEndTest, ZeroWidthTernaryReturnsFalseMatch) {
+  TernaryField<0> value;
+  EXPECT_THAT(Match("f", value).ToProto(), EqualsProto(FalseProto()));
+}
+
+TEST(FrontEndTest, ZeroWidthTernaryReturnsAcceptPolicy) {
+  TernaryField<0> value;
+  EXPECT_THAT(Modify("f", value).ToProto(), EqualsProto(AcceptProto()));
+}
+
+void NoTernaryMaskGeneratesFalseMatch(uint32_t value) {
+  UlongTernaryField nomask_value = {.value = {value}};
+  EXPECT_THAT(Match("f", nomask_value).ToProto(), EqualsProto(FalseProto()));
+}
+FUZZ_TEST(FrontEndTest, NoTernaryMaskGeneratesFalseMatch);
+
+void NoTernaryMaskGeneratesAcceptPolicy(uint32_t value) {
+  UlongTernaryField nomask_value = {.value = {value}};
+  EXPECT_THAT(Modify("f", nomask_value).ToProto(), EqualsProto(AcceptProto()));
+}
+FUZZ_TEST(FrontEndTest, NoTernaryMaskGeneratesAcceptPolicy);
+
+TEST(FrontEndTest, ValueReflectedWhenMasked) {
+  UlongTernaryField value = {.value = {0b10}, .mask = {0b11}};
+  EXPECT_THAT(
+      Match("f", value).ToProto(),
+      EqualsProto(AndProto(MatchProto("f_b0", 0), MatchProto("f_b1", 1))));
+  EXPECT_THAT(Modify("f", value).ToProto(),
+              EqualsProto(SequenceProto(ModificationProto("f_b0", 0),
+                                        ModificationProto("f_b1", 1))));
+}
 
 }  // namespace
 }  // namespace netkat
