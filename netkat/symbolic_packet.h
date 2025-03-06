@@ -217,6 +217,10 @@ class SymbolicPacketManager {
   // Also known as set complement.
   SymbolicPacket Not(SymbolicPacket negand);
 
+  // Returns the set of packets that are in either in the `left` or the `right`
+  // set, but not in both. Also known as symmetric set difference.
+  SymbolicPacket Xor(SymbolicPacket left, SymbolicPacket right);
+
   // Returns a human-readable string representation of the given `packet`,
   // intended for debugging.
   [[nodiscard]] std::string PrettyPrint(SymbolicPacket packet) const;

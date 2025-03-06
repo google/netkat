@@ -70,6 +70,15 @@ void NotProtoReturnsNot(PredicateProto negand) {
 }
 FUZZ_TEST(NotProtoTest, NotProtoReturnsNot);
 
+void XorProtoReturnsXor(PredicateProto left, PredicateProto right) {
+  PredicateProto xor_proto;
+  PredicateProto::Xor& xor_op = *xor_proto.mutable_xor_op();
+  *xor_op.mutable_left() = left;
+  *xor_op.mutable_right() = right;
+  EXPECT_THAT(XorProto(left, right), EqualsProto(xor_proto));
+}
+FUZZ_TEST(XorProtoTest, XorProtoReturnsXor);
+
 // -- Basic Policy constructors ------------------------------------------------
 
 void FilterProtoReturnsFilter(PredicateProto filter) {

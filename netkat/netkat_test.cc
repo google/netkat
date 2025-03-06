@@ -51,6 +51,11 @@ TEST(NetkatProtoTest, PredicateOneOfFieldNamesDontRequireUnderscores) {
       LOG(INFO) << "not_op: " << not_op;
       break;
     }
+    case PredicateProto::kXorOp: {
+      const PredicateProto::Xor& xor_op = predicate.xor_op();
+      LOG(INFO) << "xor_op: " << xor_op;
+      break;
+    }
     case PredicateProto::kMatch: {
       const PredicateProto::Match& match = predicate.match();
       LOG(INFO) << "match: " << match;

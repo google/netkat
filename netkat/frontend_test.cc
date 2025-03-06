@@ -55,6 +55,15 @@ FUZZ_TEST(FrontEndTest, OrToProtoIsCorrect)
     .WithDomains(/*lhs=*/AtomicPredicateDomain(),
                  /*rhs=*/AtomicPredicateDomain());
 
+void XorToProtoIsCorrect(Predicate lhs, Predicate rhs) {
+  Predicate xor_pred = Xor(lhs, rhs);
+  EXPECT_THAT(xor_pred.ToProto(),
+              EqualsProto(XorProto(lhs.ToProto(), rhs.ToProto())));
+}
+FUZZ_TEST(FrontEndTest, XorToProtoIsCorrect)
+    .WithDomains(/*lhs=*/AtomicPredicateDomain(),
+                 /*rhs=*/AtomicPredicateDomain());
+
 void OperationOrderIsPreserved(Predicate a, Predicate b, Predicate c) {
   Predicate abc = !(a || b) && c || a;
   EXPECT_THAT(

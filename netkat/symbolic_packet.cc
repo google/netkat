@@ -142,6 +142,8 @@ SymbolicPacket SymbolicPacketManager::Compile(const PredicateProto& pred) {
       return Or(Compile(pred.or_op().left()), Compile(pred.or_op().right()));
     case PredicateProto::kNotOp:
       return Not(Compile(pred.not_op().negand()));
+    case PredicateProto::kXorOp:
+      return Xor(Compile(pred.xor_op().left()), Compile(pred.xor_op().right()));
     // By convention, uninitialized predicates must be treated like `false`.
     case PredicateProto::PREDICATE_NOT_SET:
       return EmptySet();
@@ -287,6 +289,12 @@ SymbolicPacket SymbolicPacketManager::Or(SymbolicPacket left,
   //
   // TODO(b/382380335, b/382379263): Implement complement edges and memoization.
   return Not(And(Not(left), Not(right)));
+}
+
+SymbolicPacket SymbolicPacketManager::Xor(SymbolicPacket left,
+                                          SymbolicPacket right) {
+  // a (+) b == (!a && b) || (a && !b).
+  return Or(And(Not(left), right), And(left, Not(right)));
 }
 
 std::string SymbolicPacketManager::PrettyPrint(SymbolicPacket packet) const {

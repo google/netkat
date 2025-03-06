@@ -33,6 +33,11 @@ bool Evaluate(const PredicateProto& predicate, const Packet& packet) {
     case PredicateProto::kOrOp:
       return Evaluate(predicate.or_op().left(), packet) ||
              Evaluate(predicate.or_op().right(), packet);
+    case PredicateProto::kXorOp:
+      return (!Evaluate(predicate.xor_op().left(), packet) &&
+              Evaluate(predicate.xor_op().right(), packet)) ||
+             (Evaluate(predicate.xor_op().left(), packet) &&
+              !Evaluate(predicate.xor_op().right(), packet));
     case PredicateProto::kMatch:
       if (auto iter = packet.find(predicate.match().field());
           iter != packet.end()) {

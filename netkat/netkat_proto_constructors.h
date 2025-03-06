@@ -37,6 +37,7 @@ PredicateProto MatchProto(absl::string_view field, int value);
 PredicateProto AndProto(PredicateProto left, PredicateProto right);
 PredicateProto OrProto(PredicateProto left, PredicateProto right);
 PredicateProto NotProto(PredicateProto negand);
+PredicateProto XorProto(PredicateProto left, PredicateProto right);
 
 // -- Basic Policy constructors ------------------------------------------------
 
@@ -57,6 +58,8 @@ PolicyProto AcceptProto();
 //
 //   Predicate And -> '&&'
 //   Predicate Or -> '||'
+//   Predicate Not -> '!'
+//   Predicate Xor -> '(+)'
 //   Policy Sequence -> ';'
 //   Policy Or -> '+'
 //   Iterate -> '*'

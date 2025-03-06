@@ -203,6 +203,12 @@ void OrFalseIsIdentity(const PredicateProto& pred) {
 }
 FUZZ_TEST(SymbolicPacketManagerTest, OrFalseIsIdentity);
 
+void XorFalseIsIdentity(const PredicateProto& pred) {
+  EXPECT_EQ(Manager().Compile(XorProto(pred, FalseProto())),
+            Manager().Compile(pred));
+}
+FUZZ_TEST(SymbolicPacketManagerTest, XorFalseIsIdentity);
+
 void AndFalseIsFalse(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(AndProto(pred, FalseProto())),
             Manager().Compile(FalseProto()));
@@ -215,6 +221,12 @@ void OrTrueIsTrue(const PredicateProto& pred) {
 }
 FUZZ_TEST(SymbolicPacketManagerTest, OrTrueIsTrue);
 
+void XorSelfIsFalse(const PredicateProto& pred) {
+  EXPECT_EQ(Manager().Compile(XorProto(pred, pred)),
+            Manager().Compile(FalseProto()));
+}
+FUZZ_TEST(SymbolicPacketManagerTest, XorSelfIsFalse);
+
 void AndIsCommutative(const PredicateProto& a, const PredicateProto& b) {
   EXPECT_EQ(Manager().Compile(AndProto(a, b)),
             Manager().Compile(AndProto(b, a)));
@@ -225,6 +237,12 @@ void OrIsCommutative(const PredicateProto& a, const PredicateProto& b) {
   EXPECT_EQ(Manager().Compile(OrProto(a, b)), Manager().Compile(OrProto(b, a)));
 }
 FUZZ_TEST(SymbolicPacketManagerTest, OrIsCommutative);
+
+void XorIsCommutative(const PredicateProto& a, const PredicateProto& b) {
+  EXPECT_EQ(Manager().Compile(XorProto(a, b)),
+            Manager().Compile(XorProto(b, a)));
+}
+FUZZ_TEST(SymbolicPacketManagerTest, XorIsCommutative);
 
 void DistributiveLawsHolds(const PredicateProto& a, const PredicateProto& b,
                            const PredicateProto& c) {
@@ -243,6 +261,13 @@ void DeMorgansLawsHolds(const PredicateProto& a, const PredicateProto& b) {
 }
 FUZZ_TEST(SymbolicPacketManagerTest, DeMorgansLawsHolds);
 
+void XorDefinition(const PredicateProto& a, const PredicateProto& b) {
+  EXPECT_EQ(Manager().Compile(XorProto(a, b)),
+            Manager().Compile(
+                OrProto(AndProto(NotProto(a), b), AndProto(a, NotProto(b)))));
+}
+FUZZ_TEST(SymbolicPacketManagerTest, XorDefinition);
+
 void AndIsAssociative(const PredicateProto& a, const PredicateProto& b,
                       const PredicateProto& c) {
   EXPECT_EQ(Manager().Compile(AndProto(a, AndProto(b, c))),
@@ -256,6 +281,13 @@ void OrIsAssociative(const PredicateProto& a, const PredicateProto& b,
             Manager().Compile(OrProto(OrProto(a, b), c)));
 }
 FUZZ_TEST(SymbolicPacketManagerTest, OrIsAssociative);
+
+void XorIsAssociative(const PredicateProto& a, const PredicateProto& b,
+                      const PredicateProto& c) {
+  EXPECT_EQ(Manager().Compile(XorProto(a, XorProto(b, c))),
+            Manager().Compile(XorProto(XorProto(a, b), c)));
+}
+FUZZ_TEST(SymbolicPacketManagerTest, XorIsAssociative);
 
 }  // namespace
 }  // namespace netkat

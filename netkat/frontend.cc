@@ -22,6 +22,11 @@ Predicate operator||(Predicate lhs, Predicate rhs) {
   return Predicate(OrProto(std::move(lhs).ToProto(), std::move(rhs).ToProto()));
 }
 
+Predicate Xor(Predicate lhs, Predicate rhs) {
+  return Predicate(
+      XorProto(std::move(lhs).ToProto(), std::move(rhs).ToProto()));
+}
+
 Predicate Predicate::True() { return Predicate(TrueProto()); }
 
 Predicate Predicate::False() { return Predicate(FalseProto()); }
