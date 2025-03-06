@@ -227,6 +227,10 @@ class SymbolicPacketManager {
   // set, but not in both. Also known as symmetric set difference.
   SymbolicPacket Xor(SymbolicPacket left, SymbolicPacket right);
 
+  // Return the set of packets whose given `field` gets satisfied by some
+  // predicate.
+  SymbolicPacket Exists(absl::string_view field, SymbolicPacket packet);
+
   // Returns a human-readable string representation of the given `packet`,
   // intended for debugging.
   [[nodiscard]] std::string ToString(SymbolicPacket packet) const;

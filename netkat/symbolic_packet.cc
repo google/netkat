@@ -79,7 +79,9 @@ bool SymbolicPacketManager::IsFullSet(SymbolicPacket packet) const {
 
 const SymbolicPacketManager::DecisionNode& SymbolicPacketManager::GetNodeOrDie(
     SymbolicPacket packet) const {
-  CHECK_LT(packet.node_index_, nodes_.size());  // Crash ok
+  CHECK_LT(packet.node_index_, nodes_.size())
+      << "Did you call this function on a leaf node (i.e. FullSet() or "
+         "EmptySet())? ";  // Crash ok
   return nodes_[packet.node_index_];
 }
 
@@ -333,6 +335,48 @@ SymbolicPacket SymbolicPacketManager::Xor(SymbolicPacket left,
                                           SymbolicPacket right) {
   // a (+) b == (!a && b) || (a && !b).
   return Or(And(Not(left), right), And(left, Not(right)));
+}
+
+SymbolicPacket SymbolicPacketManager::Exists(absl::string_view field,
+                                             SymbolicPacket packet) {
+  if (IsFullSet(packet) || IsEmptySet(packet)) return packet;
+
+  // Compute result the hard way.
+  const DecisionNode node = GetNodeOrDie(packet);
+  std::string node_field = field_manager_.GetFieldName(node.field);
+
+  // Case 1: `packet` is a member of `Exists(field, *)`: remove the current node
+  // and return the OR-ing of all branches.
+  if (node_field == field) {
+    SymbolicPacket result_packet = node.default_branch;
+    for (const auto& [_, branch] : node.branch_by_field_value) {
+      result_packet = Or(result_packet, branch);
+    }
+    return result_packet;
+  }
+
+  // Case 2: calls `packet` is a member of `Exists(field, *)` for all it's
+  // branches: keep current node and call `Exists` on all branches and exclude a
+  // branch if it is the same as the default branch.
+  SymbolicPacket default_branch = Exists(field, node.default_branch);
+  absl::FixedArray<std::pair<int, SymbolicPacket>>
+      non_default_branches_by_field_value(node.branch_by_field_value.size());
+  int num_branches = 0;
+  for (const auto& [value, branch] : node.branch_by_field_value) {
+    SymbolicPacket non_default_branch = Exists(field, branch);
+    if (non_default_branch == default_branch) continue;
+    non_default_branches_by_field_value[num_branches++] =
+        std::make_pair(value, non_default_branch);
+  }
+
+  return NodeToPacket(DecisionNode{
+      .field = node.field,
+      .default_branch = default_branch,
+      .branch_by_field_value{
+          non_default_branches_by_field_value.begin(),
+          non_default_branches_by_field_value.begin() + num_branches,
+      },
+  });
 }
 
 std::string SymbolicPacketManager::ToString(SymbolicPacket packet) const {
