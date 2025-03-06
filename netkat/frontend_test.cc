@@ -16,6 +16,7 @@ namespace netkat {
 namespace {
 
 using ::absl_testing::StatusIs;
+using ::fuzztest::Arbitrary;
 using ::fuzztest::ContainerOf;
 using ::gutil::EqualsProto;
 
@@ -120,6 +121,15 @@ void XorToProtoIsCorrect(Predicate lhs, Predicate rhs) {
 FUZZ_TEST(FrontEndTest, XorToProtoIsCorrect)
     .WithDomains(/*lhs=*/AtomicPredicateDomain(),
                  /*rhs=*/AtomicPredicateDomain());
+
+void ExistsToProtoIsCorrect(absl::string_view field, Predicate predicate) {
+  Predicate exists_pred = Exists(field, predicate);
+  EXPECT_THAT(exists_pred.ToProto(),
+              EqualsProto(ExistsProto(field, predicate.ToProto())));
+}
+FUZZ_TEST(FrontEndTest, ExistsToProtoIsCorrect)
+    .WithDomains(/*field=*/Arbitrary<absl::string_view>(),
+                 /*predicate=*/AtomicPredicateDomain());
 
 void OperationOrderIsPreserved(Predicate a, Predicate b, Predicate c) {
   Predicate abc = !(a || b) && c || a;

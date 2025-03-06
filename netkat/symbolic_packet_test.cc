@@ -366,5 +366,32 @@ void XorIsAssociative(const PredicateProto& a, const PredicateProto& b,
 }
 FUZZ_TEST(SymbolicPacketManagerTest, XorIsAssociative);
 
+TEST(SymbolicPacketManagerTest, ExistsOnPacketWithSingleFieldReturnsFullSet) {
+  const std::string field = "a";
+  EXPECT_EQ(Manager().Exists(field, Manager().Compile(MatchProto(field, 3))),
+            Manager().FullSet());
+}
+
+TEST(SymbolicPacketManagerTest, ExistOnFieldRemovesPacketFieldProperty) {
+  const std::string field = "a";
+  constexpr int value = 3;
+  // p = (a=3 && b=4) || (b!=5 && c=5)
+  SymbolicPacket symbolic_packet = Manager().Compile(
+      OrProto(AndProto(MatchProto(field, value), MatchProto("b", 4)),
+              AndProto(NotProto(MatchProto("b", 5)), MatchProto("c", 5))));
+  SymbolicPacket symbolic_packet_without_field =
+      Manager().Exists(field, symbolic_packet);
+  EXPECT_FALSE(Manager().Contains(symbolic_packet_without_field,
+                                  Packet{{field, value}}));
+}
+
+TEST(SymbolicPacketManagerTest, ExistsOnFieldNotInPacketIsIdentity) {
+  // p = (a=3 && b=4) || (b!=5 && c=5)
+  SymbolicPacket symbolic_packet = Manager().Compile(
+      OrProto(AndProto(MatchProto("a", 3), MatchProto("b", 4)),
+              AndProto(NotProto(MatchProto("b", 5)), MatchProto("c", 5))));
+  EXPECT_EQ(symbolic_packet, Manager().Exists("d", symbolic_packet));
+}
+
 }  // namespace
 }  // namespace netkat
