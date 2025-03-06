@@ -16,6 +16,7 @@ namespace netkat {
 namespace {
 
 using ::absl_testing::StatusIs;
+using ::fuzztest::Arbitrary;
 using ::fuzztest::ContainerOf;
 using ::gutil::EqualsProto;
 
@@ -53,6 +54,11 @@ PredicateProto InvalidPredicateProto(PredicateProto predicate_proto) {
       break;
     case PredicateProto::kNotOp:
       predicate_proto.mutable_not_op()->clear_negand();
+      break;
+      // Exists is invalid if `Exists::field` is empty.
+    case PredicateProto::kExistsOp:
+      predicate_proto.mutable_exists_op()->clear_field();
+      predicate_proto.mutable_exists_op()->clear_predicate();
       break;
     // Match is invalid if `Match::field` is empty.
     case PredicateProto::kMatch:
@@ -120,6 +126,15 @@ void XorToProtoIsCorrect(Predicate lhs, Predicate rhs) {
 FUZZ_TEST(FrontEndTest, XorToProtoIsCorrect)
     .WithDomains(/*lhs=*/AtomicPredicateDomain(),
                  /*rhs=*/AtomicPredicateDomain());
+
+void ExistsToProtoIsCorrect(absl::string_view field, Predicate predicate) {
+  Predicate exists_pred = Exists(field, predicate);
+  EXPECT_THAT(exists_pred.ToProto(),
+              EqualsProto(ExistsProto(field, predicate.ToProto())));
+}
+FUZZ_TEST(FrontEndTest, ExistsToProtoIsCorrect)
+    .WithDomains(/*field=*/Arbitrary<absl::string_view>(),
+                 /*predicate=*/AtomicPredicateDomain());
 
 void OperationOrderIsPreserved(Predicate a, Predicate b, Predicate c) {
   Predicate abc = !(a || b) && c || a;
