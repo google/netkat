@@ -27,6 +27,7 @@ cc_library(
     deps = [
         ":frontend",
         ":netkat_cc_proto",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_fuzztest//fuzztest",
         "@com_google_protobuf//:protobuf",
     ],

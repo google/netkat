@@ -98,6 +98,7 @@ class Predicate {
   friend Predicate operator||(Predicate lhs, Predicate rhs);
   friend Predicate operator!(Predicate predicate);
   friend Predicate Xor(Predicate lhs, Predicate rhs);
+  friend Predicate Exists(absl::string_view field, Predicate predicate);
 
   // Predicates that conceptually represent a packet being universally accepted
   // or denied/droped.

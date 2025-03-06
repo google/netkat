@@ -71,6 +71,13 @@ PredicateProto XorProto(PredicateProto left, PredicateProto right) {
   *xor_op.mutable_right() = std::move(right);
   return proto;
 }
+PredicateProto ExistsProto(absl::string_view field, PredicateProto predicate) {
+  PredicateProto proto;
+  PredicateProto::Exists& exists_op = *proto.mutable_exists_op();
+  *exists_op.mutable_field() = std::move(field);
+  *exists_op.mutable_predicate() = std::move(predicate);
+  return proto;
+}
 
 // -- Basic Policy constructors ------------------------------------------------
 
@@ -140,6 +147,10 @@ std::string AsShorthandString(PredicateProto predicate) {
       return absl::StrFormat("(%s (+) %s)",
                              AsShorthandString(predicate.xor_op().left()),
                              AsShorthandString(predicate.xor_op().right()));
+    case PredicateProto::kExistsOp:
+      return absl::StrFormat(
+          "exists(%s, %s)", predicate.exists_op().field(),
+          AsShorthandString(predicate.exists_op().predicate()));
     case PredicateProto::PREDICATE_NOT_SET:
       return "false";
   }
