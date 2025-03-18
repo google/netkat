@@ -64,7 +64,7 @@ message PredicateProto {
     Xor xor_op = 6;
   }
 
-  // A boolean constant, i.e. true or false. Equivalent to Accept/Drop.
+  // A boolean constant, i.e. true or false. Equivalent to Accept/Deny.
   message Bool {
     bool value = 1;
   }
@@ -103,8 +103,8 @@ message PredicateProto {
 }
 
 // The intermediate representation of a NetKAT policy.
-// By convention, uninitialized policies must be treated as "DENY" (i.e. the
-// false filter). We call the true filter "ACCEPT".
+// By convention, uninitialized policies must be treated as Deny (i.e. the
+// false filter). We call the true filter Accept.
 message PolicyProto {
   // A policy is defined as some combination of actions and predicates.
   oneof policy {

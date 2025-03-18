@@ -52,7 +52,7 @@ bool Evaluate(const PredicateProto& predicate, const Packet& packet);
 // input packet. Treats `Record` (aka `dup`) as no-op and does not keep track of
 // packet histories.
 //
-// Note: Uninitialized policies are considered DENY, returning the empty set.
+// Note: Uninitialized policies are treated as Deny, returning the empty set.
 absl::flat_hash_set<Packet> Evaluate(const PolicyProto& policy,
                                      const Packet& packet);
 

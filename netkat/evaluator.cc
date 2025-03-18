@@ -99,7 +99,7 @@ absl::flat_hash_set<Packet> Evaluate(const PolicyProto& policy,
       return result;
     }
     case PolicyProto::POLICY_NOT_SET:
-      // Unset policy is treated as DENY.
+      // Unset policy is treated as Deny.
       return {};
   }
 }
