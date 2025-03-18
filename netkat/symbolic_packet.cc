@@ -337,7 +337,7 @@ std::string SymbolicPacketManager::PrettyPrint(const DecisionNode& node) const {
                       absl::CEscape(field_manager_.GetFieldName(node.field)));
   for (const auto& [value, branch] : node.branch_by_field_value) {
     absl::StrAppendFormat(&result, "  %s == %d -> %v\n", field, value, branch);
-    if (!IsFullSet(branch) || !IsEmptySet(branch)) work_list.push_back(branch);
+    if (!IsFullSet(branch) && !IsEmptySet(branch)) work_list.push_back(branch);
   }
   SymbolicPacket fallthrough = node.default_branch;
   absl::StrAppendFormat(&result, "  %s == * -> %v\n", field, fallthrough);
