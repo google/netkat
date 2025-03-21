@@ -92,12 +92,12 @@ SymbolicPacket SymbolicPacketManager::NodeToPacket(DecisionNode&& node) {
 // expensive.
 #ifndef NDEBUG
   for (const auto& [value, branch] : node.branch_by_field_value) {
-    CHECK(branch != node.default_branch) << PrettyPrint(node);
+    CHECK(branch != node.default_branch) << ToString(node);
     if (!IsEmptySet(branch) && !IsFullSet(branch)) {
       auto& branch_node = GetNodeOrDie(branch);
       CHECK(branch_node.field > node.field) << absl::StreamFormat(
           "(%v > %v)\n---branch---\n%s\n---node---\n%s", branch_node.field,
-          node.field, PrettyPrint(branch), PrettyPrint(node));
+          node.field, ToString(branch), ToString(node));
     }
   }
 #endif
@@ -297,7 +297,7 @@ SymbolicPacket SymbolicPacketManager::Xor(SymbolicPacket left,
   return Or(And(Not(left), right), And(left, Not(right)));
 }
 
-std::string SymbolicPacketManager::PrettyPrint(SymbolicPacket packet) const {
+std::string SymbolicPacketManager::ToString(SymbolicPacket packet) const {
   std::string result;
   std::queue<SymbolicPacket> work_list{{packet}};
   absl::flat_hash_set<SymbolicPacket> visited{packet};
@@ -329,7 +329,7 @@ std::string SymbolicPacketManager::PrettyPrint(SymbolicPacket packet) const {
   return result;
 }
 
-std::string SymbolicPacketManager::PrettyPrint(const DecisionNode& node) const {
+std::string SymbolicPacketManager::ToString(const DecisionNode& node) const {
   std::string result;
   std::vector<SymbolicPacket> work_list;
   std::string field =
@@ -346,7 +346,7 @@ std::string SymbolicPacketManager::PrettyPrint(const DecisionNode& node) const {
   }
 
   for (const SymbolicPacket& branch : work_list) {
-    absl::StrAppend(&result, PrettyPrint(branch));
+    absl::StrAppend(&result, ToString(branch));
   }
 
   return result;

@@ -43,7 +43,7 @@ SymbolicPacketManager& Manager() {
 //
 // We define this much better override, which GoogleTest gives precedence to.
 void PrintTo(const SymbolicPacket& packet, std::ostream* os) {
-  *os << Manager().PrettyPrint(packet);
+  *os << Manager().ToString(packet);
 }
 
 namespace {
