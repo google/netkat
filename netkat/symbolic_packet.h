@@ -223,7 +223,7 @@ class SymbolicPacketManager {
 
   // Returns a human-readable string representation of the given `packet`,
   // intended for debugging.
-  [[nodiscard]] std::string PrettyPrint(SymbolicPacket packet) const;
+  [[nodiscard]] std::string ToString(SymbolicPacket packet) const;
 
   // Dynamically checks all class invariants. Exposed for testing only.
   absl::Status CheckInternalInvariants() const;
@@ -332,7 +332,7 @@ class SymbolicPacketManager {
   // is NOT expected to be called with these special packets that crash.
   const DecisionNode& GetNodeOrDie(SymbolicPacket packet) const;
 
-  [[nodiscard]] std::string PrettyPrint(const DecisionNode& node) const;
+  [[nodiscard]] std::string ToString(const DecisionNode& node) const;
 
   // The page size of the `nodes_` vector: 64 MiB or ~ 67 MB.
   // Chosen large enough to reduce the cost of dynamic allocation, and small
