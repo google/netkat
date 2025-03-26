@@ -67,10 +67,19 @@ class Predicate {
 
   // Returns the underlying IR proto.
   //
+  // If `Predicate` is an R-value, the underlying proto will be moved leaving
+  // this class in a moved state.
+  //
   // Users should generally not handle this proto directly, unless done with
   // policy building.
   PredicateProto ToProto() const& { return predicate_; }
   PredicateProto ToProto() && { return std::move(predicate_); }
+
+  // Returns a reference to the underlying IR proto.
+  //
+  // This reference will only be valid for either the lifetime of this class OR
+  // until the object is moved.
+  const PredicateProto& GetProto() const& { return predicate_; }
 
   // TODO(anthonyroy): Add a FromProto.
 
@@ -78,15 +87,11 @@ class Predicate {
   // exception of short circuiting.
   //
   // These objects by themselves are not intrinsically truthy, so a lack of
-  // short circuiting will not generate semantically different sequences.
+  // short circuiting will not generate semantically different programs.
   friend Predicate operator&&(Predicate lhs, Predicate rhs);
   friend Predicate operator||(Predicate lhs, Predicate rhs);
   friend Predicate operator!(Predicate predicate);
   friend Predicate Xor(Predicate lhs, Predicate rhs);
-
-  // Match operation for a Predicate. See below for the full definition. We
-  // utilize friend association to ensure program construction is well-formed.
-  friend Predicate Match(absl::string_view, int);
 
   // Predicates that conceptually represent a packet being universally accepted
   // or denied/droped.
@@ -95,9 +100,17 @@ class Predicate {
   static Predicate True();
   static Predicate False();
 
+  // Match operation for a Predicate. See below for the full definition. We
+  // utilize friend association to ensure program construction is well-formed.
+  friend Predicate Match(absl::string_view, int);
+
  private:
   // Hide default proto construction to hinder building of ill-formed programs.
   explicit Predicate(PredicateProto pred) : predicate_(std::move(pred)) {}
+
+  // Calling GetProto on an R-value predicate is at best inefficient and, more
+  // likely, a bug. Use ToProto instead.
+  const PredicateProto& GetProto() && = delete;
 
   PredicateProto predicate_;
 };
@@ -143,10 +156,24 @@ Predicate Match(absl::string_view field, int value);
 // built a unidirectional link policy here.
 class Policy {
  public:
+  // Returns the underlying IR proto.
+  //
+  // If `Policy` is an R-value, the underlying proto will be moved leaving
+  // this class in a moved state.
+  //
+  // Users should generally not handle this proto directly, unless done with
+  // policy building.
   PolicyProto ToProto() const& { return policy_; }
   PolicyProto ToProto() && { return std::move(policy_); }
 
-  // TODO: anthonyroy - Create a FromProto.
+  // Returns a reference to the underlying IR proto.
+  //
+  // This reference will only be valid for either the lifetime of this class OR
+  // until `ToProto()&&` is called (moving the underlying reference), whichever
+  // is sooner.
+  const PolicyProto& GetProto() const& { return policy_; }
+
+  // TODO(anthonyroy): Create a FromProto.
 
   // The set of operations that define a NetKAT policy. See below for each
   // operation's definition. We utilize friend association to ensure program
@@ -166,6 +193,10 @@ class Policy {
  private:
   // Hide default proto construction to hinder building of ill-formed programs.
   explicit Policy(PolicyProto policy) : policy_(std::move(policy)) {}
+
+  // Calling GetProto on an R-value policy is at best inefficient and, more
+  // likely, a bug. Use ToProto instead.
+  const PolicyProto& GetProto() && = delete;
 
   // The underlying IR that has been built thus far.
   PolicyProto policy_;
@@ -252,9 +283,9 @@ Policy Union(T&&... policies) {
 // For a practical example, we may assume some topology built of link actions.
 // E.g.
 //
-//   Predicate at_src_link = Match("switch", 0) && Match("port", 0);
-//   Policy go_to_dst = Sequence(Modify("switch", 1), Modify("port", 1));
-//   Policy link_action0 = Sequence(Filter(at_src_link), go_to_dst);
+//   Predicate at_src0_link0 = Match("switch", 0) && Match("port", 0);
+//   Policy go_to_dst1 = Sequence(Modify("switch", 1), Modify("port", 1));
+//   Policy link_action0 = Sequence(Filter(at_src0_link0), go_to_dst1);
 //   ...
 //   Policy topology = Union(link_action0, link_action1, ...);
 //
@@ -262,7 +293,7 @@ Policy Union(T&&... policies) {
 // network, reachable by some arbitrary switch.
 //
 //   Policy set_any_port = Union(Modify("port", 0), Modify("port", 1), ...);
-//   Policy walk_topology =
+//   Policy walk_topology_from_x =
 //        Sequence(Filter(Match("switch", X)), set_any_port, Iterate(topology));
 Policy Iterate(Policy policy);
 
