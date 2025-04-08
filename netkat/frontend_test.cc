@@ -13,6 +13,7 @@ namespace netkat {
 namespace {
 
 using ::fuzztest::ContainerOf;
+using ::gutil::EqualsProto;
 using ::netkat::netkat_test::AtomicDupFreePolicyDomain;
 using ::netkat::netkat_test::AtomicPredicateDomain;
 

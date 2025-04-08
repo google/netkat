@@ -23,7 +23,7 @@
 #include "fuzztest/fuzztest.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "gutil/status_matchers.h"
+#include "gutil/status_matchers.h"  // IWYU pragma: keep
 #include "netkat/evaluator.h"
 #include "netkat/netkat_proto_constructors.h"
 

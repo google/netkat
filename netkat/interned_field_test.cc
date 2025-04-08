@@ -19,7 +19,7 @@
 #include "absl/strings/str_cat.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "gutil/status_matchers.h"
+#include "gutil/status_matchers.h"  // IWYU pragma: keep
 
 namespace netkat {
 

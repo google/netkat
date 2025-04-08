@@ -48,10 +48,10 @@ cc_test(
         ":gtest_utils",
         ":netkat_cc_proto",
         ":netkat_proto_constructors",
-        "//gutil:proto_matchers",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_fuzztest//fuzztest",
         "@com_google_googletest//:gtest_main",
+        "@com_google_gutil//gutil:proto_matchers",
     ],
 )
 
@@ -75,7 +75,6 @@ cc_library(
         ":interned_field",
         ":netkat_cc_proto",
         ":paged_stable_vector",
-        "//gutil:status",
         "@com_google_absl//absl/container:fixed_array",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -84,6 +83,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_gutil//gutil:status",
     ],
 )
 
@@ -94,12 +94,12 @@ cc_test(
         ":evaluator",
         ":netkat_proto_constructors",
         ":symbolic_packet",
-        "//gutil:status_matchers",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
         "@com_google_fuzztest//fuzztest",
         "@com_google_googletest//:gtest_main",
+        "@com_google_gutil//gutil:status_matchers",
     ],
 )
 
@@ -146,10 +146,10 @@ cc_test(
     deps = [
         ":netkat_cc_proto",
         ":netkat_proto_constructors",
-        "//gutil:proto_matchers",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_fuzztest//fuzztest",
         "@com_google_googletest//:gtest_main",
+        "@com_google_gutil//gutil:proto_matchers",
     ],
 )
 
@@ -158,12 +158,12 @@ cc_library(
     srcs = ["interned_field.cc"],
     hdrs = ["interned_field.h"],
     deps = [
-        "//gutil:status",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_gutil//gutil:status",
     ],
 )
 
@@ -172,11 +172,11 @@ cc_test(
     srcs = ["interned_field_test.cc"],
     deps = [
         ":interned_field",
-        "//gutil:status_matchers",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
+        "@com_google_gutil//gutil:status_matchers",
     ],
 )
 

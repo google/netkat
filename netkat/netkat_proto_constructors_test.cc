@@ -24,7 +24,7 @@
 namespace netkat {
 namespace {
 
-using ::netkat::EqualsProto;
+using ::gutil::EqualsProto;
 
 TEST(TrueProtoTest, ReturnsTrueProto) {
   EXPECT_THAT(TrueProto(), EqualsProto(R"pb(bool_constant { value: true })pb"));
