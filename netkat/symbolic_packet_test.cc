@@ -56,7 +56,7 @@ using ::testing::StartsWith;
 class CheckSymbolicPacketManagerInvariantsOnTearDown
     : public testing::Environment {
  public:
-  ~CheckSymbolicPacketManagerInvariantsOnTearDown() override {}
+  ~CheckSymbolicPacketManagerInvariantsOnTearDown() override = default;
   void SetUp() override {}
   void TearDown() override { ASSERT_OK(Manager().CheckInternalInvariants()); }
 };
