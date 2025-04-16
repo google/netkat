@@ -19,7 +19,9 @@
 
 #include "absl/base/no_destructor.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/log/log.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_join.h"
 #include "fuzztest/fuzztest.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -48,6 +50,8 @@ void PrintTo(const SymbolicPacket& packet, std::ostream* os) {
 
 namespace {
 
+using ::testing::Ge;
+using ::testing::SizeIs;
 using ::testing::StartsWith;
 
 // After executing all tests, we check once that no invariants are violated, for
@@ -131,6 +135,41 @@ void CompilationPreservesSemantics(const PredicateProto& pred,
             Evaluate(pred, packet));
 }
 FUZZ_TEST(SymbolicPacketManagerTest, CompilationPreservesSemantics);
+
+void NonEmptyPacketSetGeneratesAtLeastOnePacket(const PredicateProto& pred) {
+  SymbolicPacket symbolic_packet = Manager().Compile(pred);
+  std::vector<Packet> concrete_packets =
+      Manager().GetConcretePackets(symbolic_packet);
+  if (!Manager().IsEmptySet(symbolic_packet)) {
+    EXPECT_THAT(concrete_packets, SizeIs(Ge(1)));
+  }
+}
+FUZZ_TEST(SymbolicPacketManagerTest,
+          NonEmptyPacketSetGeneratesAtLeastOnePacket);
+
+void PacketsFromPacketSetAreContainedInPacketSet(const PredicateProto& pred) {
+  SymbolicPacket symbolic_packet = Manager().Compile(pred);
+  std::vector<Packet> concrete_packets =
+      Manager().GetConcretePackets(symbolic_packet);
+  for (const Packet& concrete_packet : concrete_packets) {
+    EXPECT_TRUE(Manager().Contains(symbolic_packet, concrete_packet));
+  }
+}
+FUZZ_TEST(SymbolicPacketManagerTest,
+          PacketsFromPacketSetAreContainedInPacketSet);
+
+TEST(SymbolicPacketManagerTest,
+     PacketsFromPacketSetWithMultipleFieldsAreContainedInPacketSet) {
+  SymbolicPacket symbolic_packet = Manager().Or(
+      Manager().Or(Manager().Match("src_ip", 1), Manager().Match("dst_ip", 2)),
+      Manager().Match("src_port", 3));
+  std::vector<Packet> concrete_packets =
+      Manager().GetConcretePackets(symbolic_packet);
+  ASSERT_THAT(concrete_packets, SizeIs(3));
+  for (const Packet& concrete_packet : concrete_packets) {
+    EXPECT_TRUE(Manager().Contains(symbolic_packet, concrete_packet));
+  }
+}
 
 void EqualPredicatesCompileToEqualSymbolicPackets(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(pred), Manager().Compile(pred));
