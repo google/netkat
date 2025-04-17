@@ -82,6 +82,7 @@
 #include <cstdint>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/container/fixed_array.h"
 #include "absl/container/flat_hash_map.h"
@@ -191,6 +192,15 @@ class SymbolicPacketManager {
   // `concrete_packet`, or false otherwise.
   bool Contains(SymbolicPacket symbolic_packet,
                 const Packet& concrete_packet) const;
+
+  // Returns the “representative” list of packets contained in the packet set,
+  // for use in testing only. The exact definition of representative depends on
+  // implementation details.
+  //
+  // The only formal guarantees we make are as follows :
+  // * If the set is non-empty, we return at least one packet.
+  // * Every packet we return is contained in the set.
+  std::vector<Packet> GetConcretePackets(SymbolicPacket symbolic_packet) const;
 
   // Compiles the given `PredicateProto` into a `SymbolicPacket` that
   // represents the set of packets satisfying the predicate.
@@ -324,6 +334,12 @@ class SymbolicPacketManager {
   static_assert(alignof(DecisionNode) == 8);
 
   SymbolicPacket NodeToPacket(DecisionNode&& node);
+
+  // Helper function for GetConcretePackets that recursively generates a list of
+  // concrete packets that are contained in the given symbolic packet.
+  void GetConcretePacketsDfs(const SymbolicPacket& symbolic_packet,
+                             Packet& current_packet,
+                             std::vector<Packet>& result) const;
 
   // Returns the `DecisionNode` corresponding to the given `SymbolicPacket`, or
   // crashes if the `packet` is `EmptySet()` or `FullSet()`.
