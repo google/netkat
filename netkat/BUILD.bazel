@@ -43,6 +43,7 @@ cc_library(
 cc_test(
     name = "frontend_test",
     srcs = ["frontend_test.cc"],
+    shard_count = 8,
     deps = [
         ":frontend",
         ":gtest_utils",
@@ -58,6 +59,7 @@ cc_test(
 cc_test(
     name = "netkat_test",
     srcs = ["netkat_test.cc"],
+    shard_count = 8,
     deps = [
         ":netkat_cc_proto",
         "@com_google_absl//absl/log",
@@ -90,6 +92,7 @@ cc_library(
 cc_test(
     name = "symbolic_packet_test",
     srcs = ["symbolic_packet_test.cc"],
+    shard_count = 8,
     deps = [
         ":evaluator",
         ":netkat_proto_constructors",
@@ -118,6 +121,7 @@ cc_library(
 cc_test(
     name = "evaluator_test",
     srcs = ["evaluator_test.cc"],
+    shard_count = 8,
     deps = [
         ":evaluator",
         ":netkat_cc_proto",
@@ -143,6 +147,7 @@ cc_library(
 cc_test(
     name = "netkat_proto_constructors_test",
     srcs = ["netkat_proto_constructors_test.cc"],
+    shard_count = 8,
     deps = [
         ":netkat_cc_proto",
         ":netkat_proto_constructors",
@@ -170,6 +175,7 @@ cc_library(
 cc_test(
     name = "interned_field_test",
     srcs = ["interned_field_test.cc"],
+    shard_count = 4,
     deps = [
         ":interned_field",
         "@com_google_absl//absl/base:no_destructor",
@@ -198,6 +204,7 @@ cc_library(
 cc_test(
     name = "analysis_engine_test",
     srcs = ["analysis_engine_test.cc"],
+    shard_count = 2,
     deps = [
         ":analysis_engine",
         ":frontend",
@@ -208,6 +215,7 @@ cc_test(
 cc_test(
     name = "paged_stable_vector_test",
     srcs = ["paged_stable_vector_test.cc"],
+    shard_count = 4,
     deps = [
         ":paged_stable_vector",
         "@com_google_fuzztest//fuzztest",
