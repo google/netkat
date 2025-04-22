@@ -82,6 +82,7 @@
 #include <cstdint>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/container/fixed_array.h"
 #include "absl/container/flat_hash_map.h"
@@ -225,8 +226,18 @@ class SymbolicPacketManager {
   // intended for debugging.
   [[nodiscard]] std::string ToString(SymbolicPacket packet) const;
 
+  // -- For Testing Only -------------------------------------------------------
+
   // Dynamically checks all class invariants. Exposed for testing only.
   absl::Status CheckInternalInvariants() const;
+
+  // Returns an arbitrary list of concrete packets that are contained in the
+  // given symbolic_packet.
+  //
+  // This list is not guaranteed to be exhaustive. The only guarantees are:
+  // * If the set is non-empty, we return at least one packet.
+  // * Every packet we return is contained in the set.
+  std::vector<Packet> GetConcretePackets(SymbolicPacket symbolic_packet) const;
 
   // TODO(smolkaj): There are many additional operations supported by this data
   // structure, but not currently implemented. Add them as needed. Examples:
@@ -324,6 +335,13 @@ class SymbolicPacketManager {
   static_assert(alignof(DecisionNode) == 8);
 
   SymbolicPacket NodeToPacket(DecisionNode&& node);
+
+  // Helper function for GetConcretePackets that recursively generates a list of
+  // concrete packets that are contained in the given symbolic packet. This
+  // function is only used for testing.
+  void GetConcretePacketsDfs(const SymbolicPacket& symbolic_packet,
+                             Packet& current_packet,
+                             std::vector<Packet>& result) const;
 
   // Returns the `DecisionNode` corresponding to the given `SymbolicPacket`, or
   // crashes if the `packet` is `EmptySet()` or `FullSet()`.

@@ -395,4 +395,32 @@ absl::Status SymbolicPacketManager::CheckInternalInvariants() const {
   return absl::OkStatus();
 }
 
+void SymbolicPacketManager::GetConcretePacketsDfs(
+    const SymbolicPacket& symbolic_packet, Packet& current_packet,
+    std::vector<Packet>& result) const {
+  if (IsEmptySet(symbolic_packet)) return;
+  if (IsFullSet(symbolic_packet)) {
+    result.push_back(current_packet);
+    return;
+  }
+
+  const DecisionNode& node = GetNodeOrDie(symbolic_packet);
+  std::string node_field = field_manager_.GetFieldName(node.field);
+
+  GetConcretePacketsDfs(node.default_branch, current_packet, result);
+  for (const auto& [value, branch] : node.branch_by_field_value) {
+    current_packet[node_field] = value;
+    GetConcretePacketsDfs(branch, current_packet, result);
+  }
+  current_packet.erase(node_field);
+}
+
+std::vector<Packet> SymbolicPacketManager::GetConcretePackets(
+    SymbolicPacket symbolic_packet) const {
+  std::vector<Packet> result;
+  Packet current_packet;
+  GetConcretePacketsDfs(symbolic_packet, current_packet, result);
+  return result;
+}
+
 }  // namespace netkat

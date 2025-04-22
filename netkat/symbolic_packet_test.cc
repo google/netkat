@@ -48,6 +48,8 @@ void PrintTo(const SymbolicPacket& packet, std::ostream* os) {
 
 namespace {
 
+using ::testing::Ge;
+using ::testing::SizeIs;
 using ::testing::StartsWith;
 
 // After executing all tests, we check once that no invariants are violated, for
@@ -131,6 +133,38 @@ void CompilationPreservesSemantics(const PredicateProto& pred,
             Evaluate(pred, packet));
 }
 FUZZ_TEST(SymbolicPacketManagerTest, CompilationPreservesSemantics);
+
+void GetConcretePacketsReturnsNonEmptyListForNonEmptySet(
+    const PredicateProto& pred) {
+  SymbolicPacket symbolic_packet = Manager().Compile(pred);
+  if (!Manager().IsEmptySet(symbolic_packet)) {
+    EXPECT_THAT(Manager().GetConcretePackets(symbolic_packet), SizeIs(Ge(1)));
+  }
+}
+FUZZ_TEST(SymbolicPacketManagerTest,
+          GetConcretePacketsReturnsNonEmptyListForNonEmptySet);
+
+void GetConcretePacketsReturnsPacketsInSet(const PredicateProto& pred) {
+  SymbolicPacket symbolic_packet = Manager().Compile(pred);
+  for (const Packet& concrete_packet :
+       Manager().GetConcretePackets(symbolic_packet)) {
+    EXPECT_TRUE(Manager().Contains(symbolic_packet, concrete_packet));
+  }
+}
+FUZZ_TEST(SymbolicPacketManagerTest, GetConcretePacketsReturnsPacketsInSet);
+
+TEST(SymbolicPacketManagerTest,
+     PacketsFromPacketSetWithMultipleFieldsAreContainedInPacketSet) {
+  // p = (a=3 && b=4) || (b!=5 && c=5)
+  SymbolicPacket symbolic_packet = Manager().Compile(
+      OrProto(AndProto(MatchProto("a", 3), MatchProto("b", 4)),
+              AndProto(NotProto(MatchProto("b", 5)), MatchProto("c", 5))));
+  std::vector<Packet> concrete_packets =
+      Manager().GetConcretePackets(symbolic_packet);
+  for (const Packet& concrete_packet : concrete_packets) {
+    EXPECT_TRUE(Manager().Contains(symbolic_packet, concrete_packet));
+  }
+}
 
 void EqualPredicatesCompileToEqualSymbolicPackets(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(pred), Manager().Compile(pred));
