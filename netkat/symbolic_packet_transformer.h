@@ -98,6 +98,9 @@ class [[nodiscard]] SymbolicPacketTransformer {
   }
 
   // Formatting, see https://abseil.io/docs/cpp/guides/abslstringify.
+  // NOTE: These functions do not produce particularly useful output. Instead,
+  // use `SymbolicPacketTransformerManager::ToString(transformer)` whenever
+  // possible.
   template <typename Sink>
   friend void AbslStringify(Sink& sink, SymbolicPacketTransformer transformer) {
     absl::Format(&sink, "%s", transformer.ToString());

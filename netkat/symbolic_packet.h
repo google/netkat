@@ -135,6 +135,8 @@ class [[nodiscard]] SymbolicPacket {
   }
 
   // Formatting, see https://abseil.io/docs/cpp/guides/abslstringify.
+  // NOTE: These functions do not produce particularly useful output. Instead,
+  // use `SymbolicPacketManager::ToString(packet)` whenever possible.
   template <typename Sink>
   friend void AbslStringify(Sink& sink, SymbolicPacket packet) {
     absl::Format(&sink, "%s", packet.ToString());
