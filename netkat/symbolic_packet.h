@@ -102,7 +102,7 @@ namespace netkat {
 // efficiently encode typical large and even infinite sets seen in practice.
 //
 // The APIs of this object are almost entirely defined as methods of the
-// companion class `SymbolicPacketManager`. See the section "Why have a maanger
+// companion class `SymbolicPacketManager`. See the section "Why have a manager
 // class?" at the top of the file to learn why.
 //
 // CAUTION: Each `SymbolicPacket` is implicitly associated with the manager
@@ -373,6 +373,9 @@ class SymbolicPacketManager {
 
   // INVARIANT: All `DecisionNode` fields are interned by this manager.
   InternedFieldManager field_manager_;
+
+  // Allow `SymbolicPacketTransformerManager` to access private methods.
+  friend class SymbolicPacketTransformerManager;
 };
 
 }  // namespace netkat

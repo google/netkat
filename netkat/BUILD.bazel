@@ -212,6 +212,31 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "symbolic_packet_transformer",
+    srcs = ["symbolic_packet_transformer.cc"],
+    hdrs = ["symbolic_packet_transformer.h"],
+    deps = [
+        ":evaluator",
+        ":interned_field",
+        ":netkat_cc_proto",
+        ":paged_stable_vector",
+        ":symbolic_packet",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/container:btree",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/functional:any_invocable",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_gutil//gutil:status",
+    ],
+)
+
 cc_test(
     name = "paged_stable_vector_test",
     srcs = ["paged_stable_vector_test.cc"],
@@ -220,5 +245,24 @@ cc_test(
         ":paged_stable_vector",
         "@com_google_fuzztest//fuzztest",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "symbolic_packet_transformer_test",
+    srcs = ["symbolic_packet_transformer_test.cc"],
+    deps = [
+        ":evaluator",
+        ":netkat_cc_proto",
+        ":netkat_proto_constructors",
+        ":symbolic_packet",
+        ":symbolic_packet_transformer",
+        "@com_google_absl//absl/base:no_destructor",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/strings",
+        "@com_google_fuzztest//fuzztest",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_gutil//gutil:status_matchers",
     ],
 )
