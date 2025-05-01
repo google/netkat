@@ -156,7 +156,19 @@ class Policy {
   PolicyProto ToProto() const& { return policy_; }
   PolicyProto ToProto() && { return std::move(policy_); }
 
-  // TODO: anthonyroy - Create a FromProto.
+  // Creates a Policy from `policy_proto`.
+  // If `policy_proto` is ill-formed, returns InvalidArgument error.
+  // A `policy_proto` is considered valid if:
+  //   - An empty PolicyProto is invalid.
+  //   - For scalar `policy` OneOf field:
+  //     - `record` is valid.
+  //     - `modification` is valid if `Modification::field` is not empty.
+  //     - `filter` is valid if `filter` is a valid PredicateProto (see
+  //     definition above).
+  //   - For recursive OneOf fields made up of PolicyProto(s), it is valid if
+  //     the member fields are present and valid. For example, `sequence_op` is
+  //     valid if `sequence_op::left` and `sequence_op::right` are valid.
+  static absl::StatusOr<Policy> FromProto(PolicyProto policy_proto);
 
   // The set of operations that define a NetKAT policy. See below for each
   // operation's definition. We utilize friend association to ensure program

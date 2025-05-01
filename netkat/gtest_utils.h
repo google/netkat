@@ -34,6 +34,12 @@ namespace netkat::netkat_test {
 // defined to mean false.
 fuzztest::Domain<PredicateProto> ArbitraryValidPredicateProto();
 
+// Returns a FUZZ_TEST domain for an arbitrary valid PolicyProto.
+// See netkat::Policy::FromProto for the definition of a valid PolicyProto.
+// Nonetheless, invalid protos are accepted in the backend where empty is
+// defined to mean DENY policy.
+fuzztest::Domain<PolicyProto> ArbitraryValidPolicyProto();
+
 // Returns a FUZZ_TEST domain for an arbitrary, atomic Predicate. I.e., the
 // predicate may be any of: an arbitrary Match, or the True/False predicates.
 fuzztest::Domain<Predicate> AtomicPredicateDomain();

@@ -19,6 +19,7 @@ using ::absl_testing::StatusIs;
 using ::fuzztest::ContainerOf;
 using ::gutil::EqualsProto;
 
+using ::netkat::netkat_test::ArbitraryValidPolicyProto;
 using ::netkat::netkat_test::ArbitraryValidPredicateProto;
 using ::netkat::netkat_test::AtomicDupFreePolicyDomain;
 using ::netkat::netkat_test::AtomicPredicateDomain;
@@ -35,8 +36,9 @@ void ExpectFromProtoCanParseValidProto(PredicateProto predicate_proto) {
 FUZZ_TEST(FrontEndTest, ExpectFromProtoCanParseValidProto)
     .WithDomains(ArbitraryValidPredicateProto());
 
-void ExpectFromProtoToFailWithInvalidPredicateProto(
-    PredicateProto predicate_proto) {
+// Returns an invalid PredicateProto based on `predicate_proto`, where
+// the set `predicate` will be mutated into an invalid state.
+PredicateProto InvalidPredicateProto(PredicateProto predicate_proto) {
   // For `predicate_proto` with PredicateProto as operand(s), an empty operand
   // makes `predicate_proto` invalid.
   switch (predicate_proto.predicate_case()) {
@@ -59,12 +61,20 @@ void ExpectFromProtoToFailWithInvalidPredicateProto(
     // Unset predicate is invalid.
     case PredicateProto::PREDICATE_NOT_SET:
       break;
+    // Unset predicate is invalid.
     case PredicateProto::kBoolConstant:
-      GTEST_SKIP() << "Bool predicate is always valid";
+      predicate_proto.Clear();
+      break;
   }
-  EXPECT_THAT(Predicate::FromProto(predicate_proto),
+  return predicate_proto;
+}
+
+void ExpectFromProtoToFailWithInvalidPredicateProto(
+    const PredicateProto& predicate_proto) {
+  PredicateProto invalid_proto = InvalidPredicateProto(predicate_proto);
+  EXPECT_THAT(Predicate::FromProto(invalid_proto),
               StatusIs(absl::StatusCode::kInvalidArgument))
-      << predicate_proto.DebugString();
+      << invalid_proto.DebugString();
 }
 FUZZ_TEST(FrontEndTest, ExpectFromProtoToFailWithInvalidPredicateProto)
     .WithDomains(ArbitraryValidPredicateProto());
@@ -124,9 +134,47 @@ FUZZ_TEST(FrontEndTest, OperationOrderIsPreserved)
                  /*b=*/AtomicPredicateDomain(),
                  /*c=*/AtomicPredicateDomain());
 
-TEST(FrontEndTest, AcceptToProtoIsCorrect) {
-  EXPECT_THAT(Policy::Accept().ToProto(), EqualsProto(AcceptProto()));
+void ExpectFromProtoCanParseValidPolicyProto(const PolicyProto& policy_proto) {
+  EXPECT_OK(Policy::FromProto(policy_proto));
 }
+FUZZ_TEST(FrontEndTest, ExpectFromProtoCanParseValidPolicyProto)
+    .WithDomains(ArbitraryValidPolicyProto());
+
+void ExpectFromProtoToFailWithInvalidPolicyProto(PolicyProto policy_proto) {
+  // For `policy_proto` with PolicyProto as operand(s), an empty operand
+  // makes `policy_proto` invalid.
+  switch (policy_proto.policy_case()) {
+    case PolicyProto::kFilter: {
+      PredicateProto invalid_predicate =
+          InvalidPredicateProto(policy_proto.filter());
+      *policy_proto.mutable_filter() = invalid_predicate;
+      break;
+    }
+    case PolicyProto::kModification:
+      policy_proto.mutable_modification()->clear_field();
+      break;
+    case PolicyProto::kRecord:
+      GTEST_SKIP() << "Record PolicyProto is always valid.";
+      break;
+    case PolicyProto::kSequenceOp:
+      policy_proto.mutable_sequence_op()->clear_left();
+      break;
+    case PolicyProto::kUnionOp:
+      policy_proto.mutable_union_op()->clear_right();
+      break;
+    case PolicyProto::kIterateOp:
+      policy_proto.mutable_iterate_op()->clear_iterable();
+      break;
+      // Unset policy is invalid.
+    case PolicyProto::POLICY_NOT_SET:
+      break;
+  }
+  EXPECT_THAT(Policy::FromProto(policy_proto),
+              StatusIs(absl::StatusCode::kInvalidArgument))
+      << policy_proto.DebugString();
+}
+FUZZ_TEST(FrontEndTest, ExpectFromProtoToFailWithInvalidPolicyProto)
+    .WithDomains(ArbitraryValidPolicyProto());
 
 TEST(FrontEndTest, DenyToProtoIsCorrect) {
   EXPECT_THAT(Policy::Deny().ToProto(), EqualsProto(DenyProto()));

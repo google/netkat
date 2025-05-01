@@ -91,6 +91,50 @@ Predicate Match(absl::string_view field, int value) {
   return Predicate(MatchProto(field, value));
 }
 
+absl::Status RecursivelyCheckIsValid(const PolicyProto& policy_proto) {
+  switch (policy_proto.policy_case()) {
+    case PolicyProto::kFilter:
+      return RecursivelyCheckIsValid(policy_proto.filter());
+    case PolicyProto::kModification:
+      if (policy_proto.modification().field().empty()) {
+        return absl::InvalidArgumentError(
+            "PolicyProto::Modification::field is invalid because it is empty.");
+      }
+      return absl::OkStatus();
+    case PolicyProto::kRecord:
+      return absl::OkStatus();
+    case PolicyProto::kSequenceOp:
+      RETURN_IF_ERROR(
+          RecursivelyCheckIsValid(policy_proto.sequence_op().left()))
+              .SetPrepend()
+          << "PolicyProto::SequenceOp::left is invalid: ";
+      RETURN_IF_ERROR(
+          RecursivelyCheckIsValid(policy_proto.sequence_op().right()))
+              .SetPrepend()
+          << "PolicyProto::SequenceOp::right is invalid: ";
+      return absl::OkStatus();
+    case PolicyProto::kUnionOp:
+      RETURN_IF_ERROR(RecursivelyCheckIsValid(policy_proto.union_op().left()))
+              .SetPrepend()
+          << "PolicyProto::UnionOp::left is invalid: ";
+      RETURN_IF_ERROR(RecursivelyCheckIsValid(policy_proto.union_op().right()))
+              .SetPrepend()
+          << "PolicyProto::UnionOp::right is invalid: ";
+      return absl::OkStatus();
+    case PolicyProto::kIterateOp:
+      RETURN_IF_ERROR(
+          RecursivelyCheckIsValid(policy_proto.iterate_op().iterable()))
+          << "PolicyProto::Iterate::policy is invalid: ";
+      return absl::OkStatus();
+    case PolicyProto::POLICY_NOT_SET:
+      return absl::InvalidArgumentError("Unset Policy case is invalid");
+  }
+}
+absl::StatusOr<Policy> Policy::FromProto(PolicyProto policy_proto) {
+  RETURN_IF_ERROR(RecursivelyCheckIsValid(policy_proto));
+  return Policy(std::move(policy_proto));
+}
+
 Policy Modify(absl::string_view field, int new_value) {
   return Policy(ModificationProto(field, new_value));
 }
