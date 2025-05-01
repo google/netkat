@@ -25,7 +25,9 @@ cc_library(
     hdrs = ["gtest_utils.h"],
     deps = [
         ":frontend",
+        ":netkat_cc_proto",
         "@com_google_fuzztest//fuzztest",
+        "@com_google_protobuf//:protobuf",
     ],
 )
 
@@ -36,7 +38,10 @@ cc_library(
     deps = [
         ":netkat_cc_proto",
         ":netkat_proto_constructors",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_gutil//gutil:status",
     ],
 )
 
@@ -49,10 +54,13 @@ cc_test(
         ":gtest_utils",
         ":netkat_cc_proto",
         ":netkat_proto_constructors",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_fuzztest//fuzztest",
         "@com_google_googletest//:gtest_main",
         "@com_google_gutil//gutil:proto_matchers",
+        "@com_google_gutil//gutil:status_matchers",
     ],
 )
 

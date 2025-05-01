@@ -1,10 +1,13 @@
 #include "netkat/frontend.h"
 
+#include "absl/status/status.h"
+#include "absl/status/status_matchers.h"
 #include "absl/strings/string_view.h"
 #include "fuzztest/fuzztest.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "gutil/proto_matchers.h"
+#include "gutil/status_matchers.h"  // IWYU pragma: keep
 #include "netkat/gtest_utils.h"
 #include "netkat/netkat.pb.h"
 #include "netkat/netkat_proto_constructors.h"
@@ -12,8 +15,11 @@
 namespace netkat {
 namespace {
 
+using ::absl_testing::StatusIs;
 using ::fuzztest::ContainerOf;
 using ::gutil::EqualsProto;
+
+using ::netkat::netkat_test::ArbitraryValidPredicateProto;
 using ::netkat::netkat_test::AtomicDupFreePolicyDomain;
 using ::netkat::netkat_test::AtomicPredicateDomain;
 
@@ -22,6 +28,46 @@ void MatchToProtoIsCorrect(absl::string_view field, int value) {
               EqualsProto(MatchProto(field, value)));
 }
 FUZZ_TEST(FrontEndTest, MatchToProtoIsCorrect);
+
+void ExpectFromProtoCanParseValidProto(PredicateProto predicate_proto) {
+  EXPECT_OK(Predicate::FromProto(predicate_proto));
+}
+FUZZ_TEST(FrontEndTest, ExpectFromProtoCanParseValidProto)
+    .WithDomains(ArbitraryValidPredicateProto());
+
+void ExpectFromProtoToFailWithInvalidPredicateProto(
+    PredicateProto predicate_proto) {
+  // For `predicate_proto` with PredicateProto as operand(s), an empty operand
+  // makes `predicate_proto` invalid.
+  switch (predicate_proto.predicate_case()) {
+    case PredicateProto::kAndOp:
+      predicate_proto.mutable_and_op()->clear_left();
+      break;
+    case PredicateProto::kOrOp:
+      predicate_proto.mutable_or_op()->clear_right();
+      break;
+    case PredicateProto::kXorOp:
+      predicate_proto.mutable_xor_op()->clear_left();
+      break;
+    case PredicateProto::kNotOp:
+      predicate_proto.mutable_not_op()->clear_negand();
+      break;
+    // Match is invalid if `Match::field` is empty.
+    case PredicateProto::kMatch:
+      predicate_proto.mutable_match()->clear_field();
+      break;
+    // Unset predicate is invalid.
+    case PredicateProto::PREDICATE_NOT_SET:
+      break;
+    case PredicateProto::kBoolConstant:
+      GTEST_SKIP() << "Bool predicate is always valid";
+  }
+  EXPECT_THAT(Predicate::FromProto(predicate_proto),
+              StatusIs(absl::StatusCode::kInvalidArgument))
+      << predicate_proto.DebugString();
+}
+FUZZ_TEST(FrontEndTest, ExpectFromProtoToFailWithInvalidPredicateProto)
+    .WithDomains(ArbitraryValidPredicateProto());
 
 TEST(FrontEndTest, TrueToProtoIsCorrect) {
   EXPECT_THAT(Predicate::True().ToProto(), EqualsProto(TrueProto()));

@@ -3,11 +3,67 @@
 #include <utility>
 #include <vector>
 
+#include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
+#include "gutil/status.h"
 #include "netkat/netkat.pb.h"
 #include "netkat/netkat_proto_constructors.h"
-
 namespace netkat {
+
+// Recursively checks whether `predicate_proto` is valid.
+absl::Status RecursivelyCheckIsValid(const PredicateProto& predicate_proto) {
+  switch (predicate_proto.predicate_case()) {
+    case PredicateProto::PREDICATE_NOT_SET:
+      return absl::InvalidArgumentError("Unset Predicate case is invalid");
+    case PredicateProto::kMatch:
+      if (predicate_proto.match().field().empty()) {
+        return absl::InvalidArgumentError(
+            "PredicateProto::Match::field is invalid because it is empty.");
+      }
+      return absl::OkStatus();
+    case PredicateProto::kBoolConstant:
+      return absl::OkStatus();
+    case PredicateProto::kAndOp: {
+      RETURN_IF_ERROR(RecursivelyCheckIsValid(predicate_proto.and_op().left()))
+              .SetPrepend()
+          << "PredicateProto::And's lhs is invalid: ";
+      RETURN_IF_ERROR(RecursivelyCheckIsValid(predicate_proto.and_op().right()))
+              .SetPrepend()
+          << "PredicateProto::And's rhs is invalid: ";
+      return absl::OkStatus();
+    }
+    case PredicateProto::kOrOp: {
+      RETURN_IF_ERROR(RecursivelyCheckIsValid(predicate_proto.or_op().left()))
+              .SetPrepend()
+          << "PredicateProto::Or's lhs is invalid: ";
+      RETURN_IF_ERROR(RecursivelyCheckIsValid(predicate_proto.or_op().right()))
+              .SetPrepend()
+          << "PredicateProto::Or's rhs is invalid: ";
+      return absl::OkStatus();
+    }
+    case PredicateProto::kXorOp: {
+      RETURN_IF_ERROR(RecursivelyCheckIsValid(predicate_proto.xor_op().left()))
+              .SetPrepend()
+          << "PredicateProto::Xor's lhs is invalid: ";
+      RETURN_IF_ERROR(RecursivelyCheckIsValid(predicate_proto.xor_op().right()))
+              .SetPrepend()
+          << "PredicateProto::Xor's rhs is invalid: ";
+      return absl::OkStatus();
+    }
+    case PredicateProto::kNotOp:
+      RETURN_IF_ERROR(
+          RecursivelyCheckIsValid(predicate_proto.not_op().negand()))
+              .SetPrepend()
+          << "PredicateProto::Not's negand is invalid: ";
+      return absl::OkStatus();
+  }
+}
+
+absl::StatusOr<Predicate> Predicate::FromProto(PredicateProto predicate_proto) {
+  RETURN_IF_ERROR(RecursivelyCheckIsValid(predicate_proto));
+  return Predicate(std::move(predicate_proto));
+}
 
 Predicate operator!(Predicate predicate) {
   return Predicate(NotProto(std::move(predicate).ToProto()));

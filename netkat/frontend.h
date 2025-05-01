@@ -29,6 +29,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "netkat/netkat.pb.h"
 
@@ -62,8 +63,19 @@ namespace netkat {
 class Predicate {
  public:
   // We currently only allow predicate construction through helpers, e.g.
-  // `Match`, `True`, `False`.
+  // `Match`, `True`, `False` or `Predicate::FromProto(...)`.
   Predicate() = delete;
+
+  // Creates a Predicate from `predicate_proto`.
+  // If `predicate_proto` is ill-formed, returns InvalidArgument error.
+  // A `predicate_proto` is considered valid if:
+  //    - For scalar OneOf fields
+  //      - `bool_constant` is valid
+  //      - `match` is valid if `match::field` is not empty.
+  //    - For Recursive OneOf fields made up of PredicateProto, it is valid if
+  //      the member fields are present and valid. For example, `and_op` is
+  //      valid if `and_op::left` and `and_op::right` are valid.
+  static absl::StatusOr<Predicate> FromProto(PredicateProto predicate_proto);
 
   // Returns the underlying IR proto.
   //
@@ -71,8 +83,6 @@ class Predicate {
   // policy building.
   PredicateProto ToProto() const& { return predicate_; }
   PredicateProto ToProto() && { return std::move(predicate_); }
-
-  // TODO(anthonyroy): Add a FromProto.
 
   // Logical operators. These perform exactly as expected, with the
   // exception of short circuiting.
