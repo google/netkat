@@ -195,6 +195,9 @@ class SymbolicPacketManager {
   bool Contains(SymbolicPacket symbolic_packet,
                 const Packet& concrete_packet) const;
 
+  // Returns a dot string representation of the given `symbolic_packet`.
+  std::string ToDot(const SymbolicPacket& symbolic_packet) const;
+
   // Compiles the given `PredicateProto` into a `SymbolicPacket` that
   // represents the set of packets satisfying the predicate.
   SymbolicPacket Compile(const PredicateProto& pred);

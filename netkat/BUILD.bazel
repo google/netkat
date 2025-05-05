@@ -106,11 +106,13 @@ cc_test(
         ":netkat_proto_constructors",
         ":symbolic_packet",
         "@com_google_absl//absl/base:no_destructor",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
         "@com_google_fuzztest//fuzztest",
         "@com_google_googletest//:gtest_main",
         "@com_google_gutil//gutil:status_matchers",
+        "@com_googlesource_code_re2//:re2",
     ],
 )
 

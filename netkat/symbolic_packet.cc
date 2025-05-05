@@ -130,6 +130,44 @@ bool SymbolicPacketManager::Contains(SymbolicPacket symbolic_packet,
   return Contains(node.default_branch, concrete_packet);
 }
 
+std::string SymbolicPacketManager::ToDot(
+    const SymbolicPacket& symbolic_packet) const {
+  std::string result = "digraph {\n";
+  std::queue<SymbolicPacket> work_list;
+  work_list.push(symbolic_packet);
+  absl::flat_hash_set<SymbolicPacket> visited = {symbolic_packet};
+  absl::StrAppendFormat(&result, "  %d [label=\"T\" shape=box]\n",
+                        SentinelNodeIndex::kFullSet);
+  absl::StrAppendFormat(&result, "  %d [label=\"F\" shape=box]\n",
+                        SentinelNodeIndex::kEmptySet);
+
+  while (!work_list.empty()) {
+    SymbolicPacket packet = work_list.front();
+    work_list.pop();
+    if (IsFullSet(packet) || IsEmptySet(packet)) continue;
+
+    const DecisionNode& node = GetNodeOrDie(packet);
+    absl::StrAppendFormat(&result, "  %d [label=\"%s\"]\n", packet.node_index_,
+                          field_manager_.GetFieldName(node.field));
+
+    for (const auto& [value, branch] : node.branch_by_field_value) {
+      absl::StrAppendFormat(&result, "  %d -> %d [label=\"%d\"]\n",
+                            packet.node_index_, branch.node_index_, value);
+      if (IsFullSet(branch) || IsEmptySet(branch)) continue;
+      bool new_branch = visited.insert(branch).second;
+      if (new_branch) work_list.push(branch);
+    }
+    SymbolicPacket fallthrough = node.default_branch;
+    absl::StrAppendFormat(&result, "  %d -> %d [style=dashed]\n",
+                          packet.node_index_, fallthrough.node_index_);
+    if (IsFullSet(fallthrough) || IsEmptySet(fallthrough)) continue;
+    bool new_branch = visited.insert(fallthrough).second;
+    if (new_branch) work_list.push(fallthrough);
+  }
+  absl::StrAppend(&result, "}\n");
+  return result;
+}
+
 SymbolicPacket SymbolicPacketManager::Compile(const PredicateProto& pred) {
   switch (pred.predicate_case()) {
     case PredicateProto::kBoolConstant:
