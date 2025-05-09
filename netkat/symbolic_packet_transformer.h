@@ -218,6 +218,9 @@ class SymbolicPacketTransformerManager {
   [[nodiscard]] std::string ToString(
       SymbolicPacketTransformer transformer) const;
 
+  // Returns a dot string representation of the given `symbolic_packet`.
+  std::string ToDot(const SymbolicPacketTransformer& transformer) const;
+
   // TODO(dilo): Describe Push and Pull functions.
   // WARNING: Unimplemented and currently crashes.
   SymbolicPacket Push(SymbolicPacket packet,

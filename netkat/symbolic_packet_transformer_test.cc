@@ -14,13 +14,17 @@
 
 #include "netkat/symbolic_packet_transformer.h"
 
+#include <cstdint>
 #include <ostream>
 #include <utility>
 
 #include "absl/base/no_destructor.h"
+#include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/log.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_split.h"
+#include "absl/strings/string_view.h"
 #include "fuzztest/fuzztest.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -29,6 +33,7 @@
 #include "netkat/netkat.pb.h"
 #include "netkat/netkat_proto_constructors.h"
 #include "netkat/symbolic_packet.h"
+#include "re2/re2.h"
 
 namespace netkat {
 
@@ -53,6 +58,7 @@ void PrintTo(const SymbolicPacketTransformer& transformer, std::ostream* os) {
 namespace {
 
 using ::testing::IsEmpty;
+using ::testing::Pair;
 using ::testing::StartsWith;
 using ::testing::UnorderedElementsAre;
 
@@ -290,11 +296,54 @@ TEST(SymbolicPacketTransformerManagerTest, KatchPaperFig3) {
   // TODO(b/404543304): Instead of just logging, test these using golden
   // testing.
   LOG(INFO) << "p: \n" << Manager().ToString(p_transformer);
+  LOG(INFO) << "p (dotified): \n" << Manager().ToDot(p_transformer);
   LOG(INFO) << "q: \n" << Manager().ToString(q_transformer);
+  LOG(INFO) << "q (dotified): \n" << Manager().ToDot(q_transformer);
   LOG(INFO) << "p;q: \n" << Manager().ToString(sequence_transformer);
+  LOG(INFO) << "p;q (dotified): \n" << Manager().ToDot(sequence_transformer);
 
   EXPECT_EQ(Manager().Sequence(p_transformer, q_transformer),
             sequence_transformer);
+}
+
+// TODO(b/404543304): Instead of just logging, test these using golden
+// testing.
+// From Katch paper Fig 3.
+TEST(SymbolicPacketTransformerManagerTest,
+     SymbolicPacketTransformerToDotStringIsCorrect) {
+  // (a=5 + b=2);(b:=1 + c=5)
+  PolicyProto p = SequenceProto(
+      UnionProto(FilterProto(MatchProto("a", 5)),
+                 FilterProto(MatchProto("b", 2))),
+      UnionProto(ModificationProto("b", 1), FilterProto(MatchProto("c", 5))));
+
+  SymbolicPacketTransformer p_transformer = Manager().Compile(p);
+  std::string dot_string = Manager().ToDot(p_transformer);
+
+  absl::flat_hash_map<uint64_t, std::string> nodes_to_labels;
+  absl::flat_hash_set<std::pair<uint64_t, uint64_t>> nodes_to_nodes;
+  for (const absl::string_view line : absl::StrSplit(dot_string, '\n')) {
+    std::string label;
+    uint64_t node;
+    if (RE2::PartialMatch(line, R"((\d+) \[label=\"([a-zA-Z]+)\")", &node,
+                          &label)) {
+      nodes_to_labels.insert({node, label});
+    }
+    uint64_t from, to;
+    if (RE2::PartialMatch(line, R"((\d+) -> (\d+))", &from, &to)) {
+      nodes_to_nodes.insert({from, to});
+    }
+  }
+  std::vector<std::pair<std::string, std::string>> labels_to_labels;
+  for (const auto& [from, to] : nodes_to_nodes) {
+    labels_to_labels.push_back({nodes_to_labels[from], nodes_to_labels[to]});
+  }
+
+  EXPECT_THAT(
+      labels_to_labels,
+      UnorderedElementsAre(Pair("a", "b"), Pair("a", "b"), Pair("b", "T"),
+                           Pair("b", "c"), Pair("b", "T"), Pair("b", "c"),
+                           Pair("b", "F"), Pair("c", "T"), Pair("c", "F")));
 }
 
 TEST(SymbolicPacketTransformerManagerTest,

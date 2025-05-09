@@ -635,8 +635,9 @@ std::string SymbolicPacketTransformerManager::ToString(
 std::string SymbolicPacketTransformerManager::ToString(
     SymbolicPacketTransformer transformer) const {
   std::string result;
-  std::queue<SymbolicPacketTransformer> work_list{{transformer}};
-  absl::flat_hash_set<SymbolicPacketTransformer> visited{transformer};
+  std::queue<SymbolicPacketTransformer> work_list;
+  work_list.push(transformer);
+  absl::flat_hash_set<SymbolicPacketTransformer> visited = {transformer};
 
   auto pretty_print_map =
       [&](absl::string_view field,
@@ -675,6 +676,60 @@ std::string SymbolicPacketTransformerManager::ToString(
     bool new_branch = visited.insert(fallthrough).second;
     if (new_branch) work_list.push(fallthrough);
   }
+  return result;
+}
+
+// Returns a dot string representation of the given
+// `symbolic_packet_transformer`.
+std::string SymbolicPacketTransformerManager::ToDot(
+    const SymbolicPacketTransformer& transformer) const {
+  std::string result = "digraph {\n";
+  absl::StrAppendFormat(&result, "  %d [label=\"T\" shape=box]\n",
+                        SentinelNodeIndex::kAccept);
+  absl::StrAppendFormat(&result, "  %d [label=\"F\" shape=box]\n",
+                        SentinelNodeIndex::kDeny);
+  std::queue<SymbolicPacketTransformer> work_list;
+  work_list.push(transformer);
+  absl::flat_hash_set<SymbolicPacketTransformer> visited = {transformer};
+
+  auto dotify_map =
+      [&](absl::string_view field, absl::string_view old_value, int node_index,
+          const absl::btree_map<int, SymbolicPacketTransformer>& map) {
+        for (const auto& [new_value, branch] : map) {
+          absl::StrAppendFormat(
+              &result, "  %d -> %d [label=\"%s==%s; %s:=%d\"]\n", node_index,
+              branch.node_index_, field, old_value, field, new_value);
+          if (IsAccept(branch) || IsDeny(branch)) continue;
+          bool new_branch = visited.insert(branch).second;
+          if (new_branch) work_list.push(branch);
+        }
+      };
+
+  while (!work_list.empty()) {
+    SymbolicPacketTransformer transformer = work_list.front();
+    work_list.pop();
+
+    if (IsAccept(transformer) || IsDeny(transformer)) continue;
+
+    const DecisionNode& node = GetNodeOrDie(transformer);
+    std::string field =
+        symbolic_packet_manager_.field_manager_.GetFieldName(node.field);
+    absl::StrAppendFormat(&result, "  %d [label=\"%s\"]\n",
+                          transformer.node_index_, field);
+    for (const auto& [value, modify_map] : node.modify_branch_by_field_match) {
+      dotify_map(field, absl::StrCat(value), transformer.node_index_,
+                 modify_map);
+    }
+    dotify_map(field, "*", transformer.node_index_,
+               node.default_branch_by_field_modification);
+    SymbolicPacketTransformer fallthrough = node.default_branch;
+    absl::StrAppendFormat(&result, "  %d -> %d [style=dashed]\n",
+                          transformer.node_index_, fallthrough.node_index_);
+    if (IsAccept(fallthrough) || IsDeny(fallthrough)) continue;
+    bool new_branch = visited.insert(fallthrough).second;
+    if (new_branch) work_list.push(fallthrough);
+  }
+  absl::StrAppend(&result, "}\n");
   return result;
 }
 
