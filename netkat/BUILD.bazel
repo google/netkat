@@ -261,6 +261,7 @@ cc_test(
 cc_test(
     name = "symbolic_packet_transformer_test",
     srcs = ["symbolic_packet_transformer_test.cc"],
+    shard_count = 5,
     deps = [
         ":evaluator",
         ":netkat_cc_proto",
