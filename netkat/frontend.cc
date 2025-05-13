@@ -83,6 +83,11 @@ Predicate Xor(Predicate lhs, Predicate rhs) {
       XorProto(std::move(lhs).ToProto(), std::move(rhs).ToProto()));
 }
 
+Predicate Exists(absl::string_view field, Predicate predicate) {
+  return Predicate(
+      ExistsProto(std::move(field), std::move(predicate).ToProto()));
+}
+
 Predicate Predicate::True() { return Predicate(TrueProto()); }
 
 Predicate Predicate::False() { return Predicate(FalseProto()); }

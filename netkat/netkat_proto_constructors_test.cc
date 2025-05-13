@@ -79,6 +79,16 @@ void XorProtoReturnsXor(PredicateProto left, PredicateProto right) {
 }
 FUZZ_TEST(XorProtoTest, XorProtoReturnsXor);
 
+void ExistsProtoReturnsExists(absl::string_view field,
+                              PredicateProto predicate) {
+  PredicateProto exists_proto;
+  PredicateProto::Exists& exists_op = *exists_proto.mutable_exists_op();
+  *exists_op.mutable_field() = field;
+  *exists_op.mutable_predicate() = predicate;
+  EXPECT_THAT(ExistsProto(field, predicate), EqualsProto(exists_proto));
+}
+FUZZ_TEST(ExistsProtoTest, ExistsProtoReturnsExists);
+
 // -- Basic Policy constructors ------------------------------------------------
 
 void FilterProtoReturnsFilter(PredicateProto filter) {

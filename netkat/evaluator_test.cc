@@ -16,6 +16,7 @@
 #include "netkat/evaluator.h"
 
 #include "absl/container/flat_hash_set.h"
+#include "absl/log/log.h"
 #include "fuzztest/fuzztest.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -210,6 +211,20 @@ void DeMorganHolds(const Packet& packet, const PredicateProto& left,
             Evaluate(AndProto(NotProto(left), NotProto(right)), packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, DeMorganHolds);
+
+void ExistOnlyExistsWithPacketsWithMatchingField(Packet packet,
+                                                 std::string field, int value) {
+  packet[field] = value;
+  EXPECT_TRUE(Evaluate(ExistsProto(field, MatchProto(field, value)), packet));
+
+  packet[field] = ~value;
+  EXPECT_TRUE(Evaluate(ExistsProto(field, MatchProto(field, value)), packet));
+
+  packet.erase(field);
+  EXPECT_FALSE(Evaluate(ExistsProto(field, MatchProto(field, value)), packet));
+}
+FUZZ_TEST(EvaluatePredicateProtoTest,
+          ExistOnlyExistsWithPacketsWithMatchingField);
 
 /*--- Basic policy properties ------------------------------------------------*/
 
