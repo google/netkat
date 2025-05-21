@@ -193,26 +193,54 @@ bool SymbolicPacketTransformerManager::IsAccept(
   return transformer == Accept();
 }
 
+// TODO(b/416560152): Currently, this implementation makes a copy of the packet
+// for every subsequent call of Run, recursively. Ideally, there would be a
+// clever method of modifying and 'unmodifying' packets in place that also works
+// correctly.
 absl::flat_hash_set<Packet> SymbolicPacketTransformerManager::Run(
     SymbolicPacketTransformer transformer,
     const Packet& concrete_packet) const {
   if (IsDeny(transformer)) return {};
   if (IsAccept(transformer)) return {concrete_packet};
 
+  absl::flat_hash_set<Packet> result;
   const DecisionNode& node = GetNodeOrDie(transformer);
   std::string field =
       symbolic_packet_manager_.field_manager_.GetFieldName(node.field);
-  auto it = concrete_packet.find(field);
-  if (it != concrete_packet.end()) {
-    // TODO(dilo): Implement this.
-    CHECK(false) << "Run is not implemented yet.";
-    // for (const auto& [value, branch] : node.branch_by_field_value) {
-    //   if (it->second == value) return Contains(branch, concrete_packet);
-    // }
+  auto field_it = concrete_packet.find(field);
+  // If a field doesn't exist, it does not match any value.
+  bool matched = false;
+  if (field_it != concrete_packet.end()) {
+    // If it exists, see if there is a value match for it and follow every
+    // corresponding branch with value modified appropriately.
+    if (auto mod_map_it =
+            node.modify_branch_by_field_match.find(field_it->second);
+        mod_map_it != node.modify_branch_by_field_match.end()) {
+      matched = true;
+      for (const auto& [value, branch] : mod_map_it->second) {
+        Packet modified_packet = concrete_packet;
+        modified_packet[field] = value;
+        result.merge(Run(branch, modified_packet));
+      }
+    }
   }
-  // TODO(dilo): This probably also needs to work with the second set of
-  // default branches.
-  return Run(node.default_branch, concrete_packet);
+
+  // If the packet was not matched by the above, run the default modifications.
+  if (!matched) {
+    for (const auto& [value, branch] :
+         node.default_branch_by_field_modification) {
+      // If the original packet already had this field with the same value as
+      // this modified branch, then we should not also attempt the default
+      // branch.
+      if (field_it != concrete_packet.end() && field_it->second == value)
+        matched = true;
+      Packet modified_packet = concrete_packet;
+      modified_packet[field] = value;
+      result.merge(Run(branch, modified_packet));
+    }
+    if (!matched) result.merge(Run(node.default_branch, concrete_packet));
+  }
+  return result;
 }
 
 SymbolicPacketTransformer SymbolicPacketTransformerManager::Compile(

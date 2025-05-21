@@ -57,6 +57,7 @@ void PrintTo(const SymbolicPacketTransformer& transformer, std::ostream* os) {
 
 namespace {
 
+using ::testing::ContainerEq;
 using ::testing::IsEmpty;
 using ::testing::Pair;
 using ::testing::StartsWith;
@@ -447,15 +448,107 @@ TEST(SymbolicPacketTransformerManagerTest, RunDenyAndAccept) {
               UnorderedElementsAre(packet));
 }
 
-// TODO(dilo): Enable when Run is fully implemented.
 // We expect that any concrete packet that is `Run` through a `policy` gives the
 // same result as when it is `Evaluate`d on that policy.
-// void RunIsSameAsEvaluate(PolicyProto policy,
-//                          Packet concrete_packet) {
-//   EXPECT_THAT(Manager().Run(Manager().Compile(policy), concrete_packet),
-//               ContainerEq(Evaluate(policy, concrete_packet)));
-// }
-// FUZZ_TEST(SymbolicPacketTransformerManagerTest, RunIsSameAsEvaluate);
+void RunIsSameAsEvaluate(PolicyProto policy, Packet concrete_packet) {
+  EXPECT_THAT(Manager().Run(Manager().Compile(policy), concrete_packet),
+              ContainerEq(Evaluate(policy, concrete_packet)));
+}
+FUZZ_TEST(SymbolicPacketTransformerManagerTest, RunIsSameAsEvaluate);
+
+TEST(SymbolicPacketTransformerManagerTest, SimpleSequenceRunTest1) {
+  // !(once=1) ; a:=1 ; once:=1
+  SymbolicPacketTransformer match_then_modify_transformer = Manager().Compile(
+      SequenceProto(FilterProto(NotProto(MatchProto("once", 1))),
+                    SequenceProto(ModificationProto("a", 1),
+                                  ModificationProto("once", 1))));
+
+  Packet packet_without_once;
+  Packet packet_with_once_1 = {{"once", 1}};
+  Packet packet_with_once_0 = {{"once", 0}};
+  Packet expected_packet = {{"once", 1}, {"a", 1}};
+  EXPECT_THAT(Manager().Run(match_then_modify_transformer, packet_without_once),
+              UnorderedElementsAre(expected_packet));
+  EXPECT_THAT(Manager().Run(match_then_modify_transformer, packet_with_once_1),
+              IsEmpty());
+
+  EXPECT_THAT(Manager().Run(match_then_modify_transformer, packet_with_once_0),
+              UnorderedElementsAre(expected_packet));
+}
+
+TEST(SymbolicPacketTransformerManagerTest, SimpleSequenceAndUnionRunTest2) {
+  // a=1 ; a:=0
+  SymbolicPacketTransformer check_a = Manager().Compile(SequenceProto(
+      FilterProto(MatchProto("a", 1)), ModificationProto("a", 0)));
+
+  // Does `a:=1` exactly once.
+  // !(once=1) ; a:=1 ; once:=1
+  SymbolicPacketTransformer a_once = Manager().Compile(SequenceProto(
+      FilterProto(NotProto(MatchProto("once", 1))),
+      SequenceProto(ModificationProto("a", 1), ModificationProto("once", 1))));
+
+  SymbolicPacketTransformer check_a_and_a_once_transformer =
+      Manager().Union(check_a, a_once);
+
+  Packet packet_without_fields;
+  Packet packet_with_once_0 = {{"once", 0}};
+  Packet packet_with_once_1 = {{"once", 1}};
+  Packet packet_with_a_0 = {{"a", 0}};
+  Packet packet_with_a_1 = {{"a", 1}};
+  Packet expected_packet_a0 = {{"once", 1}, {"a", 0}};
+  Packet expected_packet_a1 = {{"once", 1}, {"a", 1}};
+
+  // Test `check_a_and_a_once_transformer`.
+  EXPECT_THAT(
+      Manager().Run(check_a_and_a_once_transformer, packet_without_fields),
+      UnorderedElementsAre(expected_packet_a1));
+
+  EXPECT_THAT(Manager().Run(check_a_and_a_once_transformer, packet_with_once_0),
+              UnorderedElementsAre(expected_packet_a1));
+  EXPECT_THAT(Manager().Run(check_a_and_a_once_transformer, packet_with_once_1),
+              IsEmpty());
+
+  EXPECT_THAT(Manager().Run(check_a_and_a_once_transformer, packet_with_a_0),
+              UnorderedElementsAre(expected_packet_a1));
+  EXPECT_THAT(Manager().Run(check_a_and_a_once_transformer, packet_with_a_1),
+              UnorderedElementsAre(Packet{{"a", 0}}, expected_packet_a1));
+
+  // Run the results through again!
+  EXPECT_THAT(Manager().Run(check_a_and_a_once_transformer, expected_packet_a1),
+              UnorderedElementsAre(expected_packet_a0));
+  EXPECT_THAT(Manager().Run(check_a_and_a_once_transformer, Packet{{"a", 0}}),
+              UnorderedElementsAre(expected_packet_a1));
+
+  // This should be the same as running the original packets through
+  // `sequenced_transformer2`.
+  SymbolicPacketTransformer sequenced_transformer2 = Manager().Sequence(
+      check_a_and_a_once_transformer, check_a_and_a_once_transformer);
+  // Same result as running `expected_packet_a1` again above:
+  EXPECT_THAT(Manager().Run(sequenced_transformer2, packet_without_fields),
+              UnorderedElementsAre(expected_packet_a0));
+  EXPECT_THAT(Manager().Run(sequenced_transformer2, packet_with_once_0),
+              UnorderedElementsAre(expected_packet_a0));
+  EXPECT_THAT(Manager().Run(sequenced_transformer2, packet_with_a_0),
+              UnorderedElementsAre(expected_packet_a0));
+
+  // Union of results from above.
+  EXPECT_THAT(Manager().Run(sequenced_transformer2, packet_with_a_1),
+              UnorderedElementsAre(expected_packet_a0, expected_packet_a1));
+
+  // Run it again! Note that `expected_packet_a0` would be created on a third
+  // run (from `expected_packet_a1`), so we skip that only do the 4th run with
+  // `expected_packet_a0`.
+  EXPECT_THAT(Manager().Run(check_a_and_a_once_transformer, expected_packet_a0),
+              IsEmpty());
+
+  // Should converge to Deny if sequenced 4 times.
+  SymbolicPacketTransformer sequenced_transformer4 =
+      Manager().Sequence(sequenced_transformer2, sequenced_transformer2);
+
+  EXPECT_TRUE(Manager().IsDeny(sequenced_transformer4))
+      << "sequenced_transformer4:\n"
+      << Manager().ToString(sequenced_transformer4);
+}
 
 }  // namespace
 }  // namespace netkat
