@@ -93,6 +93,7 @@ class Predicate {
   friend Predicate operator||(Predicate lhs, Predicate rhs);
   friend Predicate operator!(Predicate predicate);
   friend Predicate Xor(Predicate lhs, Predicate rhs);
+  friend Predicate Exists(absl::string_view field, Predicate predicate);
 
   // Match operation for a Predicate. See below for the full definition. We
   // utilize friend association to ensure program construction is well-formed.
