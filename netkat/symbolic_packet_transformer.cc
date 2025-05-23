@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <queue>
 #include <string>
 #include <utility>
@@ -193,13 +194,36 @@ bool SymbolicPacketTransformerManager::IsAccept(
   return transformer == Accept();
 }
 
-// TODO(b/416560152): Currently, this implementation makes a copy of the packet
-// for every subsequent call of Run, recursively. Ideally, there would be a
-// clever method of modifying and 'unmodifying' packets in place that also works
-// correctly.
+absl::flat_hash_set<Packet> RunWithNewValueThenReset(
+    const SymbolicPacketTransformerManager& manager,
+    SymbolicPacketTransformer transformer, Packet& concrete_packet,
+    absl::string_view field, int new_value) {
+  // Record the original value of 'field' if it exists in 'concrete_packet'.
+  std::optional<int> original_value;
+  if (auto it = concrete_packet.find(field); it != concrete_packet.end()) {
+    original_value = it->second;
+  }
+
+  // Set 'field' to 'new_value' for the duration of the Run call.
+  // This will insert if 'field' doesn't exist, or update if it does.
+  concrete_packet[field] = new_value;
+
+  absl::flat_hash_set<Packet> result =
+      manager.Run(transformer, concrete_packet);
+
+  // Restore 'concrete_packet' to its original state regarding 'field'.
+  if (original_value.has_value()) {
+    // Field originally existed, restore its value.
+    concrete_packet[field] = *original_value;
+  } else {
+    // Field did not originally exist, so remove the one we added.
+    concrete_packet.erase(field);
+  }
+  return result;
+}
+
 absl::flat_hash_set<Packet> SymbolicPacketTransformerManager::Run(
-    SymbolicPacketTransformer transformer,
-    const Packet& concrete_packet) const {
+    SymbolicPacketTransformer transformer, Packet& concrete_packet) const {
   if (IsDeny(transformer)) return {};
   if (IsAccept(transformer)) return {concrete_packet};
 
@@ -218,28 +242,28 @@ absl::flat_hash_set<Packet> SymbolicPacketTransformerManager::Run(
         mod_map_it != node.modify_branch_by_field_match.end()) {
       matched = true;
       for (const auto& [value, branch] : mod_map_it->second) {
-        Packet modified_packet = concrete_packet;
-        modified_packet[field] = value;
-        result.merge(Run(branch, modified_packet));
+        result.merge(RunWithNewValueThenReset(*this, branch, concrete_packet,
+                                              field, value));
       }
     }
   }
 
-  // If the packet was not matched by the above, run the default modifications.
-  if (!matched) {
-    for (const auto& [value, branch] :
-         node.default_branch_by_field_modification) {
-      // If the original packet already had this field with the same value as
-      // this modified branch, then we should not also attempt the default
-      // branch.
-      if (field_it != concrete_packet.end() && field_it->second == value)
-        matched = true;
-      Packet modified_packet = concrete_packet;
-      modified_packet[field] = value;
-      result.merge(Run(branch, modified_packet));
-    }
-    if (!matched) result.merge(Run(node.default_branch, concrete_packet));
+  // If the packet was matched by the above then the default branches don't
+  // apply and we return.
+  if (matched) return result;
+
+  // Otherwise, follow the default branches.
+  for (const auto& [value, branch] :
+       node.default_branch_by_field_modification) {
+    // If the original packet already had this field with the same value as
+    // this modified branch, then we should not also attempt the default
+    // branch.
+    if (field_it != concrete_packet.end() && field_it->second == value)
+      matched = true;
+    result.merge(
+        RunWithNewValueThenReset(*this, branch, concrete_packet, field, value));
   }
+  if (!matched) result.merge(Run(node.default_branch, concrete_packet));
   return result;
 }
 

@@ -443,16 +443,21 @@ TEST(SymbolicPacketTransformerManagerTest, ModifyThenFilterSameValueIsModify) {
 
 TEST(SymbolicPacketTransformerManagerTest, RunDenyAndAccept) {
   Packet packet = {{"field", 1}};
+  Packet original_packet = packet;
   EXPECT_THAT(Manager().Run(Manager().Deny(), packet), IsEmpty());
+  EXPECT_EQ(packet, original_packet);
   EXPECT_THAT(Manager().Run(Manager().Accept(), packet),
               UnorderedElementsAre(packet));
+  EXPECT_EQ(packet, original_packet);
 }
 
 // We expect that any concrete packet that is `Run` through a `policy` gives the
 // same result as when it is `Evaluate`d on that policy.
 void RunIsSameAsEvaluate(PolicyProto policy, Packet concrete_packet) {
+  Packet original_packet = concrete_packet;
   EXPECT_THAT(Manager().Run(Manager().Compile(policy), concrete_packet),
               ContainerEq(Evaluate(policy, concrete_packet)));
+  EXPECT_EQ(concrete_packet, original_packet);
 }
 FUZZ_TEST(SymbolicPacketTransformerManagerTest, RunIsSameAsEvaluate);
 
@@ -464,16 +469,22 @@ TEST(SymbolicPacketTransformerManagerTest, SimpleSequenceRunTest1) {
                                   ModificationProto("once", 1))));
 
   Packet packet_without_once;
+  Packet packet_without_once_copy = packet_without_once;
   Packet packet_with_once_1 = {{"once", 1}};
+  Packet packet_with_once_1_copy = packet_with_once_1;
   Packet packet_with_once_0 = {{"once", 0}};
+  Packet packet_with_once_0_copy = packet_with_once_0;
   Packet expected_packet = {{"once", 1}, {"a", 1}};
   EXPECT_THAT(Manager().Run(match_then_modify_transformer, packet_without_once),
               UnorderedElementsAre(expected_packet));
+  EXPECT_EQ(packet_without_once, packet_without_once_copy);
   EXPECT_THAT(Manager().Run(match_then_modify_transformer, packet_with_once_1),
               IsEmpty());
+  EXPECT_EQ(packet_with_once_1, packet_with_once_1_copy);
 
   EXPECT_THAT(Manager().Run(match_then_modify_transformer, packet_with_once_0),
               UnorderedElementsAre(expected_packet));
+  EXPECT_EQ(packet_with_once_0, packet_with_once_0_copy);
 }
 
 TEST(SymbolicPacketTransformerManagerTest, SimpleSequenceAndUnionRunTest2) {
@@ -495,6 +506,7 @@ TEST(SymbolicPacketTransformerManagerTest, SimpleSequenceAndUnionRunTest2) {
   Packet packet_with_once_1 = {{"once", 1}};
   Packet packet_with_a_0 = {{"a", 0}};
   Packet packet_with_a_1 = {{"a", 1}};
+  Packet packet_with_a_1_copy = packet_with_a_1;
   Packet expected_packet_a0 = {{"once", 1}, {"a", 0}};
   Packet expected_packet_a1 = {{"once", 1}, {"a", 1}};
 
@@ -511,12 +523,12 @@ TEST(SymbolicPacketTransformerManagerTest, SimpleSequenceAndUnionRunTest2) {
   EXPECT_THAT(Manager().Run(check_a_and_a_once_transformer, packet_with_a_0),
               UnorderedElementsAre(expected_packet_a1));
   EXPECT_THAT(Manager().Run(check_a_and_a_once_transformer, packet_with_a_1),
-              UnorderedElementsAre(Packet{{"a", 0}}, expected_packet_a1));
+              UnorderedElementsAre(packet_with_a_0, expected_packet_a1));
 
   // Run the results through again!
   EXPECT_THAT(Manager().Run(check_a_and_a_once_transformer, expected_packet_a1),
               UnorderedElementsAre(expected_packet_a0));
-  EXPECT_THAT(Manager().Run(check_a_and_a_once_transformer, Packet{{"a", 0}}),
+  EXPECT_THAT(Manager().Run(check_a_and_a_once_transformer, packet_with_a_0),
               UnorderedElementsAre(expected_packet_a1));
 
   // This should be the same as running the original packets through
@@ -534,6 +546,7 @@ TEST(SymbolicPacketTransformerManagerTest, SimpleSequenceAndUnionRunTest2) {
   // Union of results from above.
   EXPECT_THAT(Manager().Run(sequenced_transformer2, packet_with_a_1),
               UnorderedElementsAre(expected_packet_a0, expected_packet_a1));
+  EXPECT_EQ(packet_with_a_1, packet_with_a_1_copy);
 
   // Run it again! Note that `expected_packet_a0` would be created on a third
   // run (from `expected_packet_a1`), so we skip that only do the 4th run with

@@ -168,8 +168,9 @@ class SymbolicPacketTransformerManager {
 
   // Returns the set of possible packets obtained by running the given
   // `concrete_packet` through the policy represented by `transformer`.
+  // NOTE: The `concrete_packet` will be returned unmodified.
   absl::flat_hash_set<Packet> Run(SymbolicPacketTransformer transformer,
-                                  const Packet& concrete_packet) const;
+                                  Packet& concrete_packet) const;
 
   // Compiles the given `PolicyProto` into a `SymbolicPacketTransformer` that
   // represents the application of that policy to a set of packets.
