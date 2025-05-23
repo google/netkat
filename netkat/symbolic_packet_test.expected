@@ -1,0 +1,129 @@
+================================================================================
+Test case: p := (a=3 && b=4) || (b!=5 && c=5). Example from Katch paper Fig 3.
+================================================================================
+-- STRING ----------------------------------------------------------------------
+SymbolicPacket<14>:
+  InternedField<0>:'a' == 3 -> SymbolicPacket<13>
+  InternedField<0>:'a' == * -> SymbolicPacket<6>
+SymbolicPacket<13>:
+  InternedField<1>:'b' == 4 -> SymbolicPacket<full>
+  InternedField<1>:'b' == 5 -> SymbolicPacket<empty>
+  InternedField<1>:'b' == * -> SymbolicPacket<5>
+SymbolicPacket<6>:
+  InternedField<1>:'b' == 5 -> SymbolicPacket<empty>
+  InternedField<1>:'b' == * -> SymbolicPacket<5>
+SymbolicPacket<5>:
+  InternedField<2>:'c' == 5 -> SymbolicPacket<full>
+  InternedField<2>:'c' == * -> SymbolicPacket<empty>
+-- DOT -------------------------------------------------------------------------
+digraph {
+  4294967294 [label="T" shape=box]
+  4294967295 [label="F" shape=box]
+  14 [label="a"]
+  14 -> 13 [label="3"]
+  14 -> 6 [style=dashed]
+  13 [label="b"]
+  13 -> 4294967294 [label="4"]
+  13 -> 4294967295 [label="5"]
+  13 -> 5 [style=dashed]
+  6 [label="b"]
+  6 -> 4294967295 [label="5"]
+  6 -> 5 [style=dashed]
+  5 [label="c"]
+  5 -> 4294967294 [label="5"]
+  5 -> 4294967295 [style=dashed]
+}
+================================================================================
+Test case: q := (b=3 && c=4) || (a=5 && c!=5). Example from Katch paper Fig 3.
+================================================================================
+-- STRING ----------------------------------------------------------------------
+SymbolicPacket<24>:
+  InternedField<0>:'a' == 5 -> SymbolicPacket<9>
+  InternedField<0>:'a' == * -> SymbolicPacket<17>
+SymbolicPacket<9>:
+  InternedField<2>:'c' == 5 -> SymbolicPacket<empty>
+  InternedField<2>:'c' == * -> SymbolicPacket<full>
+SymbolicPacket<17>:
+  InternedField<1>:'b' == 3 -> SymbolicPacket<16>
+  InternedField<1>:'b' == * -> SymbolicPacket<empty>
+SymbolicPacket<16>:
+  InternedField<2>:'c' == 4 -> SymbolicPacket<full>
+  InternedField<2>:'c' == * -> SymbolicPacket<empty>
+-- DOT -------------------------------------------------------------------------
+digraph {
+  4294967294 [label="T" shape=box]
+  4294967295 [label="F" shape=box]
+  24 [label="a"]
+  24 -> 9 [label="5"]
+  24 -> 17 [style=dashed]
+  9 [label="c"]
+  9 -> 4294967295 [label="5"]
+  9 -> 4294967294 [style=dashed]
+  17 [label="b"]
+  17 -> 16 [label="3"]
+  17 -> 4294967295 [style=dashed]
+  16 [label="c"]
+  16 -> 4294967294 [label="4"]
+  16 -> 4294967295 [style=dashed]
+}
+================================================================================
+Test case: p + q. Example from Katch paper Fig 3.
+================================================================================
+-- STRING ----------------------------------------------------------------------
+SymbolicPacket<34>:
+  InternedField<0>:'a' == 3 -> SymbolicPacket<32>
+  InternedField<0>:'a' == 5 -> SymbolicPacket<33>
+  InternedField<0>:'a' == * -> SymbolicPacket<31>
+SymbolicPacket<32>:
+  InternedField<1>:'b' == 3 -> SymbolicPacket<30>
+  InternedField<1>:'b' == 4 -> SymbolicPacket<full>
+  InternedField<1>:'b' == 5 -> SymbolicPacket<empty>
+  InternedField<1>:'b' == * -> SymbolicPacket<5>
+SymbolicPacket<33>:
+  InternedField<1>:'b' == 5 -> SymbolicPacket<9>
+  InternedField<1>:'b' == * -> SymbolicPacket<full>
+SymbolicPacket<31>:
+  InternedField<1>:'b' == 3 -> SymbolicPacket<30>
+  InternedField<1>:'b' == 5 -> SymbolicPacket<empty>
+  InternedField<1>:'b' == * -> SymbolicPacket<5>
+SymbolicPacket<30>:
+  InternedField<2>:'c' == 4 -> SymbolicPacket<full>
+  InternedField<2>:'c' == 5 -> SymbolicPacket<full>
+  InternedField<2>:'c' == * -> SymbolicPacket<empty>
+SymbolicPacket<5>:
+  InternedField<2>:'c' == 5 -> SymbolicPacket<full>
+  InternedField<2>:'c' == * -> SymbolicPacket<empty>
+SymbolicPacket<9>:
+  InternedField<2>:'c' == 5 -> SymbolicPacket<empty>
+  InternedField<2>:'c' == * -> SymbolicPacket<full>
+-- DOT -------------------------------------------------------------------------
+digraph {
+  4294967294 [label="T" shape=box]
+  4294967295 [label="F" shape=box]
+  34 [label="a"]
+  34 -> 32 [label="3"]
+  34 -> 33 [label="5"]
+  34 -> 31 [style=dashed]
+  32 [label="b"]
+  32 -> 30 [label="3"]
+  32 -> 4294967294 [label="4"]
+  32 -> 4294967295 [label="5"]
+  32 -> 5 [style=dashed]
+  33 [label="b"]
+  33 -> 9 [label="5"]
+  33 -> 4294967294 [style=dashed]
+  31 [label="b"]
+  31 -> 30 [label="3"]
+  31 -> 4294967295 [label="5"]
+  31 -> 5 [style=dashed]
+  30 [label="c"]
+  30 -> 4294967294 [label="4"]
+  30 -> 4294967294 [label="5"]
+  30 -> 4294967295 [style=dashed]
+  5 [label="c"]
+  5 -> 4294967294 [label="5"]
+  5 -> 4294967295 [style=dashed]
+  9 [label="c"]
+  9 -> 4294967295 [label="5"]
+  9 -> 4294967294 [style=dashed]
+}

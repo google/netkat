@@ -111,41 +111,6 @@ TEST(SymbolicPacketManagerTest, FalseCompilesToEmptySet) {
   EXPECT_EQ(Manager().Compile(FalseProto()), Manager().EmptySet());
 }
 
-// TODO(b/404543304): Remove once golden tests are implemented.
-// From Katch paper Fig 3.
-TEST(SymbolicPacketManagerTest, SymbolicPacketToDotStringIsCorrect) {
-  // p := (a=3 && b=4) || (b!=5 && c=5)
-  SymbolicPacket symbolic_packet = Manager().Compile(
-      OrProto(AndProto(MatchProto("a", 3), MatchProto("b", 4)),
-              AndProto(NotProto(MatchProto("b", 5)), MatchProto("c", 5))));
-  std::string dot_string = Manager().ToDot(symbolic_packet);
-
-  absl::flat_hash_set<std::pair<std::string, uint32_t>> labels_to_nodes;
-  absl::flat_hash_set<std::pair<uint64_t, uint64_t>> nodes_to_nodes;
-  for (const absl::string_view line : absl::StrSplit(dot_string, '\n')) {
-    std::string label;
-    uint32_t node;
-    if (RE2::PartialMatch(line, R"((\d+) \[label=\"([a-zA-Z]+)\")", &node,
-                          &label)) {
-      labels_to_nodes.insert({label, node});
-    }
-    uint32_t from, to;
-    if (RE2::PartialMatch(line, R"((\d+) -> (\d+))", &from, &to)) {
-      nodes_to_nodes.insert({from, to});
-    }
-  }
-  EXPECT_THAT(labels_to_nodes,
-              UnorderedElementsAre(Pair("a", 14), Pair("b", 13), Pair("b", 6),
-                                   Pair("c", 5), Pair("F", 4294967295),
-                                   Pair("T", 4294967294)));
-
-  EXPECT_THAT(nodes_to_nodes,
-              UnorderedElementsAre(Pair(14, 13), Pair(14, 6),
-                                   Pair(13, 4294967294), Pair(13, 4294967295),
-                                   Pair(13, 5), Pair(6, 4294967295), Pair(6, 5),
-                                   Pair(5, 4294967294), Pair(5, 4294967295)));
-}
-
 void MatchCompilesToMatch(std::string field, int value) {
   EXPECT_EQ(Manager().Compile(MatchProto(field, value)),
             Manager().Match(field, value));

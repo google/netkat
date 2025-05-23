@@ -1,5 +1,6 @@
 
 
+load("@com_google_gutil//gutil:diff_test.bzl", "cmd_diff_test")
 
 
 
@@ -97,6 +98,7 @@ cc_library(
     ],
 )
 
+# go/golden-test-with-coverage
 cc_test(
     name = "symbolic_packet_test",
     srcs = ["symbolic_packet_test.cc"],
@@ -114,6 +116,23 @@ cc_test(
         "@com_google_gutil//gutil:status_matchers",
         "@com_googlesource_code_re2//:re2",
     ],
+)
+
+cc_test(
+    name = "symbolic_packet_test_runner",
+    srcs = ["symbolic_packet_test_runner.cc"],
+    linkstatic = True,
+    deps = [
+        ":netkat_proto_constructors",
+        ":symbolic_packet",
+    ],
+)
+
+cmd_diff_test(
+    name = "symbolic_packet_diff_test",
+    actual_cmd = "$(execpath :symbolic_packet_test_runner)",
+    expected = ":symbolic_packet_test.expected",
+    tools = [":symbolic_packet_test_runner"],
 )
 
 cc_library(
