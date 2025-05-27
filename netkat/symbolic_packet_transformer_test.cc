@@ -275,7 +275,7 @@ FUZZ_TEST(SymbolicPacketTransformerManagerTest, IterateIsLeastFixedPoint);
 
 /*--- Tests with concrete protos ---------------------------------------------*/
 
-TEST(SymbolicPacketTransformerManagerTest, KatchPaperFig3) {
+TEST(SymbolicPacketTransformerManagerTest, KatchPaperFig5) {
   // (a=5 + b=2);(b:=1 + c=5)
   PolicyProto p = SequenceProto(
       UnionProto(FilterProto(MatchProto("a", 5)),
@@ -294,63 +294,8 @@ TEST(SymbolicPacketTransformerManagerTest, KatchPaperFig3) {
   SymbolicPacketTransformer sequence_transformer =
       Manager().Compile(SequenceProto(p, q));
 
-  // TODO(b/404543304): Instead of just logging, test these using golden
-  // testing.
-  LOG(INFO) << "p: \n" << Manager().ToString(p_transformer);
-  LOG(INFO) << "p (dotified): \n" << Manager().ToDot(p_transformer);
-  LOG(INFO) << "q: \n" << Manager().ToString(q_transformer);
-  LOG(INFO) << "q (dotified): \n" << Manager().ToDot(q_transformer);
-  LOG(INFO) << "p;q: \n" << Manager().ToString(sequence_transformer);
-  LOG(INFO) << "p;q (dotified): \n" << Manager().ToDot(sequence_transformer);
-
   EXPECT_EQ(Manager().Sequence(p_transformer, q_transformer),
             sequence_transformer);
-}
-
-// TODO(b/404543304): Instead of just logging, test these using golden
-// testing.
-// From Katch paper Fig 3.
-TEST(SymbolicPacketTransformerManagerTest,
-     SymbolicPacketTransformerToDotStringIsCorrect) {
-  // (a=5 + b=2);(b:=1 + c=5)
-  PolicyProto p = SequenceProto(
-      UnionProto(FilterProto(MatchProto("a", 5)),
-                 FilterProto(MatchProto("b", 2))),
-      UnionProto(ModificationProto("b", 1), FilterProto(MatchProto("c", 5))));
-
-  // This test needs a deterministic field interning order, and thus must start
-  // from a fresh manager.
-  SymbolicPacketTransformerManager manager;
-  SymbolicPacketTransformer p_transformer = manager.Compile(p);
-  std::string dot_string = manager.ToDot(p_transformer);
-
-  absl::flat_hash_map<uint64_t, std::string> nodes_to_labels;
-  absl::flat_hash_set<std::pair<uint64_t, uint64_t>> nodes_to_nodes;
-  for (const absl::string_view line : absl::StrSplit(dot_string, '\n')) {
-    std::string label;
-    uint64_t node;
-    if (RE2::PartialMatch(line, R"((\d+) \[label=\"([a-zA-Z]+)\")", &node,
-                          &label)) {
-      nodes_to_labels.insert({node, label});
-    }
-    uint64_t from, to;
-    if (RE2::PartialMatch(line, R"((\d+) -> (\d+))", &from, &to)) {
-      nodes_to_nodes.insert({from, to});
-    }
-  }
-  std::vector<std::pair<std::string, std::string>> labels_to_labels;
-  for (const auto& [from, to] : nodes_to_nodes) {
-    labels_to_labels.push_back({nodes_to_labels[from], nodes_to_labels[to]});
-  }
-
-  EXPECT_THAT(
-      labels_to_labels,
-      UnorderedElementsAre(Pair("a", "b"), Pair("a", "b"), Pair("b", "T"),
-                           Pair("b", "c"), Pair("b", "T"), Pair("b", "c"),
-                           Pair("b", "F"), Pair("c", "T"), Pair("c", "F")))
-      << "with full transformer: " << manager.ToString(p_transformer)
-      << "\nAnd dot string:\n"
-      << dot_string;
 }
 
 TEST(SymbolicPacketTransformerManagerTest,

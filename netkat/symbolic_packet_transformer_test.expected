@@ -1,0 +1,171 @@
+================================================================================
+Test case: p := (a=5 + b=2);(b:=1 + c=5). Example from Katch paper Fig 5.
+================================================================================
+-- STRING ----------------------------------------------------------------------
+SymbolicPacketTransformer<7>:
+  InternedField<0>:'a' == 5:
+    InternedField<0>:'a' := 5 -> SymbolicPacketTransformer<5>
+  InternedField<0>:'a' == *:
+  InternedField<0>:'a' == * -> SymbolicPacketTransformer<6>
+SymbolicPacketTransformer<5>:
+  InternedField<1>:'b' == *:
+    InternedField<1>:'b' := 1 -> SymbolicPacketTransformer<accept>
+  InternedField<1>:'b' == * -> SymbolicPacketTransformer<4>
+SymbolicPacketTransformer<6>:
+  InternedField<1>:'b' == 2:
+    InternedField<1>:'b' := 1 -> SymbolicPacketTransformer<accept>
+    InternedField<1>:'b' := 2 -> SymbolicPacketTransformer<4>
+  InternedField<1>:'b' == *:
+  InternedField<1>:'b' == * -> SymbolicPacketTransformer<deny>
+SymbolicPacketTransformer<4>:
+  InternedField<2>:'c' == 5:
+    InternedField<2>:'c' := 5 -> SymbolicPacketTransformer<accept>
+  InternedField<2>:'c' == *:
+  InternedField<2>:'c' == * -> SymbolicPacketTransformer<deny>
+-- DOT -------------------------------------------------------------------------
+digraph {
+  4294967294 [label="T" shape=box]
+  4294967295 [label="F" shape=box]
+  7 [label="a"]
+  7 -> 5 [label="a==5; a:=5"]
+  7 -> 6 [style=dashed]
+  5 [label="b"]
+  5 -> 4294967294 [label="b==*; b:=1"]
+  5 -> 4 [style=dashed]
+  6 [label="b"]
+  6 -> 4294967294 [label="b==2; b:=1"]
+  6 -> 4 [label="b==2; b:=2"]
+  6 -> 4294967295 [style=dashed]
+  4 [label="c"]
+  4 -> 4294967294 [label="c==5; c:=5"]
+  4 -> 4294967295 [style=dashed]
+}
+================================================================================
+Test case: q := (b=1 + c:=4 + a:=5;b:=1). Example from Katch paper Fig 5.
+================================================================================
+-- STRING ----------------------------------------------------------------------
+SymbolicPacketTransformer<16>:
+  InternedField<0>:'a' == 1:
+    InternedField<0>:'a' := 1 -> SymbolicPacketTransformer<13>
+  InternedField<0>:'a' == *:
+    InternedField<0>:'a' := 1 -> SymbolicPacketTransformer<3>
+  InternedField<0>:'a' == * -> SymbolicPacketTransformer<15>
+SymbolicPacketTransformer<13>:
+  InternedField<1>:'b' == 1:
+    InternedField<1>:'b' := 1 -> SymbolicPacketTransformer<12>
+  InternedField<1>:'b' == *:
+    InternedField<1>:'b' := 1 -> SymbolicPacketTransformer<accept>
+  InternedField<1>:'b' == * -> SymbolicPacketTransformer<9>
+SymbolicPacketTransformer<3>:
+  InternedField<1>:'b' == *:
+    InternedField<1>:'b' := 1 -> SymbolicPacketTransformer<accept>
+  InternedField<1>:'b' == * -> SymbolicPacketTransformer<deny>
+SymbolicPacketTransformer<15>:
+  InternedField<1>:'b' == 1:
+    InternedField<1>:'b' := 1 -> SymbolicPacketTransformer<12>
+  InternedField<1>:'b' == *:
+  InternedField<1>:'b' == * -> SymbolicPacketTransformer<9>
+SymbolicPacketTransformer<12>:
+  InternedField<2>:'c' == *:
+    InternedField<2>:'c' := 4 -> SymbolicPacketTransformer<accept>
+  InternedField<2>:'c' == * -> SymbolicPacketTransformer<accept>
+SymbolicPacketTransformer<9>:
+  InternedField<2>:'c' == *:
+    InternedField<2>:'c' := 4 -> SymbolicPacketTransformer<accept>
+  InternedField<2>:'c' == * -> SymbolicPacketTransformer<deny>
+-- DOT -------------------------------------------------------------------------
+digraph {
+  4294967294 [label="T" shape=box]
+  4294967295 [label="F" shape=box]
+  16 [label="a"]
+  16 -> 13 [label="a==1; a:=1"]
+  16 -> 3 [label="a==*; a:=1"]
+  16 -> 15 [style=dashed]
+  13 [label="b"]
+  13 -> 12 [label="b==1; b:=1"]
+  13 -> 4294967294 [label="b==*; b:=1"]
+  13 -> 9 [style=dashed]
+  3 [label="b"]
+  3 -> 4294967294 [label="b==*; b:=1"]
+  3 -> 4294967295 [style=dashed]
+  15 [label="b"]
+  15 -> 12 [label="b==1; b:=1"]
+  15 -> 9 [style=dashed]
+  12 [label="c"]
+  12 -> 4294967294 [label="c==*; c:=4"]
+  12 -> 4294967294 [style=dashed]
+  9 [label="c"]
+  9 -> 4294967294 [label="c==*; c:=4"]
+  9 -> 4294967295 [style=dashed]
+}
+================================================================================
+Test case: p;q. Example from Katch paper Fig 5.
+================================================================================
+-- STRING ----------------------------------------------------------------------
+SymbolicPacketTransformer<21>:
+  InternedField<0>:'a' == 1:
+    InternedField<0>:'a' := 1 -> SymbolicPacketTransformer<18>
+  InternedField<0>:'a' == 5:
+    InternedField<0>:'a' := 1 -> SymbolicPacketTransformer<3>
+    InternedField<0>:'a' := 5 -> SymbolicPacketTransformer<20>
+  InternedField<0>:'a' == *:
+    InternedField<0>:'a' := 1 -> SymbolicPacketTransformer<19>
+  InternedField<0>:'a' == * -> SymbolicPacketTransformer<18>
+SymbolicPacketTransformer<18>:
+  InternedField<1>:'b' == 2:
+    InternedField<1>:'b' := 1 -> SymbolicPacketTransformer<12>
+    InternedField<1>:'b' := 2 -> SymbolicPacketTransformer<17>
+  InternedField<1>:'b' == *:
+  InternedField<1>:'b' == * -> SymbolicPacketTransformer<deny>
+SymbolicPacketTransformer<3>:
+  InternedField<1>:'b' == *:
+    InternedField<1>:'b' := 1 -> SymbolicPacketTransformer<accept>
+  InternedField<1>:'b' == * -> SymbolicPacketTransformer<deny>
+SymbolicPacketTransformer<20>:
+  InternedField<1>:'b' == *:
+    InternedField<1>:'b' := 1 -> SymbolicPacketTransformer<12>
+  InternedField<1>:'b' == * -> SymbolicPacketTransformer<17>
+SymbolicPacketTransformer<19>:
+  InternedField<1>:'b' == 2:
+    InternedField<1>:'b' := 1 -> SymbolicPacketTransformer<accept>
+  InternedField<1>:'b' == *:
+  InternedField<1>:'b' == * -> SymbolicPacketTransformer<deny>
+SymbolicPacketTransformer<12>:
+  InternedField<2>:'c' == *:
+    InternedField<2>:'c' := 4 -> SymbolicPacketTransformer<accept>
+  InternedField<2>:'c' == * -> SymbolicPacketTransformer<accept>
+SymbolicPacketTransformer<17>:
+  InternedField<2>:'c' == 5:
+    InternedField<2>:'c' := 4 -> SymbolicPacketTransformer<accept>
+  InternedField<2>:'c' == *:
+  InternedField<2>:'c' == * -> SymbolicPacketTransformer<deny>
+-- DOT -------------------------------------------------------------------------
+digraph {
+  4294967294 [label="T" shape=box]
+  4294967295 [label="F" shape=box]
+  21 [label="a"]
+  21 -> 18 [label="a==1; a:=1"]
+  21 -> 3 [label="a==5; a:=1"]
+  21 -> 20 [label="a==5; a:=5"]
+  21 -> 19 [label="a==*; a:=1"]
+  21 -> 18 [style=dashed]
+  18 [label="b"]
+  18 -> 12 [label="b==2; b:=1"]
+  18 -> 17 [label="b==2; b:=2"]
+  18 -> 4294967295 [style=dashed]
+  3 [label="b"]
+  3 -> 4294967294 [label="b==*; b:=1"]
+  3 -> 4294967295 [style=dashed]
+  20 [label="b"]
+  20 -> 12 [label="b==*; b:=1"]
+  20 -> 17 [style=dashed]
+  19 [label="b"]
+  19 -> 4294967294 [label="b==2; b:=1"]
+  19 -> 4294967295 [style=dashed]
+  12 [label="c"]
+  12 -> 4294967294 [label="c==*; c:=4"]
+  12 -> 4294967294 [style=dashed]
+  17 [label="c"]
+  17 -> 4294967294 [label="c==5; c:=4"]
+  17 -> 4294967295 [style=dashed]
+}

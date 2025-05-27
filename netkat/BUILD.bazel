@@ -98,7 +98,6 @@ cc_library(
     ],
 )
 
-# go/golden-test-with-coverage
 cc_test(
     name = "symbolic_packet_test",
     srcs = ["symbolic_packet_test.cc"],
@@ -118,6 +117,7 @@ cc_test(
     ],
 )
 
+# go/golden-test-with-coverage
 cc_test(
     name = "symbolic_packet_test_runner",
     srcs = ["symbolic_packet_test_runner.cc"],
@@ -297,4 +297,22 @@ cc_test(
         "@com_google_gutil//gutil:status_matchers",
         "@com_googlesource_code_re2//:re2",
     ],
+)
+
+# go/golden-test-with-coverage
+cc_test(
+    name = "symbolic_packet_transformer_test_runner",
+    srcs = ["symbolic_packet_transformer_test_runner.cc"],
+    linkstatic = True,
+    deps = [
+        ":netkat_proto_constructors",
+        ":symbolic_packet_transformer",
+    ],
+)
+
+cmd_diff_test(
+    name = "symbolic_packet_transformer_diff_test",
+    actual_cmd = "$(execpath :symbolic_packet_transformer_test_runner)",
+    expected = ":symbolic_packet_transformer_test.expected",
+    tools = [":symbolic_packet_transformer_test_runner"],
 )
