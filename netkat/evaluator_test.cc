@@ -211,6 +211,20 @@ void DeMorganHolds(const Packet& packet, const PredicateProto& left,
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, DeMorganHolds);
 
+void ExistOnlyExistsWithPacketsWithMatchingField(Packet packet,
+                                                 std::string field, int value) {
+  packet[field] = value;
+  EXPECT_TRUE(Evaluate(ExistsProto(field, MatchProto(field, value)), packet));
+
+  packet[field] = ~value;
+  EXPECT_TRUE(Evaluate(ExistsProto(field, MatchProto(field, value)), packet));
+
+  packet.erase(field);
+  EXPECT_FALSE(Evaluate(ExistsProto(field, MatchProto(field, value)), packet));
+}
+FUZZ_TEST(EvaluatePredicateProtoTest,
+          ExistOnlyExistsWithPacketsWithMatchingField);
+
 /*--- Basic policy properties ------------------------------------------------*/
 
 void LiftedEvaluationIsCorrect(absl::flat_hash_set<Packet> packets,
