@@ -15,32 +15,47 @@
 
 #include "netkat/evaluator.h"
 
+#include <string>
+
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/log.h"
 #include "netkat/netkat.pb.h"
 
 namespace netkat {
 
-bool Evaluate(const PredicateProto& predicate, const Packet& packet) {
+namespace {
+
+bool Evaluate(const PredicateProto& predicate, const Packet& packet,
+              absl::flat_hash_set<std::string>& exist_fields) {
   switch (predicate.predicate_case()) {
     case PredicateProto::kBoolConstant:
       return predicate.bool_constant().value();
     case PredicateProto::kNotOp:
-      return !Evaluate(predicate.not_op().negand(), packet);
+      return !Evaluate(predicate.not_op().negand(), packet, exist_fields);
     case PredicateProto::kAndOp:
-      return Evaluate(predicate.and_op().left(), packet) &&
-             Evaluate(predicate.and_op().right(), packet);
+      return Evaluate(predicate.and_op().left(), packet, exist_fields) &&
+             Evaluate(predicate.and_op().right(), packet, exist_fields);
     case PredicateProto::kOrOp:
-      return Evaluate(predicate.or_op().left(), packet) ||
-             Evaluate(predicate.or_op().right(), packet);
+      return Evaluate(predicate.or_op().left(), packet, exist_fields) ||
+             Evaluate(predicate.or_op().right(), packet, exist_fields);
     case PredicateProto::kXorOp:
-      return (!Evaluate(predicate.xor_op().left(), packet) &&
-              Evaluate(predicate.xor_op().right(), packet)) ||
-             (Evaluate(predicate.xor_op().left(), packet) &&
-              !Evaluate(predicate.xor_op().right(), packet));
+      return (!Evaluate(predicate.xor_op().left(), packet, exist_fields) &&
+              Evaluate(predicate.xor_op().right(), packet, exist_fields)) ||
+             (Evaluate(predicate.xor_op().left(), packet, exist_fields) &&
+              !Evaluate(predicate.xor_op().right(), packet, exist_fields));
+    case PredicateProto::kExistsOp:
+      exist_fields.insert(predicate.exists_op().field());
+      // LOG(INFO) << "ExistsOp: " << predicate.exists_op().field();
+      return Evaluate(predicate.exists_op().predicate(), packet, exist_fields);
     case PredicateProto::kMatch:
       if (auto iter = packet.find(predicate.match().field());
           iter != packet.end()) {
+        if (!exist_fields.empty()) {
+          // LOG(INFO) << "Match: " << predicate.match().field() << " "
+          //           << iter->second;
+          return iter->second == predicate.match().value() ||
+                 exist_fields.contains(predicate.match().field());
+        }
         return iter->second == predicate.match().value();
       } else {
         return false;
@@ -50,6 +65,13 @@ bool Evaluate(const PredicateProto& predicate, const Packet& packet) {
   }
   LOG(FATAL) << "Unexpected value for PredicateProto predicate_case: "
              << static_cast<int>(predicate.predicate_case());
+}
+
+}  // namespace
+
+bool Evaluate(const PredicateProto& predicate, const Packet& packet) {
+  absl::flat_hash_set<std::string> exist_fields;
+  return Evaluate(predicate, packet, exist_fields);
 }
 
 absl::flat_hash_set<Packet> Evaluate(

@@ -1,5 +1,6 @@
 #include "netkat/gtest_utils.h"
 
+#include "absl/strings/string_view.h"
 #include "fuzztest/fuzztest.h"
 #include "google/protobuf/descriptor.h"
 #include "netkat/frontend.h"
@@ -19,6 +20,25 @@ bool FieldTypeIs(const google::protobuf::FieldDescriptor* field) {
   return field->message_type() == T::descriptor();
 };
 
+// Returns true if the field is an `Exists` fields.
+bool ExistsMessageType(const google::protobuf::FieldDescriptor* field) {
+  return field->message_type() && field->message_type()->name() == "Exists";
+}
+
+fuzztest::Domain<PredicateProto> ArbitraryValidPredicateProtoWithoutExists() {
+  return fuzztest::Arbitrary<PredicateProto>()
+      // The domain will recursively set all fields. This ensures
+      // PredicateProto will have its members PredicateProto set.
+      .WithFieldsAlwaysSet()
+      // The domain will ensure all PredicateProto::Match::field will be
+      // non-empty.
+      .WithProtobufFields(
+          FieldTypeIs<PredicateProto::Match>,
+          fuzztest::Arbitrary<PredicateProto::Match>().WithStringFieldAlwaysSet(
+              "field", fuzztest::String().WithMinSize(1)))
+      .WithFieldsUnset(ExistsMessageType);
+}
+
 }  // namespace
 
 fuzztest::Domain<PredicateProto> ArbitraryValidPredicateProto() {
@@ -31,7 +51,16 @@ fuzztest::Domain<PredicateProto> ArbitraryValidPredicateProto() {
       .WithProtobufFields(
           FieldTypeIs<PredicateProto::Match>,
           fuzztest::Arbitrary<PredicateProto::Match>().WithStringFieldAlwaysSet(
-              "field", fuzztest::String().WithMinSize(1)));
+              "field", fuzztest::String().WithMinSize(1)))
+      // The domain will ensure all PredicateProto::Exists::field will be
+      // non-empty.
+      .WithProtobufFields(
+          FieldTypeIs<PredicateProto::Exists>,
+          fuzztest::Arbitrary<PredicateProto::Exists>()
+              .WithStringFieldAlwaysSet("field",
+                                        fuzztest::String().WithMinSize(1))
+              .WithProtobufFieldAlwaysSet(
+                  "predicate", ArbitraryValidPredicateProtoWithoutExists()));
 }
 
 fuzztest::Domain<PolicyProto> ArbitraryValidPolicyProto() {

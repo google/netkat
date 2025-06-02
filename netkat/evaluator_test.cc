@@ -19,6 +19,7 @@
 #include "fuzztest/fuzztest.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "netkat/gtest_utils.h"
 #include "netkat/netkat.pb.h"
 #include "netkat/netkat_proto_constructors.h"
 
@@ -27,6 +28,7 @@ namespace {
 
 using ::fuzztest::Arbitrary;
 using ::fuzztest::InRange;
+using ::netkat::netkat_test::ArbitraryValidPredicateProto;
 using ::testing::ContainerEq;
 using ::testing::IsEmpty;
 using ::testing::IsSupersetOf;
@@ -52,7 +54,8 @@ FUZZ_TEST(EvaluatePredicateProtoTest, EmptyPredicateIsFalseOnAnyPackets);
 void NotIsLogicalNot(Packet packet, PredicateProto negand) {
   EXPECT_EQ(Evaluate(NotProto(negand), packet), !Evaluate(negand, packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, NotIsLogicalNot);
+FUZZ_TEST(EvaluatePredicateProtoTest, NotIsLogicalNot)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto());
 
 void MatchOnlyMatchesPacketsWithCorrectValueAndField(Packet packet,
                                                      std::string field,
@@ -73,13 +76,17 @@ void AndIsLogicalAnd(Packet packet, PredicateProto left, PredicateProto right) {
   EXPECT_EQ(Evaluate(AndProto(left, right), packet),
             Evaluate(left, packet) && Evaluate(right, packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, AndIsLogicalAnd);
+FUZZ_TEST(EvaluatePredicateProtoTest, AndIsLogicalAnd)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 void OrIsLogicalOr(Packet packet, PredicateProto left, PredicateProto right) {
   EXPECT_EQ(Evaluate(OrProto(left, right), packet),
             Evaluate(left, packet) || Evaluate(right, packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, OrIsLogicalOr);
+FUZZ_TEST(EvaluatePredicateProtoTest, OrIsLogicalOr)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 /*--- Boolean algebra axioms and equivalences --------------------------------*/
 
@@ -87,37 +94,44 @@ void PredOrItsNegationIsTrue(const Packet& packet,
                              const PredicateProto& predicate) {
   EXPECT_TRUE(Evaluate(OrProto(predicate, NotProto(predicate)), packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, PredOrItsNegationIsTrue);
+FUZZ_TEST(EvaluatePredicateProtoTest, PredOrItsNegationIsTrue)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto());
 
 void PredAndItsNegationIsFalse(const Packet& packet,
                                const PredicateProto& predicate) {
   EXPECT_FALSE(Evaluate(AndProto(predicate, NotProto(predicate)), packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, PredAndItsNegationIsFalse);
+FUZZ_TEST(EvaluatePredicateProtoTest, PredAndItsNegationIsFalse)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto());
 
 void AndIsIdempotent(const Packet& packet, const PredicateProto& predicate) {
   EXPECT_EQ(Evaluate(AndProto(predicate, predicate), packet),
             Evaluate(predicate, packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, AndIsIdempotent);
+FUZZ_TEST(EvaluatePredicateProtoTest, AndIsIdempotent)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto());
 
 void AndTrueIsIdentity(const Packet& packet, const PredicateProto& predicate) {
   EXPECT_EQ(Evaluate(AndProto(predicate, TrueProto()), packet),
             Evaluate(predicate, packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, AndTrueIsIdentity);
+FUZZ_TEST(EvaluatePredicateProtoTest, AndTrueIsIdentity)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto());
 
 void AndFalseIsFalse(const Packet& packet, const PredicateProto& predicate) {
   EXPECT_FALSE(Evaluate(AndProto(predicate, FalseProto()), packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, AndFalseIsFalse);
+FUZZ_TEST(EvaluatePredicateProtoTest, AndFalseIsFalse)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto());
 
 void AndIsCommutative(const Packet& packet, const PredicateProto& left,
                       const PredicateProto& right) {
   EXPECT_EQ(Evaluate(AndProto(left, right), packet),
             Evaluate(AndProto(right, left), packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, AndIsCommutative);
+FUZZ_TEST(EvaluatePredicateProtoTest, AndIsCommutative)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 void AndIsAssociative(const Packet& packet, const PredicateProto& left,
                       const PredicateProto& middle,
@@ -125,31 +139,39 @@ void AndIsAssociative(const Packet& packet, const PredicateProto& left,
   EXPECT_EQ(Evaluate(AndProto(AndProto(left, middle), right), packet),
             Evaluate(AndProto(left, AndProto(middle, right)), packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, AndIsAssociative);
+FUZZ_TEST(EvaluatePredicateProtoTest, AndIsAssociative)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 void OrIsIdempotent(const Packet& packet, const PredicateProto& predicate) {
   EXPECT_EQ(Evaluate(OrProto(predicate, predicate), packet),
             Evaluate(predicate, packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, OrIsIdempotent);
+FUZZ_TEST(EvaluatePredicateProtoTest, OrIsIdempotent)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto());
 
 void OrFalseIsIdentity(const Packet& packet, const PredicateProto& predicate) {
   EXPECT_EQ(Evaluate(OrProto(predicate, FalseProto()), packet),
             Evaluate(predicate, packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, OrFalseIsIdentity);
+FUZZ_TEST(EvaluatePredicateProtoTest, OrFalseIsIdentity)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto());
 
 void OrTrueIsTrue(const Packet& packet, const PredicateProto& predicate) {
   EXPECT_TRUE(Evaluate(OrProto(predicate, TrueProto()), packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, OrTrueIsTrue);
+FUZZ_TEST(EvaluatePredicateProtoTest, OrTrueIsTrue)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto());
 
 void OrIsCommutative(const Packet& packet, const PredicateProto& left,
                      const PredicateProto& right) {
   EXPECT_EQ(Evaluate(OrProto(left, right), packet),
             Evaluate(OrProto(right, left), packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, OrIsCommutative);
+FUZZ_TEST(EvaluatePredicateProtoTest, OrIsCommutative)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 void OrIsAssociative(const Packet& packet, const PredicateProto& left,
                      const PredicateProto& middle,
@@ -157,32 +179,42 @@ void OrIsAssociative(const Packet& packet, const PredicateProto& left,
   EXPECT_EQ(Evaluate(OrProto(OrProto(left, middle), right), packet),
             Evaluate(OrProto(left, OrProto(middle, right)), packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, OrIsAssociative);
+FUZZ_TEST(EvaluatePredicateProtoTest, OrIsAssociative)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 void XorFalseIsIdentity(const Packet& packet, const PredicateProto& predicate) {
   EXPECT_EQ(Evaluate(XorProto(predicate, FalseProto()), packet),
             Evaluate(predicate, packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, XorFalseIsIdentity);
+FUZZ_TEST(EvaluatePredicateProtoTest, XorFalseIsIdentity)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto());
 
 void XorSelfIsFalse(const Packet& packet, const PredicateProto& pred) {
   EXPECT_FALSE(Evaluate(XorProto(pred, pred), packet));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, XorSelfIsFalse);
+FUZZ_TEST(SymbolicPacketManagerTest, XorSelfIsFalse)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto());
 
 void XorIsCommutative(const Packet& packet, const PredicateProto& left,
                       PredicateProto right) {
   EXPECT_EQ(Evaluate(XorProto(left, right), packet),
             Evaluate(XorProto(right, left), packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, XorIsCommutative);
+FUZZ_TEST(EvaluatePredicateProtoTest, XorIsCommutative)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 void XorIsAssociative(const Packet& packet, const PredicateProto& left,
                       const PredicateProto& middle, PredicateProto right) {
   EXPECT_EQ(Evaluate(XorProto(XorProto(left, middle), right), packet),
             Evaluate(XorProto(left, XorProto(middle, right)), packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, XorIsAssociative);
+FUZZ_TEST(EvaluatePredicateProtoTest, XorIsAssociative)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 void DistributiveLawHolds(const Packet& packet, const PredicateProto& first,
                           const PredicateProto& second,
@@ -197,7 +229,10 @@ void DistributiveLawHolds(const Packet& packet, const PredicateProto& first,
             Evaluate(AndProto(OrProto(first, third), OrProto(second, third)),
                      packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, DistributiveLawHolds);
+FUZZ_TEST(EvaluatePredicateProtoTest, DistributiveLawHolds)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 void DeMorganHolds(const Packet& packet, const PredicateProto& left,
                    const PredicateProto& right) {
@@ -209,7 +244,23 @@ void DeMorganHolds(const Packet& packet, const PredicateProto& left,
   EXPECT_EQ(Evaluate(NotProto(OrProto(left, right)), packet),
             Evaluate(AndProto(NotProto(left), NotProto(right)), packet));
 }
-FUZZ_TEST(EvaluatePredicateProtoTest, DeMorganHolds);
+FUZZ_TEST(EvaluatePredicateProtoTest, DeMorganHolds)
+    .WithDomains(fuzztest::Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
+
+void ExistOnlyExistsWithPacketsWithMatchingField(Packet packet,
+                                                 std::string field, int value) {
+  packet[field] = value;
+  EXPECT_TRUE(Evaluate(ExistsProto(field, MatchProto(field, value)), packet));
+
+  packet[field] = ~value;
+  EXPECT_TRUE(Evaluate(ExistsProto(field, MatchProto(field, value)), packet));
+
+  packet.erase(field);
+  EXPECT_FALSE(Evaluate(ExistsProto(field, MatchProto(field, value)), packet));
+}
+FUZZ_TEST(EvaluatePredicateProtoTest,
+          ExistOnlyExistsWithPacketsWithMatchingField);
 
 /*--- Basic policy properties ------------------------------------------------*/
 

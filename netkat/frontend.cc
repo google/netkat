@@ -51,11 +51,23 @@ absl::Status RecursivelyCheckIsValid(const PredicateProto& predicate_proto) {
           << "PredicateProto::Xor's rhs is invalid: ";
       return absl::OkStatus();
     }
-    case PredicateProto::kNotOp:
+    case PredicateProto::kNotOp: {
       RETURN_IF_ERROR(
           RecursivelyCheckIsValid(predicate_proto.not_op().negand()))
               .SetPrepend()
           << "PredicateProto::Not's negand is invalid: ";
+      return absl::OkStatus();
+    }
+    case PredicateProto::kExistsOp: {
+      if (predicate_proto.exists_op().field().empty()) {
+        return absl::InvalidArgumentError(
+            "PredicateProto::Exists's field is invalid because it is empty.");
+      }
+      RETURN_IF_ERROR(
+          RecursivelyCheckIsValid(predicate_proto.exists_op().predicate()))
+              .SetPrepend()
+          << "PredicateProto::Exists's predicate is invalid: ";
+    }
       return absl::OkStatus();
   }
 }
@@ -81,6 +93,11 @@ Predicate operator||(Predicate lhs, Predicate rhs) {
 Predicate Xor(Predicate lhs, Predicate rhs) {
   return Predicate(
       XorProto(std::move(lhs).ToProto(), std::move(rhs).ToProto()));
+}
+
+Predicate Exists(absl::string_view field, Predicate predicate) {
+  return Predicate(
+      ExistsProto(std::move(field), std::move(predicate).ToProto()));
 }
 
 Predicate Predicate::True() { return Predicate(TrueProto()); }

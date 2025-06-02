@@ -21,7 +21,6 @@
 
 #include "absl/base/no_destructor.h"
 #include "absl/container/flat_hash_map.h"
-#include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
@@ -30,10 +29,13 @@
 #include "gtest/gtest.h"
 #include "gutil/status_matchers.h"  // IWYU pragma: keep
 #include "netkat/evaluator.h"
+#include "netkat/gtest_utils.h"
 #include "netkat/netkat_proto_constructors.h"
 #include "re2/re2.h"
 
 namespace netkat {
+
+using ::netkat::netkat_test::ArbitraryValidPredicateProto;
 
 // We use a global manager object to exercise statefulness more deeply across
 // test cases. This also enables better pretty printing for debugging, see
@@ -140,7 +142,8 @@ void CompilationPreservesSemantics(const PredicateProto& pred,
   EXPECT_EQ(Manager().Contains(Manager().Compile(pred), packet),
             Evaluate(pred, packet));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, CompilationPreservesSemantics);
+FUZZ_TEST(SymbolicPacketManagerTest, CompilationPreservesSemantics)
+    .WithDomains(ArbitraryValidPredicateProto(), fuzztest::Arbitrary<Packet>());
 
 void GetConcretePacketsReturnsNonEmptyListForNonEmptySet(
     const PredicateProto& pred) {
@@ -330,6 +333,33 @@ void XorIsAssociative(const PredicateProto& a, const PredicateProto& b,
             Manager().Compile(XorProto(XorProto(a, b), c)));
 }
 FUZZ_TEST(SymbolicPacketManagerTest, XorIsAssociative);
+
+TEST(SymbolicPacketManagerTest, ExistsOnPacketWithSingleFieldReturnsFullSet) {
+  const std::string field = "a";
+  EXPECT_EQ(Manager().Exists(field, Manager().Compile(MatchProto(field, 3))),
+            Manager().FullSet());
+}
+
+TEST(SymbolicPacketManagerTest, ExistOnFieldRemovesPacketFieldProperty) {
+  const std::string field = "a";
+  constexpr int value = 3;
+  // p = (a=3 && b=4) || (b!=5 && c=5)
+  SymbolicPacket symbolic_packet = Manager().Compile(
+      OrProto(AndProto(MatchProto(field, value), MatchProto("b", 4)),
+              AndProto(NotProto(MatchProto("b", 5)), MatchProto("c", 5))));
+  SymbolicPacket symbolic_packet_without_field =
+      Manager().Exists(field, symbolic_packet);
+  EXPECT_FALSE(Manager().Contains(symbolic_packet_without_field,
+                                  Packet{{field, value}}));
+}
+
+TEST(SymbolicPacketManagerTest, ExistsOnFieldNotInPacketIsIdentity) {
+  // p = (a=3 && b=4) || (b!=5 && c=5)
+  SymbolicPacket symbolic_packet = Manager().Compile(
+      OrProto(AndProto(MatchProto("a", 3), MatchProto("b", 4)),
+              AndProto(NotProto(MatchProto("b", 5)), MatchProto("c", 5))));
+  EXPECT_EQ(symbolic_packet, Manager().Exists("d", symbolic_packet));
+}
 
 }  // namespace
 }  // namespace netkat
