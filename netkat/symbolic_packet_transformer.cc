@@ -231,14 +231,17 @@ absl::flat_hash_set<Packet> SymbolicPacketTransformerManager::Run(
   const DecisionNode& node = GetNodeOrDie(transformer);
   std::string field =
       symbolic_packet_manager_.field_manager_.GetFieldName(node.field);
-  auto field_it = concrete_packet.find(field);
   // If a field doesn't exist, it does not match any value.
+  std::optional<int> initial_field_value;
+  if (auto it = concrete_packet.find(field); it != concrete_packet.end()) {
+    initial_field_value = it->second;
+  }
   bool matched = false;
-  if (field_it != concrete_packet.end()) {
+  if (initial_field_value.has_value()) {
     // If it exists, see if there is a value match for it and follow every
     // corresponding branch with value modified appropriately.
     if (auto mod_map_it =
-            node.modify_branch_by_field_match.find(field_it->second);
+            node.modify_branch_by_field_match.find(*initial_field_value);
         mod_map_it != node.modify_branch_by_field_match.end()) {
       matched = true;
       for (const auto& [value, branch] : mod_map_it->second) {
@@ -258,8 +261,10 @@ absl::flat_hash_set<Packet> SymbolicPacketTransformerManager::Run(
     // If the original packet already had this field with the same value as
     // this modified branch, then we should not also attempt the default
     // branch.
-    if (field_it != concrete_packet.end() && field_it->second == value)
+    if (initial_field_value.has_value() && *initial_field_value == value) {
       matched = true;
+    }
+
     result.merge(
         RunWithNewValueThenReset(*this, branch, concrete_packet, field, value));
   }
