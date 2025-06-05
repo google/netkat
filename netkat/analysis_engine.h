@@ -22,7 +22,7 @@
 #define GOOGLE_NETKAT_NETKAT_ANALYSIS_ENGINE_H_
 
 #include "netkat/frontend.h"
-#include "netkat/symbolic_packet.h"
+#include "netkat/symbolic_packet_transformer.h"
 
 namespace netkat {
 
@@ -41,8 +41,13 @@ class AnalysisEngine {
   // for all packets.
   bool CheckEquivalent(const Predicate& left, const Predicate& right);
 
+  // Checks whether two policies are "equivalent", meaning they have the same
+  // packets transformations, meaning Evaluate(left, packet) == Evaluate(right,
+  // packet) for all packets.
+  bool CheckEquivalent(const Policy& left, const Policy& right);
+
  private:
-  SymbolicPacketManager packet_manager_;
+  SymbolicPacketTransformerManager packet_transformer_manager_;
 };
 
 }  // namespace netkat

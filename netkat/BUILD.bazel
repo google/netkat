@@ -259,7 +259,7 @@ cc_library(
     hdrs = ["analysis_engine.h"],
     deps = [
         ":frontend",
-        ":symbolic_packet",
+        ":symbolic_packet_transformer",
     ],
 )
 

@@ -20,8 +20,13 @@ namespace netkat {
 
 bool AnalysisEngine::CheckEquivalent(const Predicate& left,
                                      const Predicate& right) {
-  return packet_manager_.Compile(left.ToProto()) ==
-         packet_manager_.Compile(right.ToProto());
+  return packet_transformer_manager_.Compile(Filter(left).ToProto()) ==
+         packet_transformer_manager_.Compile(Filter(right).ToProto());
+}
+
+bool AnalysisEngine::CheckEquivalent(const Policy& left, const Policy& right) {
+  return packet_transformer_manager_.Compile(left.ToProto()) ==
+         packet_transformer_manager_.Compile(right.ToProto());
 }
 
 }  // namespace netkat
