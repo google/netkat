@@ -21,7 +21,7 @@ namespace netkat {
 namespace {
 
 // We include only a single `CheckEquivalent` test as a smoke test since the
-// function is implemented in terms of `SymbolicPacketManager`, which is tested
+// function is implemented in terms of `PacketSetManager`, which is tested
 // thoroughly in its own unit tests.
 TEST(AnalysisEngineTest, CheckEquivalentSmokeTests) {
   AnalysisEngine analyzer;

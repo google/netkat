@@ -13,14 +13,15 @@
 // limitations under the License.
 //
 // -----------------------------------------------------------------------------
-// File: symbolic_packet_transformer.h
+// File: packet_transformer.h
 // -----------------------------------------------------------------------------
 //
-// Defines `SymbolicPacketTransformer` and its companion class
-// `SymbolicPacketTransformerManager`. Together, they provide a compact and
-// efficient representation of record-free policies allowing for fast semantic
-// equality checks. Semantically, a `SymbolicPacketTransformer` represents a
-// function that maps packets to packet sets.
+// Defines `PacketTransformerHandle` and its companion class
+// `PacketTransformerManager` following the manager-class pattern described in
+// `manager_handle_pattern.md`. Together, they provide a compact and efficient
+// representation of record-free policies allowing for fast semantic equality
+// checks. Semantically, a `PacketTransformerHandle` represents a function that
+// maps packets to packet sets.
 //
 // This is a low level library designed for maximum efficiency, rather than a
 // high level library designed for safety and convenience.
@@ -33,8 +34,8 @@
 //
 // CAUTION: This implementation has NOT yet been optimized for performance.
 
-#ifndef GOOGLE_NETKAT_NETKAT_SYMBOLIC_PACKET_TRANSFORMER_H_
-#define GOOGLE_NETKAT_NETKAT_SYMBOLIC_PACKET_TRANSFORMER_H_
+#ifndef GOOGLE_NETKAT_NETKAT_PACKET_TRANSFORMER_H_
+#define GOOGLE_NETKAT_NETKAT_PACKET_TRANSFORMER_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -48,186 +49,180 @@
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "netkat/evaluator.h"
-#include "netkat/interned_field.h"
 #include "netkat/netkat.pb.h"
+#include "netkat/packet_field.h"
+#include "netkat/packet_set.h"
 #include "netkat/paged_stable_vector.h"
-#include "netkat/symbolic_packet.h"
 
 namespace netkat {
 
-// A "symbolic packet transformer" is a lightweight handle (32 bits) that
+// A "packet transformer" is a lightweight handle (32 bits) that
 // represents a record-free policy (or functions from packets to sets of output
-// packets). Handles can only be created by a `SymbolicPacketTransformerManager`
+// packets). Handles can only be created by a `PacketTransformerManager`
 // object, which owns the graph-based representation of the set. The
 // representation can efficiently encode typical large and even infinite sets
 // seen in practice.
 //
 // The APIs of this object are almost entirely defined as methods of the
-// companion class `SymbolicPacketTransformerManager`. See the section "Why have
-// a manager class?" at the in `symbolic_packet.h` to learn why.
+// companion class `PacketTransformerManager` following the
+// manager-handle pattern, see `manager_handle_pattern.md`.
 //
-// CAUTION: Each `SymbolicPacketTransformer` is implicitly associated with the
+// CAUTION: Each `PacketTransformerHandle` is implicitly associated with the
 // manager object that created it; using it with a different manager has
 // undefined behavior.
 //
 // This data structure enjoys the following powerful *canonicity property*: two
-// symbolic packet transformers represent the policy if and only if they have
+// packet transformers represent the policy if and only if they have
 // the same memory representation. Since the memory representation is just 32
 // bits, semantic policy equality is cheap: O(1)!
 //
-// Compared to NetKAT policies, symbolic packet transformers have a few
+// Compared to NetKAT policies, packet transformers have a few
 // advantages:
 // * Cheap to store, copy, hash, and compare: O(1)
 // * Cheap to check semantic equality: O(1)
-class [[nodiscard]] SymbolicPacketTransformer {
+class [[nodiscard]] PacketTransformerHandle {
  public:
   // Default constructor: the Deny policy.
-  SymbolicPacketTransformer();
+  PacketTransformerHandle();
 
-  // Two symbolic packet transformers compare equal iff they represent the same
+  // Two packet transformers compare equal iff they represent the same
   // record-free policy (semantically). That is, two policies are equal iff they
   // are semantically equivalent when Record is replaced by Accept. Comparison
   // is O(1), thanks to interning/hash-consing.
-  friend auto operator<=>(SymbolicPacketTransformer a,
-                          SymbolicPacketTransformer b) = default;
+  friend auto operator<=>(PacketTransformerHandle a,
+                          PacketTransformerHandle b) = default;
 
   // Hashing, see https://abseil.io/docs/cpp/guides/hash.
   template <typename H>
-  friend H AbslHashValue(H h, SymbolicPacketTransformer transformer) {
+  friend H AbslHashValue(H h, PacketTransformerHandle transformer) {
     return H::combine(std::move(h), transformer.node_index_);
   }
 
   // Formatting, see https://abseil.io/docs/cpp/guides/abslstringify.
   // NOTE: These functions do not produce particularly useful output. Instead,
-  // use `SymbolicPacketTransformerManager::ToString(transformer)` whenever
+  // use `PacketTransformerManager::ToString(transformer)` whenever
   // possible.
   template <typename Sink>
-  friend void AbslStringify(Sink& sink, SymbolicPacketTransformer transformer) {
+  friend void AbslStringify(Sink& sink, PacketTransformerHandle transformer) {
     absl::Format(&sink, "%s", transformer.ToString());
   }
   std::string ToString() const;
 
  private:
-  // An index into the `nodes_` vector of the `SymbolicPacketTransformerManager`
-  // object associated with this `SymbolicPacketTransformer`. The semantics of
-  // this symbolic packet transformer is entirely determined by the node
+  // An index into the `nodes_` vector of the `PacketTransformerManager`
+  // object associated with this `PacketTransformerHandle`. The semantics of
+  // this packet transformer is entirely determined by the node
   // `nodes_[node_index_]`. The index is otherwise arbitrary and meaningless.
   //
   // We use a 32-bit index as a tradeoff between minimizing memory usage and
-  // maximizing the number of `SymbolicPacketTransformer`s that can be created,
+  // maximizing the number of `PacketTransformerHandle`s that can be created,
   // both aspects that impact how well we scale to large NetKAT models.
   uint32_t node_index_;
-  explicit SymbolicPacketTransformer(uint32_t node_index)
+  explicit PacketTransformerHandle(uint32_t node_index)
       : node_index_(node_index) {}
-  friend class SymbolicPacketTransformerManager;
+  friend class PacketTransformerManager;
 };
 
 // Protect against regressions in the memory layout, as it affects performance.
-static_assert(sizeof(SymbolicPacketTransformer) <= 4);
+static_assert(sizeof(PacketTransformerHandle) <= 4);
 
-// An "arena" in which `SymbolicPacketTransformer`s can be created and
-// manipulated.
+// An "arena" in which `PacketTransformerHandle`s can be created and
+// manipulated, following the manager-handle pattern (see
+// `manager_handle_pattern.md`).
 //
-// This class defines the majority of operations on `SymbolicPacketTransformer`s
-// and owns all the memory associated with the `SymbolicPacketTransformer`s
-// returned by the class's methods.
+// This class defines the majority of operations on `PacketTransformerHandle`s
+// and owns all the memory associated with the handles returned by the class's
+// methods.
 //
-// CAUTION: Using a `SymbolicPacketTransformer` returned by one
-// `SymbolicPacketTransformerManager` object with a different manager is
-// undefined behavior. `SymbolicPackets` and `SymbolicPacketTransformers`
+// CAUTION: Using a `PacketTransformerHandle` returned by one
+// `PacketTransformerManager` object with a different manager is
+// undefined behavior. `PacketSetHandles` and `PacketTransformerHandles`
 // returned by this class are not invalidated on move.
-class SymbolicPacketTransformerManager {
+class PacketTransformerManager {
  public:
-  SymbolicPacketTransformerManager() = default;
-  explicit SymbolicPacketTransformerManager(SymbolicPacketManager&& manager)
-      : symbolic_packet_manager_(std::move(manager)) {};
+  PacketTransformerManager() = default;
+  explicit PacketTransformerManager(PacketSetManager&& manager)
+      : packet_set_manager_(std::move(manager)) {};
 
   // The class is move-only: not copyable, but movable.
-  // `SymbolicPackets` and `SymbolicPacketTransformers` returned by this class
+  // `PacketSetHandles` and `PacketTransformerHandles` returned by this class
   // are not invalidated on move.
-  SymbolicPacketTransformerManager(const SymbolicPacketTransformerManager&) =
-      delete;
-  SymbolicPacketTransformerManager& operator=(
-      const SymbolicPacketTransformerManager&) = delete;
-  SymbolicPacketTransformerManager(SymbolicPacketTransformerManager&&) =
-      default;
-  SymbolicPacketTransformerManager& operator=(
-      SymbolicPacketTransformerManager&&) = default;
+  PacketTransformerManager(const PacketTransformerManager&) = delete;
+  PacketTransformerManager& operator=(const PacketTransformerManager&) = delete;
+  PacketTransformerManager(PacketTransformerManager&&) = default;
+  PacketTransformerManager& operator=(PacketTransformerManager&&) = default;
 
-  // Returns the `SymbolicPacketManager` used by this object to compile
+  // Returns the `PacketSetManager` used by this object to compile
   // predicates.
-  SymbolicPacketManager& GetSymbolicPacketManager() {
-    return symbolic_packet_manager_;
-  }
+  PacketSetManager& GetPacketSetManager() { return packet_set_manager_; }
 
-  // Returns true iff this symbolic transformer represents the Deny policy.
-  bool IsDeny(SymbolicPacketTransformer transformer) const;
+  // Returns true iff this transformer represents the Deny policy.
+  bool IsDeny(PacketTransformerHandle transformer) const;
 
-  // Returns true iff this symbolic transformer represents the Accept policy.
-  bool IsAccept(SymbolicPacketTransformer transformer) const;
+  // Returns true iff this transformer represents the Accept policy.
+  bool IsAccept(PacketTransformerHandle transformer) const;
 
   // Returns the set of possible packets obtained by running the given
-  // `concrete_packet` through the policy represented by `transformer`.
-  // NOTE: The `concrete_packet` will be returned unmodified.
-  absl::flat_hash_set<Packet> Run(SymbolicPacketTransformer transformer,
-                                  Packet& concrete_packet) const;
+  // `packet` through the policy represented by `transformer`.
+  // NOTE: The `packet` will be returned unmodified.
+  absl::flat_hash_set<Packet> Run(PacketTransformerHandle transformer,
+                                  Packet& packet) const;
 
-  // Compiles the given `PolicyProto` into a `SymbolicPacketTransformer` that
+  // Compiles the given `PolicyProto` into a `PacketTransformerHandle` that
   // represents the application of that policy to a set of packets.
   // Note: Will remove any Record operations in `policy`, replacing them with
   // the Accept policy.
-  SymbolicPacketTransformer Compile(const PolicyProto& policy);
+  PacketTransformerHandle Compile(const PolicyProto& policy);
 
-  // The symbolic packet transformer representing the Deny policy (i.e. the
+  // The packet transformer representing the Deny policy (i.e. the
   // policy that denies all packets). We say a transformer `T` "denies" a packet
   // `p` iff `T(p)` is empty.
-  SymbolicPacketTransformer Deny() const;
+  PacketTransformerHandle Deny() const;
 
-  // The symbolic packet transformer representing the Accept policy (i.e. the
+  // The packet transformer representing the Accept policy (i.e. the
   // policy that accepts all packets). We say a transformer `T` "accepts" a
   // packet `p` iff `p \in T(p)`.
-  SymbolicPacketTransformer Accept() const;
+  PacketTransformerHandle Accept() const;
 
-  // Creates a `SymbolicPacketTransformer` that accepts a packet iff it is
-  // contained in `symbolic_packet`. `symbolic_packet` must be created/owned by
+  // Creates a `PacketTransformerHandle` that accepts a packet iff it is
+  // contained in `packet_set`. `packet_set` must be created/owned by
   // this manager. This is equivalent to Filter on the predicate corresponding
-  // to `symbolic_packet`.
-  SymbolicPacketTransformer FromSymbolicPacket(SymbolicPacket symbolic_packet);
+  // to `packet_set`.
+  PacketTransformerHandle FromPacketSetHandle(PacketSetHandle packet_set);
 
   // Returns the transformer that only accepts packets matching `predicate`.
-  SymbolicPacketTransformer Filter(const PredicateProto& predicate);
+  PacketTransformerHandle Filter(const PredicateProto& predicate);
 
   // Returns the transformer that sets the `field` of packets to `value`.
-  SymbolicPacketTransformer Modification(absl::string_view field, int value);
+  PacketTransformerHandle Modification(absl::string_view field, int value);
 
   // Returns the transformer that applies the `left` transformer, then the
   // `right` transformer.
-  SymbolicPacketTransformer Sequence(SymbolicPacketTransformer left,
-                                     SymbolicPacketTransformer right);
+  PacketTransformerHandle Sequence(PacketTransformerHandle left,
+                                   PacketTransformerHandle right);
 
   // Returns the transformer that non-deterministically applies the `left`
   // transformer *OR* the `right` transformer.
-  SymbolicPacketTransformer Union(SymbolicPacketTransformer left,
-                                  SymbolicPacketTransformer right);
+  PacketTransformerHandle Union(PacketTransformerHandle left,
+                                PacketTransformerHandle right);
 
   // Returns the transformer that non-deterministically applies the `iterable`
   // transformer in sequence 0 or more times.
-  SymbolicPacketTransformer Iterate(SymbolicPacketTransformer iterable);
+  PacketTransformerHandle Iterate(PacketTransformerHandle iterable);
 
   // Returns a human-readable string representation of the given `transformer`,
   // intended for debugging.
-  [[nodiscard]] std::string ToString(
-      SymbolicPacketTransformer transformer) const;
+  [[nodiscard]] std::string ToString(PacketTransformerHandle transformer) const;
 
-  // Returns a dot string representation of the given `symbolic_packet`.
-  std::string ToDot(const SymbolicPacketTransformer& transformer) const;
+  // Returns a dot string representation of the given `packet_set`.
+  std::string ToDot(const PacketTransformerHandle& transformer) const;
 
   // TODO(dilo): Describe Push and Pull functions.
   // WARNING: Unimplemented and currently crashes.
-  SymbolicPacket Push(SymbolicPacket packet,
-                      SymbolicPacketTransformer transformer) const = delete;
-  SymbolicPacket Pull(SymbolicPacketTransformer transformer,
-                      SymbolicPacket packet) const = delete;
+  PacketSetHandle Push(PacketSetHandle packet_set,
+                       PacketTransformerHandle transformer) const = delete;
+  PacketSetHandle Pull(PacketTransformerHandle transformer,
+                       PacketSetHandle packet_set) const = delete;
 
   // TODO(b/398373935): There are many additional operations supported by this
   // data structure, but not currently implemented. Add them as needed. Examples
@@ -235,34 +230,34 @@ class SymbolicPacketTransformerManager {
 
   // Returns the transformer that describes the packets produced by both the
   // `left` and the `right` transformers, but not either alone.
-  SymbolicPacketTransformer Intersection(
-      SymbolicPacketTransformer left, SymbolicPacketTransformer right) = delete;
+  PacketTransformerHandle Intersection(PacketTransformerHandle left,
+                                       PacketTransformerHandle right) = delete;
 
   // Returns the transformer that describes the packets produced by the `left`
   // transformer, but not the `right` transformer.
-  SymbolicPacketTransformer Difference(
-      SymbolicPacketTransformer left, SymbolicPacketTransformer right) = delete;
+  PacketTransformerHandle Difference(PacketTransformerHandle left,
+                                     PacketTransformerHandle right) = delete;
 
   // Returns the transformer that describes the packets produced by the `left`
   // transformer or the `right` transformer, but not both.
-  SymbolicPacketTransformer SymmetricDifference(
-      SymbolicPacketTransformer left, SymbolicPacketTransformer right) = delete;
+  PacketTransformerHandle SymmetricDifference(
+      PacketTransformerHandle left, PacketTransformerHandle right) = delete;
 
   // Dynamically checks all class invariants. Exposed for testing only.
   absl::Status CheckInternalInvariants() const;
 
  private:
-  // Internally, this class represents symbolic packet transformers
+  // Internally, this class represents packet transformers
   // as nodes in a directed acyclic graph (DAG). Each node branches based on the
   // input value of a single packet field, and then on the possible output
-  // values of that field. Each branch end-point is another symbolic packet
+  // values of that field. Each branch end-point is another packet set
   // transformer, which in turn is either the Accept/Deny policy, or represented
   // by another node in the graph.
   //
   // The graph is "ordered", "reduced", and contains no "isomorphic subgraphs":
   //
   // * Ordered: Along each path through the graph, fields increase strictly
-  //   monotonically (with respect to `<` defined on `InternedField`s).
+  //   monotonically (with respect to `<` defined on `PacketFieldHandle`s).
   // * Reduced: Intutively, there exist no redundant branches or nodes.
   //   This intuition is formalized in the paper "KATch: A Fast Symbolic
   //   Verifier for NetKAT".
@@ -276,9 +271,9 @@ class SymbolicPacketTransformerManager {
   // BDDs is described in the paper "KATch: A Fast Symbolic Verifier for
   // NetKAT".
 
-  // A decision node in the symbolic packet transformer DAG. The node branches
+  // A decision node in the packet transformer DAG. The node branches
   // on the value of a single `field`, and (the consequent of) each branch is a
-  // `SymbolicPacketTransformer` corresponding to either another decision node
+  // `PacketTransformerHandle` corresponding to either another decision node
   // or the full/empty set. Semantically, represents a cascading conditional of
   // the form:
   //
@@ -302,7 +297,7 @@ class SymbolicPacketTransformerManager {
     // * Strictly smaller (`<`) than the fields of other decision nodes
     //   reachable from this node.
     // * Interned by `field_manager_`.
-    InternedField field;
+    PacketFieldHandle field;
 
     // The "if" branches of the decision node, "keyed" by the value they branch
     // on. Each element of the map is a (match_value, Map)-pair encoding
@@ -317,7 +312,7 @@ class SymbolicPacketTransformerManager {
     //    `default_branch`.)
     // 2. For every v, v', and b such that (v,(v',b)) is in
     //    `modify_branch_by_field_match`, either v == v' or b is not Deny.
-    absl::btree_map<int, absl::btree_map<int, SymbolicPacketTransformer>>
+    absl::btree_map<int, absl::btree_map<int, PacketTransformerHandle>>
         modify_branch_by_field_match;
 
     // The "else" branch of this decision node, "keyed" by the value they modify
@@ -326,9 +321,9 @@ class SymbolicPacketTransformerManager {
     // INVARIANTS:
     // 1. For every v and b such that (v,b) is in
     //    `default_branch_by_field_modification`, b is not Deny.
-    absl::btree_map<int, SymbolicPacketTransformer>
+    absl::btree_map<int, PacketTransformerHandle>
         default_branch_by_field_modification;
-    SymbolicPacketTransformer default_branch;
+    PacketTransformerHandle default_branch;
 
     // Protect against regressions in memory layout, as it affects performance.
     static_assert(sizeof(modify_branch_by_field_match) == 24);
@@ -352,15 +347,15 @@ class SymbolicPacketTransformerManager {
   static_assert(sizeof(DecisionNode) == 64);
   static_assert(alignof(DecisionNode) == 8);
 
-  SymbolicPacketTransformer NodeToTransformer(DecisionNode&& node);
+  PacketTransformerHandle NodeToTransformer(DecisionNode&& node);
 
   // Returns the `DecisionNode` corresponding to the given
-  // `SymbolicPacketTransformer`, or crashes if the `transformer` is
+  // `PacketTransformerHandle`, or crashes if the `transformer` is
   // `Deny()` or `Accept()`.
   //
   // Unless there is a bug in the implementation of this class, this function
   // is NOT expected to be called with these special transformers that crash.
-  const DecisionNode& GetNodeOrDie(SymbolicPacketTransformer transformer) const;
+  const DecisionNode& GetNodeOrDie(PacketTransformerHandle transformer) const;
 
   [[nodiscard]] std::string ToString(const DecisionNode& node) const;
 
@@ -372,16 +367,16 @@ class SymbolicPacketTransformerManager {
   // Helper functions to deal with DecisionNodes directly.
   // TODO(dilo): Is there a convenient way to either avoid these or avoid making
   // copies of the nodes?
-  SymbolicPacketTransformer Union(DecisionNode left, DecisionNode right);
-  SymbolicPacketTransformer Sequence(DecisionNode left, DecisionNode right);
+  PacketTransformerHandle Union(DecisionNode left, DecisionNode right);
+  PacketTransformerHandle Sequence(DecisionNode left, DecisionNode right);
 
   // Internal helper function to get a map of possible modification values to
   // branches for a given input value at `node`.
-  absl::btree_map<int, SymbolicPacketTransformer> GetMapAtValue(
+  absl::btree_map<int, PacketTransformerHandle> GetMapAtValue(
       const DecisionNode& node, int value);
 
-  // The decision nodes forming the BDD-style DAG representation of symbolic
-  // packets. `SymbolicPacketTransformer::node_index_` indexes into this vector.
+  // The decision nodes forming the BDD-style DAG representation of packets.
+  // `PacketTransformerHandle::node_index_` indexes into this vector.
   //
   // We use a custom vector class that provides pointer stability, allowing us
   // to create new nodes while traversing the graph. The class also avoids
@@ -389,17 +384,17 @@ class SymbolicPacketTransformerManager {
   PagedStableVector<DecisionNode, kPageSize> nodes_;
 
   // A so called "unique table" to ensure each node is only added to `nodes_`
-  // once, and thus has a unique `SymbolicPacketTransformer::node_index`.
+  // once, and thus has a unique `PacketTransformerHandle::node_index`.
   //
   // INVARIANT: `transformer_by_node_[n] = s` iff `nodes_[s.node_index_] == n`.
-  absl::flat_hash_map<DecisionNode, SymbolicPacketTransformer>
+  absl::flat_hash_map<DecisionNode, PacketTransformerHandle>
       transformer_by_node_;
 
   // INVARIANT: All `DecisionNode` fields are interned by this manager's
-  // InternedFieldManager.
-  SymbolicPacketManager symbolic_packet_manager_;
+  // PacketFieldManager.
+  PacketSetManager packet_set_manager_;
 };
 
 }  // namespace netkat
 
-#endif  // GOOGLE_NETKAT_NETKAT_SYMBOLIC_PACKET_TRANSFORMER_H_
+#endif  // GOOGLE_NETKAT_NETKAT_PACKET_TRANSFORMER_H_

@@ -72,8 +72,8 @@ cc_library(
     deps = [
         ":frontend",
         ":netkat_cc_proto",
-        ":symbolic_packet",
-        ":symbolic_packet_transformer",
+        ":packet_set",
+        ":packet_transformer",
         "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/status",
@@ -111,13 +111,13 @@ cc_test(
 )
 
 cc_library(
-    name = "symbolic_packet",
-    srcs = ["symbolic_packet.cc"],
-    hdrs = ["symbolic_packet.h"],
+    name = "packet_set",
+    srcs = ["packet_set.cc"],
+    hdrs = ["packet_set.h"],
     deps = [
         ":evaluator",
-        ":interned_field",
         ":netkat_cc_proto",
+        ":packet_field",
         ":paged_stable_vector",
         "@com_google_absl//absl/container:fixed_array",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -132,13 +132,13 @@ cc_library(
 )
 
 cc_test(
-    name = "symbolic_packet_test",
-    srcs = ["symbolic_packet_test.cc"],
+    name = "packet_set_test",
+    srcs = ["packet_set_test.cc"],
     shard_count = 8,
     deps = [
         ":evaluator",
         ":netkat_proto_constructors",
-        ":symbolic_packet",
+        ":packet_set",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -152,20 +152,20 @@ cc_test(
 
 # go/golden-test-with-coverage
 cc_test(
-    name = "symbolic_packet_test_runner",
-    srcs = ["symbolic_packet_test_runner.cc"],
+    name = "packet_set_test_runner",
+    srcs = ["packet_set_test_runner.cc"],
     linkstatic = True,
     deps = [
         ":netkat_proto_constructors",
-        ":symbolic_packet",
+        ":packet_set",
     ],
 )
 
 cmd_diff_test(
-    name = "symbolic_packet_diff_test",
-    actual_cmd = "$(execpath :symbolic_packet_test_runner)",
-    expected = ":symbolic_packet_test.expected",
-    tools = [":symbolic_packet_test_runner"],
+    name = "packet_set_diff_test",
+    actual_cmd = "$(execpath :packet_set_test_runner)",
+    expected = ":packet_set_test.expected",
+    tools = [":packet_set_test_runner"],
 )
 
 cc_library(
@@ -221,9 +221,9 @@ cc_test(
 )
 
 cc_library(
-    name = "interned_field",
-    srcs = ["interned_field.cc"],
-    hdrs = ["interned_field.h"],
+    name = "packet_field",
+    srcs = ["packet_field.cc"],
+    hdrs = ["packet_field.h"],
     deps = [
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log",
@@ -235,11 +235,11 @@ cc_library(
 )
 
 cc_test(
-    name = "interned_field_test",
-    srcs = ["interned_field_test.cc"],
+    name = "packet_field_test",
+    srcs = ["packet_field_test.cc"],
     shard_count = 4,
     deps = [
-        ":interned_field",
+        ":packet_field",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
@@ -259,7 +259,7 @@ cc_library(
     hdrs = ["analysis_engine.h"],
     deps = [
         ":frontend",
-        ":symbolic_packet_transformer",
+        ":packet_transformer",
     ],
 )
 
@@ -275,15 +275,15 @@ cc_test(
 )
 
 cc_library(
-    name = "symbolic_packet_transformer",
-    srcs = ["symbolic_packet_transformer.cc"],
-    hdrs = ["symbolic_packet_transformer.h"],
+    name = "packet_transformer",
+    srcs = ["packet_transformer.cc"],
+    hdrs = ["packet_transformer.h"],
     deps = [
         ":evaluator",
-        ":interned_field",
         ":netkat_cc_proto",
+        ":packet_field",
+        ":packet_set",
         ":paged_stable_vector",
-        ":symbolic_packet",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -311,15 +311,15 @@ cc_test(
 )
 
 cc_test(
-    name = "symbolic_packet_transformer_test",
-    srcs = ["symbolic_packet_transformer_test.cc"],
+    name = "packet_transformer_test",
+    srcs = ["packet_transformer_test.cc"],
     shard_count = 5,
     deps = [
         ":evaluator",
         ":netkat_cc_proto",
         ":netkat_proto_constructors",
-        ":symbolic_packet",
-        ":symbolic_packet_transformer",
+        ":packet_set",
+        ":packet_transformer",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -334,18 +334,18 @@ cc_test(
 
 # go/golden-test-with-coverage
 cc_test(
-    name = "symbolic_packet_transformer_test_runner",
-    srcs = ["symbolic_packet_transformer_test_runner.cc"],
+    name = "packet_transformer_test_runner",
+    srcs = ["packet_transformer_test_runner.cc"],
     linkstatic = True,
     deps = [
         ":netkat_proto_constructors",
-        ":symbolic_packet_transformer",
+        ":packet_transformer",
     ],
 )
 
 cmd_diff_test(
-    name = "symbolic_packet_transformer_diff_test",
-    actual_cmd = "$(execpath :symbolic_packet_transformer_test_runner)",
-    expected = ":symbolic_packet_transformer_test.expected",
-    tools = [":symbolic_packet_transformer_test_runner"],
+    name = "packet_transformer_diff_test",
+    actual_cmd = "$(execpath :packet_transformer_test_runner)",
+    expected = ":packet_transformer_test.expected",
+    tools = [":packet_transformer_test_runner"],
 )

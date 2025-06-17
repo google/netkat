@@ -168,7 +168,7 @@ FUZZ_TEST(EvaluatePredicateProtoTest, XorFalseIsIdentity);
 void XorSelfIsFalse(const Packet& packet, const PredicateProto& pred) {
   EXPECT_FALSE(Evaluate(XorProto(pred, pred), packet));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, XorSelfIsFalse);
+FUZZ_TEST(EvaluatePredicateProtoTest, XorSelfIsFalse);
 
 void XorIsCommutative(const Packet& packet, const PredicateProto& left,
                       PredicateProto right) {

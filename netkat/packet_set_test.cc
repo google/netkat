@@ -13,7 +13,7 @@
 // limitations under the License.
 // -----------------------------------------------------------------------------
 
-#include "netkat/symbolic_packet.h"
+#include "netkat/packet_set.h"
 
 #include <cstdint>
 #include <ostream>
@@ -38,17 +38,17 @@ namespace netkat {
 // We use a global manager object to exercise statefulness more deeply across
 // test cases. This also enables better pretty printing for debugging, see
 // `PrintTo`.
-SymbolicPacketManager& Manager() {
-  static absl::NoDestructor<SymbolicPacketManager> manager;
+PacketSetManager& Manager() {
+  static absl::NoDestructor<PacketSetManager> manager;
   return *manager;
 }
 
-// The default `SymbolicPacket` pretty printer sucks! It does not have access to
-// the graph structure representing the packet, since that is stored in the
-// manager object. Thus, it returns opaque strings like "SymbolicPacket<123>".
+// The default `PacketSetHandle` pretty printer sucks! It does not have access
+// to the graph structure representing the packet, since that is stored in the
+// manager object. Thus, it returns opaque strings like "PacketSetHandle<123>".
 //
 // We define this much better override, which GoogleTest gives precedence to.
-void PrintTo(const SymbolicPacket& packet, std::ostream* os) {
+void PrintTo(PacketSetHandle packet, std::ostream* os) {
   *os << Manager().ToString(packet);
 }
 
@@ -63,51 +63,51 @@ using ::testing::UnorderedElementsAre;
 // After executing all tests, we check once that no invariants are violated, for
 // defense in depth. Checking invariants after each test (e.g. using a fixture)
 // would likely not scale and seems overkill.
-class CheckSymbolicPacketManagerInvariantsOnTearDown
-    : public testing::Environment {
+class CheckPacketSetManagerInvariantsOnTearDown : public testing::Environment {
  public:
-  ~CheckSymbolicPacketManagerInvariantsOnTearDown() override = default;
+  ~CheckPacketSetManagerInvariantsOnTearDown() override = default;
   void SetUp() override {}
   void TearDown() override { ASSERT_OK(Manager().CheckInternalInvariants()); }
 };
 testing::Environment* const foo_env = testing::AddGlobalTestEnvironment(
-    new CheckSymbolicPacketManagerInvariantsOnTearDown);
+    new CheckPacketSetManagerInvariantsOnTearDown);
 
-TEST(SymbolicPacketManagerTest, EmptySetIsEmptySet) {
+TEST(PacketSetManagerTest, EmptySetIsEmptySet) {
   EXPECT_TRUE(Manager().IsEmptySet(Manager().EmptySet()));
   EXPECT_FALSE(Manager().IsFullSet(Manager().EmptySet()));
 }
 
-TEST(SymbolicPacketManagerTest, FullSetIsFullSet) {
+TEST(PacketSetManagerTest, FullSetIsFullSet) {
   EXPECT_TRUE(Manager().IsFullSet(Manager().FullSet()));
   EXPECT_FALSE(Manager().IsEmptySet(Manager().FullSet()));
 }
 
-TEST(SymbolicPacketManagerTest, EmptySetDoesNotEqualFullSet) {
+TEST(PacketSetManagerTest, EmptySetDoesNotEqualFullSet) {
   EXPECT_NE(Manager().EmptySet(), Manager().FullSet());
 }
 
-TEST(SymbolicPacketManagerTest, AbslStringifyWorksForEmptySet) {
-  EXPECT_THAT(absl::StrCat(Manager().EmptySet()), StartsWith("SymbolicPacket"));
+TEST(PacketSetManagerTest, AbslStringifyWorksForEmptySet) {
+  EXPECT_THAT(absl::StrCat(Manager().EmptySet()),
+              StartsWith("PacketSetHandle"));
 }
 
-TEST(SymbolicPacketManagerTest, AbslStringifyWorksForFullSet) {
-  EXPECT_THAT(absl::StrCat(Manager().FullSet()), StartsWith("SymbolicPacket"));
+TEST(PacketSetManagerTest, AbslStringifyWorksForFullSet) {
+  EXPECT_THAT(absl::StrCat(Manager().FullSet()), StartsWith("PacketSetHandle"));
 }
 
-TEST(SymbolicPacketManagerTest, AbslHashValueWorks) {
-  absl::flat_hash_set<SymbolicPacket> set = {
+TEST(PacketSetManagerTest, AbslHashValueWorks) {
+  absl::flat_hash_set<PacketSetHandle> set = {
       Manager().EmptySet(),
       Manager().FullSet(),
   };
   EXPECT_EQ(set.size(), 2);
 }
 
-TEST(SymbolicPacketManagerTest, TrueCompilesToFullSet) {
+TEST(PacketSetManagerTest, TrueCompilesToFullSet) {
   EXPECT_EQ(Manager().Compile(TrueProto()), Manager().FullSet());
 }
 
-TEST(SymbolicPacketManagerTest, FalseCompilesToEmptySet) {
+TEST(PacketSetManagerTest, FalseCompilesToEmptySet) {
   EXPECT_EQ(Manager().Compile(FalseProto()), Manager().EmptySet());
 }
 
@@ -115,98 +115,94 @@ void MatchCompilesToMatch(std::string field, int value) {
   EXPECT_EQ(Manager().Compile(MatchProto(field, value)),
             Manager().Match(field, value));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, MatchCompilesToMatch);
+FUZZ_TEST(PacketSetManagerTest, MatchCompilesToMatch);
 
 void AndCompilesToAnd(const PredicateProto& left, const PredicateProto& right) {
   EXPECT_EQ(Manager().Compile(AndProto(left, right)),
             Manager().And(Manager().Compile(left), Manager().Compile(right)));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, AndCompilesToAnd);
+FUZZ_TEST(PacketSetManagerTest, AndCompilesToAnd);
 
 void OrCompilesToOr(const PredicateProto& left, const PredicateProto& right) {
   EXPECT_EQ(Manager().Compile(OrProto(left, right)),
             Manager().Or(Manager().Compile(left), Manager().Compile(right)));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, OrCompilesToOr);
+FUZZ_TEST(PacketSetManagerTest, OrCompilesToOr);
 
 void NotCompilesToNot(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(NotProto(pred)),
             Manager().Not(Manager().Compile(pred)));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, NotCompilesToNot);
+FUZZ_TEST(PacketSetManagerTest, NotCompilesToNot);
 
 void CompilationPreservesSemantics(const PredicateProto& pred,
                                    const Packet& packet) {
   EXPECT_EQ(Manager().Contains(Manager().Compile(pred), packet),
             Evaluate(pred, packet));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, CompilationPreservesSemantics);
+FUZZ_TEST(PacketSetManagerTest, CompilationPreservesSemantics);
 
 void GetConcretePacketsReturnsNonEmptyListForNonEmptySet(
     const PredicateProto& pred) {
-  SymbolicPacket symbolic_packet = Manager().Compile(pred);
-  if (!Manager().IsEmptySet(symbolic_packet)) {
-    EXPECT_THAT(Manager().GetConcretePackets(symbolic_packet), SizeIs(Ge(1)));
+  PacketSetHandle packet_set = Manager().Compile(pred);
+  if (!Manager().IsEmptySet(packet_set)) {
+    EXPECT_THAT(Manager().GetConcretePackets(packet_set), SizeIs(Ge(1)));
   }
 }
-FUZZ_TEST(SymbolicPacketManagerTest,
+FUZZ_TEST(PacketSetManagerTest,
           GetConcretePacketsReturnsNonEmptyListForNonEmptySet);
 
 void GetConcretePacketsReturnsPacketsInSet(const PredicateProto& pred) {
-  SymbolicPacket symbolic_packet = Manager().Compile(pred);
-  for (const Packet& concrete_packet :
-       Manager().GetConcretePackets(symbolic_packet)) {
-    EXPECT_TRUE(Manager().Contains(symbolic_packet, concrete_packet));
+  PacketSetHandle packet_set = Manager().Compile(pred);
+  for (const Packet& packet : Manager().GetConcretePackets(packet_set)) {
+    EXPECT_TRUE(Manager().Contains(packet_set, packet));
   }
 }
-FUZZ_TEST(SymbolicPacketManagerTest, GetConcretePacketsReturnsPacketsInSet);
+FUZZ_TEST(PacketSetManagerTest, GetConcretePacketsReturnsPacketsInSet);
 
-TEST(SymbolicPacketManagerTest,
+TEST(PacketSetManagerTest,
      PacketsFromPacketSetWithMultipleFieldsAreContainedInPacketSet) {
   // p = (a=3 && b=4) || (b!=5 && c=5)
-  SymbolicPacket symbolic_packet = Manager().Compile(
+  PacketSetHandle packet_set = Manager().Compile(
       OrProto(AndProto(MatchProto("a", 3), MatchProto("b", 4)),
               AndProto(NotProto(MatchProto("b", 5)), MatchProto("c", 5))));
-  std::vector<Packet> concrete_packets =
-      Manager().GetConcretePackets(symbolic_packet);
-  for (const Packet& concrete_packet : concrete_packets) {
-    EXPECT_TRUE(Manager().Contains(symbolic_packet, concrete_packet));
+  std::vector<Packet> packets = Manager().GetConcretePackets(packet_set);
+  for (const Packet& packet : packets) {
+    EXPECT_TRUE(Manager().Contains(packet_set, packet));
   }
 }
 
-void EqualPredicatesCompileToEqualSymbolicPackets(const PredicateProto& pred) {
+void EqualPredicatesCompileToEqualPacketSetHandles(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(pred), Manager().Compile(pred));
 }
-FUZZ_TEST(SymbolicPacketManagerTest,
-          EqualPredicatesCompileToEqualSymbolicPackets);
+FUZZ_TEST(PacketSetManagerTest, EqualPredicatesCompileToEqualPacketSetHandles);
 
-void NegationCompilesToDifferentSymbolicPacket(const PredicateProto& pred) {
+void NegationCompilesToDifferentPacketSetHandle(const PredicateProto& pred) {
   EXPECT_NE(Manager().Compile(pred), Manager().Compile(NotProto(pred)));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, NegationCompilesToDifferentSymbolicPacket);
+FUZZ_TEST(PacketSetManagerTest, NegationCompilesToDifferentPacketSetHandle);
 
-void DoubleNegationCompilesToSameSymbolicPacket(const PredicateProto& pred) {
+void DoubleNegationCompilesToSamePacketSetHandle(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(pred),
             Manager().Compile(NotProto(NotProto(pred))));
 }
-FUZZ_TEST(SymbolicPacketManagerTest,
-          DoubleNegationCompilesToSameSymbolicPacket);
+FUZZ_TEST(PacketSetManagerTest, DoubleNegationCompilesToSamePacketSetHandle);
 
-TEST(SymbolicPacketManagerTest, TrueNotEqualsMatch) {
+TEST(PacketSetManagerTest, TrueNotEqualsMatch) {
   EXPECT_NE(Manager().Compile(TrueProto()),
             Manager().Compile(MatchProto("hi", 42)));
 }
-TEST(SymbolicPacketManagerTest, FalseNotEqualsMatch) {
+TEST(PacketSetManagerTest, FalseNotEqualsMatch) {
   EXPECT_NE(Manager().Compile(FalseProto()),
             Manager().Compile(MatchProto("hi", 42)));
 }
-TEST(SymbolicPacketManagerTest, MatchNotEqualsDifferentMatch) {
+TEST(PacketSetManagerTest, MatchNotEqualsDifferentMatch) {
   EXPECT_NE(Manager().Compile(MatchProto("hi", 42)),
             Manager().Compile(MatchProto("bye", 42)));
   EXPECT_NE(Manager().Compile(MatchProto("hi", 42)),
             Manager().Compile(MatchProto("hi", 24)));
 }
-TEST(SymbolicPacketManagerTest, NotTrueEqualsFalse) {
+TEST(PacketSetManagerTest, NotTrueEqualsFalse) {
   EXPECT_EQ(Manager().Compile(NotProto(TrueProto())),
             Manager().Compile(FalseProto()));
 }
@@ -214,77 +210,77 @@ TEST(SymbolicPacketManagerTest, NotTrueEqualsFalse) {
 void AndIsIdempotent(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(AndProto(pred, pred)), Manager().Compile(pred));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, AndIsIdempotent);
+FUZZ_TEST(PacketSetManagerTest, AndIsIdempotent);
 
 void OrIsIdempotent(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(OrProto(pred, pred)), Manager().Compile(pred));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, OrIsIdempotent);
+FUZZ_TEST(PacketSetManagerTest, OrIsIdempotent);
 
 void PredOrItsNegationIsTrue(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(OrProto(pred, NotProto(pred))),
             Manager().Compile(TrueProto()));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, PredOrItsNegationIsTrue);
+FUZZ_TEST(PacketSetManagerTest, PredOrItsNegationIsTrue);
 
 void PredAndItsNegationIsFalse(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(AndProto(pred, NotProto(pred))),
             Manager().Compile(FalseProto()));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, PredAndItsNegationIsFalse);
+FUZZ_TEST(PacketSetManagerTest, PredAndItsNegationIsFalse);
 
 void AndTrueIsIdentity(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(AndProto(pred, TrueProto())),
             Manager().Compile(pred));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, AndTrueIsIdentity);
+FUZZ_TEST(PacketSetManagerTest, AndTrueIsIdentity);
 
 void OrFalseIsIdentity(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(OrProto(pred, FalseProto())),
             Manager().Compile(pred));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, OrFalseIsIdentity);
+FUZZ_TEST(PacketSetManagerTest, OrFalseIsIdentity);
 
 void XorFalseIsIdentity(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(XorProto(pred, FalseProto())),
             Manager().Compile(pred));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, XorFalseIsIdentity);
+FUZZ_TEST(PacketSetManagerTest, XorFalseIsIdentity);
 
 void AndFalseIsFalse(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(AndProto(pred, FalseProto())),
             Manager().Compile(FalseProto()));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, AndFalseIsFalse);
+FUZZ_TEST(PacketSetManagerTest, AndFalseIsFalse);
 
 void OrTrueIsTrue(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(OrProto(pred, TrueProto())),
             Manager().Compile(TrueProto()));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, OrTrueIsTrue);
+FUZZ_TEST(PacketSetManagerTest, OrTrueIsTrue);
 
 void XorSelfIsFalse(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(XorProto(pred, pred)),
             Manager().Compile(FalseProto()));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, XorSelfIsFalse);
+FUZZ_TEST(PacketSetManagerTest, XorSelfIsFalse);
 
 void AndIsCommutative(const PredicateProto& a, const PredicateProto& b) {
   EXPECT_EQ(Manager().Compile(AndProto(a, b)),
             Manager().Compile(AndProto(b, a)));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, AndIsCommutative);
+FUZZ_TEST(PacketSetManagerTest, AndIsCommutative);
 
 void OrIsCommutative(const PredicateProto& a, const PredicateProto& b) {
   EXPECT_EQ(Manager().Compile(OrProto(a, b)), Manager().Compile(OrProto(b, a)));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, OrIsCommutative);
+FUZZ_TEST(PacketSetManagerTest, OrIsCommutative);
 
 void XorIsCommutative(const PredicateProto& a, const PredicateProto& b) {
   EXPECT_EQ(Manager().Compile(XorProto(a, b)),
             Manager().Compile(XorProto(b, a)));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, XorIsCommutative);
+FUZZ_TEST(PacketSetManagerTest, XorIsCommutative);
 
 void DistributiveLawsHolds(const PredicateProto& a, const PredicateProto& b,
                            const PredicateProto& c) {
@@ -293,7 +289,7 @@ void DistributiveLawsHolds(const PredicateProto& a, const PredicateProto& b,
   EXPECT_EQ(Manager().Compile(OrProto(a, AndProto(b, c))),
             Manager().Compile(AndProto(OrProto(a, b), OrProto(a, c))));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, DistributiveLawsHolds);
+FUZZ_TEST(PacketSetManagerTest, DistributiveLawsHolds);
 
 void DeMorgansLawsHolds(const PredicateProto& a, const PredicateProto& b) {
   EXPECT_EQ(Manager().Compile(NotProto(AndProto(a, b))),
@@ -301,35 +297,35 @@ void DeMorgansLawsHolds(const PredicateProto& a, const PredicateProto& b) {
   EXPECT_EQ(Manager().Compile(NotProto(OrProto(a, b))),
             Manager().Compile(AndProto(NotProto(a), NotProto(b))));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, DeMorgansLawsHolds);
+FUZZ_TEST(PacketSetManagerTest, DeMorgansLawsHolds);
 
 void XorDefinition(const PredicateProto& a, const PredicateProto& b) {
   EXPECT_EQ(Manager().Compile(XorProto(a, b)),
             Manager().Compile(
                 OrProto(AndProto(NotProto(a), b), AndProto(a, NotProto(b)))));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, XorDefinition);
+FUZZ_TEST(PacketSetManagerTest, XorDefinition);
 
 void AndIsAssociative(const PredicateProto& a, const PredicateProto& b,
                       const PredicateProto& c) {
   EXPECT_EQ(Manager().Compile(AndProto(a, AndProto(b, c))),
             Manager().Compile(AndProto(AndProto(a, b), c)));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, AndIsAssociative);
+FUZZ_TEST(PacketSetManagerTest, AndIsAssociative);
 
 void OrIsAssociative(const PredicateProto& a, const PredicateProto& b,
                      const PredicateProto& c) {
   EXPECT_EQ(Manager().Compile(OrProto(a, OrProto(b, c))),
             Manager().Compile(OrProto(OrProto(a, b), c)));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, OrIsAssociative);
+FUZZ_TEST(PacketSetManagerTest, OrIsAssociative);
 
 void XorIsAssociative(const PredicateProto& a, const PredicateProto& b,
                       const PredicateProto& c) {
   EXPECT_EQ(Manager().Compile(XorProto(a, XorProto(b, c))),
             Manager().Compile(XorProto(XorProto(a, b), c)));
 }
-FUZZ_TEST(SymbolicPacketManagerTest, XorIsAssociative);
+FUZZ_TEST(PacketSetManagerTest, XorIsAssociative);
 
 }  // namespace
 }  // namespace netkat

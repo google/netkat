@@ -22,7 +22,7 @@
 #define GOOGLE_NETKAT_NETKAT_ANALYSIS_ENGINE_H_
 
 #include "netkat/frontend.h"
-#include "netkat/symbolic_packet_transformer.h"
+#include "netkat/packet_transformer.h"
 
 namespace netkat {
 
@@ -47,7 +47,7 @@ class AnalysisEngine {
   bool CheckEquivalent(const Policy& left, const Policy& right);
 
  private:
-  SymbolicPacketTransformerManager packet_transformer_manager_;
+  PacketTransformerManager packet_transformer_manager_;
 };
 
 }  // namespace netkat

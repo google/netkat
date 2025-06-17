@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "netkat/symbolic_packet.h"
+#include "netkat/packet_set.h"
 
 #include <cstdint>
 #include <limits>
@@ -49,41 +49,42 @@ enum SentinelNodeIndex : uint32_t {
   kMinSentinel = kFullSet,
 };
 
-SymbolicPacket::SymbolicPacket() : node_index_(SentinelNodeIndex::kEmptySet) {}
+PacketSetHandle::PacketSetHandle()
+    : node_index_(SentinelNodeIndex::kEmptySet) {}
 
-std::string SymbolicPacket::ToString() const {
+std::string PacketSetHandle::ToString() const {
   if (node_index_ == SentinelNodeIndex::kEmptySet) {
-    return "SymbolicPacket<empty>";
+    return "PacketSetHandle<empty>";
   } else if (node_index_ == SentinelNodeIndex::kFullSet) {
-    return "SymbolicPacket<full>";
+    return "PacketSetHandle<full>";
   } else {
-    return absl::StrFormat("SymbolicPacket<%d>", node_index_);
+    return absl::StrFormat("PacketSetHandle<%d>", node_index_);
   }
 }
 
-SymbolicPacket SymbolicPacketManager::EmptySet() const {
-  return SymbolicPacket(SentinelNodeIndex::kEmptySet);
+PacketSetHandle PacketSetManager::EmptySet() const {
+  return PacketSetHandle(SentinelNodeIndex::kEmptySet);
 }
 
-SymbolicPacket SymbolicPacketManager::FullSet() const {
-  return SymbolicPacket(SentinelNodeIndex::kFullSet);
+PacketSetHandle PacketSetManager::FullSet() const {
+  return PacketSetHandle(SentinelNodeIndex::kFullSet);
 }
 
-bool SymbolicPacketManager::IsEmptySet(SymbolicPacket packet) const {
-  return packet == EmptySet();
+bool PacketSetManager::IsEmptySet(PacketSetHandle packet_set) const {
+  return packet_set == EmptySet();
 }
 
-bool SymbolicPacketManager::IsFullSet(SymbolicPacket packet) const {
-  return packet == FullSet();
+bool PacketSetManager::IsFullSet(PacketSetHandle packet_set) const {
+  return packet_set == FullSet();
 }
 
-const SymbolicPacketManager::DecisionNode& SymbolicPacketManager::GetNodeOrDie(
-    SymbolicPacket packet) const {
-  CHECK_LT(packet.node_index_, nodes_.size());  // Crash ok
-  return nodes_[packet.node_index_];
+const PacketSetManager::DecisionNode& PacketSetManager::GetNodeOrDie(
+    PacketSetHandle packet_set) const {
+  CHECK_LT(packet_set.node_index_, nodes_.size());  // Crash ok
+  return nodes_[packet_set.node_index_];
 }
 
-SymbolicPacket SymbolicPacketManager::NodeToPacket(DecisionNode&& node) {
+PacketSetHandle PacketSetManager::NodeToPacket(DecisionNode&& node) {
   if (node.branch_by_field_value.empty()) return node.default_branch;
 
 // When in debug mode, we check a node's invariants before interning it.
@@ -103,7 +104,7 @@ SymbolicPacket SymbolicPacketManager::NodeToPacket(DecisionNode&& node) {
 #endif
 
   auto [it, inserted] =
-      packet_by_node_.try_emplace(node, SymbolicPacket(nodes_.size()));
+      packet_by_node_.try_emplace(node, PacketSetHandle(nodes_.size()));
   if (inserted) {
     nodes_.push_back(std::move(node));
     LOG_IF(DFATAL, nodes_.size() > SentinelNodeIndex::kMinSentinel)
@@ -114,52 +115,52 @@ SymbolicPacket SymbolicPacketManager::NodeToPacket(DecisionNode&& node) {
   return it->second;
 }
 
-bool SymbolicPacketManager::Contains(SymbolicPacket symbolic_packet,
-                                     const Packet& concrete_packet) const {
-  if (IsEmptySet(symbolic_packet)) return false;
-  if (IsFullSet(symbolic_packet)) return true;
+bool PacketSetManager::Contains(PacketSetHandle packet_set,
+                                const Packet& packet) const {
+  if (IsEmptySet(packet_set)) return false;
+  if (IsFullSet(packet_set)) return true;
 
-  const DecisionNode& node = GetNodeOrDie(symbolic_packet);
+  const DecisionNode& node = GetNodeOrDie(packet_set);
   std::string field = field_manager_.GetFieldName(node.field);
-  auto it = concrete_packet.find(field);
-  if (it != concrete_packet.end()) {
+  auto it = packet.find(field);
+  if (it != packet.end()) {
     for (const auto& [value, branch] : node.branch_by_field_value) {
-      if (it->second == value) return Contains(branch, concrete_packet);
+      if (it->second == value) return Contains(branch, packet);
     }
   }
-  return Contains(node.default_branch, concrete_packet);
+  return Contains(node.default_branch, packet);
 }
 
-std::string SymbolicPacketManager::ToDot(
-    const SymbolicPacket& symbolic_packet) const {
+std::string PacketSetManager::ToDot(PacketSetHandle packet_set) const {
   std::string result = "digraph {\n";
-  std::queue<SymbolicPacket> work_list;
-  work_list.push(symbolic_packet);
-  absl::flat_hash_set<SymbolicPacket> visited = {symbolic_packet};
+  std::queue<PacketSetHandle> work_list;
+  work_list.push(packet_set);
+  absl::flat_hash_set<PacketSetHandle> visited = {packet_set};
   absl::StrAppendFormat(&result, "  %d [label=\"T\" shape=box]\n",
                         SentinelNodeIndex::kFullSet);
   absl::StrAppendFormat(&result, "  %d [label=\"F\" shape=box]\n",
                         SentinelNodeIndex::kEmptySet);
 
   while (!work_list.empty()) {
-    SymbolicPacket packet = work_list.front();
+    PacketSetHandle packet_set = work_list.front();
     work_list.pop();
-    if (IsFullSet(packet) || IsEmptySet(packet)) continue;
+    if (IsFullSet(packet_set) || IsEmptySet(packet_set)) continue;
 
-    const DecisionNode& node = GetNodeOrDie(packet);
-    absl::StrAppendFormat(&result, "  %d [label=\"%s\"]\n", packet.node_index_,
+    const DecisionNode& node = GetNodeOrDie(packet_set);
+    absl::StrAppendFormat(&result, "  %d [label=\"%s\"]\n",
+                          packet_set.node_index_,
                           field_manager_.GetFieldName(node.field));
 
     for (const auto& [value, branch] : node.branch_by_field_value) {
       absl::StrAppendFormat(&result, "  %d -> %d [label=\"%d\"]\n",
-                            packet.node_index_, branch.node_index_, value);
+                            packet_set.node_index_, branch.node_index_, value);
       if (IsFullSet(branch) || IsEmptySet(branch)) continue;
       bool new_branch = visited.insert(branch).second;
       if (new_branch) work_list.push(branch);
     }
-    SymbolicPacket fallthrough = node.default_branch;
+    PacketSetHandle fallthrough = node.default_branch;
     absl::StrAppendFormat(&result, "  %d -> %d [style=dashed]\n",
-                          packet.node_index_, fallthrough.node_index_);
+                          packet_set.node_index_, fallthrough.node_index_);
     if (IsFullSet(fallthrough) || IsEmptySet(fallthrough)) continue;
     bool new_branch = visited.insert(fallthrough).second;
     if (new_branch) work_list.push(fallthrough);
@@ -168,7 +169,7 @@ std::string SymbolicPacketManager::ToDot(
   return result;
 }
 
-SymbolicPacket SymbolicPacketManager::Compile(const PredicateProto& pred) {
+PacketSetHandle PacketSetManager::Compile(const PredicateProto& pred) {
   switch (pred.predicate_case()) {
     case PredicateProto::kBoolConstant:
       return pred.bool_constant().value() ? FullSet() : EmptySet();
@@ -189,10 +190,9 @@ SymbolicPacket SymbolicPacketManager::Compile(const PredicateProto& pred) {
   LOG(FATAL) << "Unhandled predicate kind: " << pred.predicate_case();
 }
 
-SymbolicPacket SymbolicPacketManager::Match(absl::string_view field,
-                                            int value) {
+PacketSetHandle PacketSetManager::Match(absl::string_view field, int value) {
   return NodeToPacket(DecisionNode{
-      .field = field_manager_.GetOrCreateInternedField(field),
+      .field = field_manager_.GetOrCreatePacketFieldHandle(field),
       .default_branch = EmptySet(),
       .branch_by_field_value = {{value, FullSet()}},
   });
@@ -200,7 +200,7 @@ SymbolicPacket SymbolicPacketManager::Match(absl::string_view field,
 
 // TODO(b/382380335): Use complement edges to reduce the complexity of this
 // function from O(n) to O(1).
-SymbolicPacket SymbolicPacketManager::Not(SymbolicPacket negand) {
+PacketSetHandle PacketSetManager::Not(PacketSetHandle negand) {
   // Base cases.
   if (IsEmptySet(negand)) return FullSet();
   if (IsFullSet(negand)) return EmptySet();
@@ -215,7 +215,7 @@ SymbolicPacket SymbolicPacketManager::Not(SymbolicPacket negand) {
 
   for (int i = 0; i < negand_node.branch_by_field_value.size(); ++i) {
     auto [value, branch] = negand_node.branch_by_field_value[i];
-    SymbolicPacket negated_branch = Not(branch);
+    PacketSetHandle negated_branch = Not(branch);
     DCHECK(branch != negand_node.default_branch);
     DCHECK(negated_branch != result_node.default_branch);
     result_node.branch_by_field_value[i] =
@@ -225,8 +225,8 @@ SymbolicPacket SymbolicPacketManager::Not(SymbolicPacket negand) {
   return NodeToPacket(std::move(result_node));
 }
 
-SymbolicPacket SymbolicPacketManager::And(SymbolicPacket left,
-                                          SymbolicPacket right) {
+PacketSetHandle PacketSetManager::And(PacketSetHandle left,
+                                      PacketSetHandle right) {
   // Base cases.
   if (IsEmptySet(left) || IsFullSet(right) || left == right) return left;
   if (IsEmptySet(right) || IsFullSet(left)) return right;
@@ -248,12 +248,12 @@ SymbolicPacket SymbolicPacketManager::And(SymbolicPacket left,
 
   // Case 1: left_node->field < right_node->field: branch on left field.
   if (left_node->field < right_node->field) {
-    SymbolicPacket default_branch = And(left_node->default_branch, right);
-    absl::FixedArray<std::pair<int, SymbolicPacket>> branch_by_field_value(
+    PacketSetHandle default_branch = And(left_node->default_branch, right);
+    absl::FixedArray<std::pair<int, PacketSetHandle>> branch_by_field_value(
         left_node->branch_by_field_value.size());
     int num_branches = 0;
     for (const auto& [value, left_branch] : left_node->branch_by_field_value) {
-      SymbolicPacket branch = And(left_branch, right);
+      PacketSetHandle branch = And(left_branch, right);
       if (branch == default_branch) continue;
       branch_by_field_value[num_branches++] = std::make_pair(value, branch);
     }
@@ -269,13 +269,13 @@ SymbolicPacket SymbolicPacketManager::And(SymbolicPacket left,
 
   // Case 2: left_node->field == right_node->field: branch on shared field.
   DCHECK(left_node->field == right_node->field);
-  SymbolicPacket default_branch =
+  PacketSetHandle default_branch =
       And(left_node->default_branch, right_node->default_branch);
-  absl::FixedArray<std::pair<int, SymbolicPacket>> branch_by_field_value(
+  absl::FixedArray<std::pair<int, PacketSetHandle>> branch_by_field_value(
       left_node->branch_by_field_value.size() +
       right_node->branch_by_field_value.size());
   int num_branches = 0;
-  auto add_branch = [&](int value, SymbolicPacket branch) {
+  auto add_branch = [&](int value, PacketSetHandle branch) {
     if (branch == default_branch) return;
     branch_by_field_value[num_branches++] = std::make_pair(value, branch);
   };
@@ -316,8 +316,8 @@ SymbolicPacket SymbolicPacketManager::And(SymbolicPacket left,
   });
 }
 
-SymbolicPacket SymbolicPacketManager::Or(SymbolicPacket left,
-                                         SymbolicPacket right) {
+PacketSetHandle PacketSetManager::Or(PacketSetHandle left,
+                                     PacketSetHandle right) {
   // Apply De Morgan's law: a || b == !(!a && !b).
   //
   // This is currently convenient and terribly inefficient. But once we have
@@ -329,24 +329,24 @@ SymbolicPacket SymbolicPacketManager::Or(SymbolicPacket left,
   return Not(And(Not(left), Not(right)));
 }
 
-SymbolicPacket SymbolicPacketManager::Xor(SymbolicPacket left,
-                                          SymbolicPacket right) {
+PacketSetHandle PacketSetManager::Xor(PacketSetHandle left,
+                                      PacketSetHandle right) {
   // a (+) b == (!a && b) || (a && !b).
   return Or(And(Not(left), right), And(left, Not(right)));
 }
 
-std::string SymbolicPacketManager::ToString(SymbolicPacket packet) const {
+std::string PacketSetManager::ToString(PacketSetHandle packet_set) const {
   std::string result;
-  std::queue<SymbolicPacket> work_list{{packet}};
-  absl::flat_hash_set<SymbolicPacket> visited{packet};
+  std::queue<PacketSetHandle> work_list{{packet_set}};
+  absl::flat_hash_set<PacketSetHandle> visited{packet_set};
   while (!work_list.empty()) {
-    SymbolicPacket packet = work_list.front();
+    PacketSetHandle packet_set = work_list.front();
     work_list.pop();
-    absl::StrAppend(&result, packet);
+    absl::StrAppend(&result, packet_set);
 
-    if (IsFullSet(packet) || IsEmptySet(packet)) continue;
+    if (IsFullSet(packet_set) || IsEmptySet(packet_set)) continue;
 
-    const DecisionNode& node = GetNodeOrDie(packet);
+    const DecisionNode& node = GetNodeOrDie(packet_set);
     absl::StrAppend(&result, ":\n");
     std::string field =
         absl::StrFormat("%v:'%s'", node.field,
@@ -358,7 +358,7 @@ std::string SymbolicPacketManager::ToString(SymbolicPacket packet) const {
       bool new_branch = visited.insert(branch).second;
       if (new_branch) work_list.push(branch);
     }
-    SymbolicPacket fallthrough = node.default_branch;
+    PacketSetHandle fallthrough = node.default_branch;
     absl::StrAppendFormat(&result, "  %s == * -> %v\n", field, fallthrough);
     if (IsFullSet(fallthrough) || IsEmptySet(fallthrough)) continue;
     bool new_branch = visited.insert(fallthrough).second;
@@ -367,9 +367,9 @@ std::string SymbolicPacketManager::ToString(SymbolicPacket packet) const {
   return result;
 }
 
-std::string SymbolicPacketManager::ToString(const DecisionNode& node) const {
+std::string PacketSetManager::ToString(const DecisionNode& node) const {
   std::string result;
-  std::vector<SymbolicPacket> work_list;
+  std::vector<PacketSetHandle> work_list;
   std::string field =
       absl::StrFormat("%v:'%s'", node.field,
                       absl::CEscape(field_manager_.GetFieldName(node.field)));
@@ -377,20 +377,20 @@ std::string SymbolicPacketManager::ToString(const DecisionNode& node) const {
     absl::StrAppendFormat(&result, "  %s == %d -> %v\n", field, value, branch);
     if (!IsFullSet(branch) && !IsEmptySet(branch)) work_list.push_back(branch);
   }
-  SymbolicPacket fallthrough = node.default_branch;
+  PacketSetHandle fallthrough = node.default_branch;
   absl::StrAppendFormat(&result, "  %s == * -> %v\n", field, fallthrough);
   if (!IsFullSet(fallthrough) && !IsEmptySet(fallthrough)) {
     work_list.push_back(fallthrough);
   }
 
-  for (const SymbolicPacket& branch : work_list) {
+  for (PacketSetHandle branch : work_list) {
     absl::StrAppend(&result, ToString(branch));
   }
 
   return result;
 }
 
-absl::Status SymbolicPacketManager::CheckInternalInvariants() const {
+absl::Status PacketSetManager::CheckInternalInvariants() const {
   // Invariant: Proper and sentinel node indices are disjoint.
   RET_CHECK(nodes_.size() <= SentinelNodeIndex::kMinSentinel);
 
@@ -403,7 +403,7 @@ absl::Status SymbolicPacketManager::CheckInternalInvariants() const {
     const DecisionNode& node = nodes_[i];
     auto it = packet_by_node_.find(node);
     RET_CHECK(it != packet_by_node_.end());
-    RET_CHECK(it->second == SymbolicPacket(i));
+    RET_CHECK(it->second == PacketSetHandle(i));
   }
 
   // Node Invariants.
@@ -433,16 +433,16 @@ absl::Status SymbolicPacketManager::CheckInternalInvariants() const {
   return absl::OkStatus();
 }
 
-void SymbolicPacketManager::GetConcretePacketsDfs(
-    const SymbolicPacket& symbolic_packet, Packet& current_packet,
+void PacketSetManager::GetConcretePacketsDfs(
+    PacketSetHandle packet_set, Packet& current_packet,
     std::vector<Packet>& result) const {
-  if (IsEmptySet(symbolic_packet)) return;
-  if (IsFullSet(symbolic_packet)) {
+  if (IsEmptySet(packet_set)) return;
+  if (IsFullSet(packet_set)) {
     result.push_back(current_packet);
     return;
   }
 
-  const DecisionNode& node = GetNodeOrDie(symbolic_packet);
+  const DecisionNode& node = GetNodeOrDie(packet_set);
   std::string node_field = field_manager_.GetFieldName(node.field);
 
   GetConcretePacketsDfs(node.default_branch, current_packet, result);
@@ -453,11 +453,11 @@ void SymbolicPacketManager::GetConcretePacketsDfs(
   current_packet.erase(node_field);
 }
 
-std::vector<Packet> SymbolicPacketManager::GetConcretePackets(
-    SymbolicPacket symbolic_packet) const {
+std::vector<Packet> PacketSetManager::GetConcretePackets(
+    PacketSetHandle packet_set) const {
   std::vector<Packet> result;
   Packet current_packet;
-  GetConcretePacketsDfs(symbolic_packet, current_packet, result);
+  GetConcretePacketsDfs(packet_set, current_packet, result);
   return result;
 }
 

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "netkat/interned_field.h"
+#include "netkat/packet_field.h"
 
 #include "absl/base/no_destructor.h"
 #include "absl/container/flat_hash_set.h"
@@ -28,50 +28,50 @@ namespace {
 using ::testing::StartsWith;
 
 // We use a global manager object across all tests to exercise statefulness.
-InternedFieldManager& Manager() {
-  static absl::NoDestructor<InternedFieldManager> manager;
+PacketFieldManager& Manager() {
+  static absl::NoDestructor<PacketFieldManager> manager;
   return *manager;
 }
 
 // After executing all tests, we check once that no invariants are violated.
-class CheckInternedFieldManagerInvariantsOnTearDown
+class CheckPacketFieldManagerInvariantsOnTearDown
     : public testing::Environment {
  public:
-  ~CheckInternedFieldManagerInvariantsOnTearDown() override {}
+  ~CheckPacketFieldManagerInvariantsOnTearDown() override = default;
   void SetUp() override {}
   void TearDown() override { ASSERT_OK(Manager().CheckInternalInvariants()); }
 };
 testing::Environment* const foo_env = testing::AddGlobalTestEnvironment(
-    new CheckInternedFieldManagerInvariantsOnTearDown);
+    new CheckPacketFieldManagerInvariantsOnTearDown);
 
-TEST(InternedFieldManagerTest, AbslStringifyWorks) {
-  EXPECT_THAT(absl::StrCat(Manager().GetOrCreateInternedField("foo")),
-              StartsWith("InternedField"));
+TEST(PacketFieldManagerTest, AbslStringifyWorks) {
+  EXPECT_THAT(absl::StrCat(Manager().GetOrCreatePacketFieldHandle("foo")),
+              StartsWith("PacketFieldHandle"));
 }
 
-TEST(InternedFieldManagerTest, AbslHashValueWorks) {
-  absl::flat_hash_set<InternedField> set = {
-      Manager().GetOrCreateInternedField("foo"),
-      Manager().GetOrCreateInternedField("bar"),
+TEST(PacketFieldManagerTest, AbslHashValueWorks) {
+  absl::flat_hash_set<PacketFieldHandle> set = {
+      Manager().GetOrCreatePacketFieldHandle("foo"),
+      Manager().GetOrCreatePacketFieldHandle("bar"),
   };
   EXPECT_EQ(set.size(), 2);
 }
 
-TEST(InternedFieldManagerTest,
-     GetOrCreateInternedFieldReturnsSameFieldForSameName) {
-  EXPECT_EQ(Manager().GetOrCreateInternedField("foo"),
-            Manager().GetOrCreateInternedField("foo"));
+TEST(PacketFieldManagerTest,
+     GetOrCreatePacketFieldHandleReturnsSameFieldForSameName) {
+  EXPECT_EQ(Manager().GetOrCreatePacketFieldHandle("foo"),
+            Manager().GetOrCreatePacketFieldHandle("foo"));
 }
 
-TEST(InternedFieldManagerTest,
-     GetOrCreateInternedFieldReturnsDifferentFieldForDifferentNames) {
-  EXPECT_NE(Manager().GetOrCreateInternedField("foo"),
-            Manager().GetOrCreateInternedField("bar"));
+TEST(PacketFieldManagerTest,
+     GetOrCreatePacketFieldHandleReturnsDifferentFieldForDifferentNames) {
+  EXPECT_NE(Manager().GetOrCreatePacketFieldHandle("foo"),
+            Manager().GetOrCreatePacketFieldHandle("bar"));
 }
 
-TEST(InternedFieldManagerTest, GetFieldNameReturnsNameOfInternedField) {
-  InternedField foo = Manager().GetOrCreateInternedField("foo");
-  InternedField bar = Manager().GetOrCreateInternedField("bar");
+TEST(PacketFieldManagerTest, GetFieldNameReturnsNameOfPacketFieldHandle) {
+  PacketFieldHandle foo = Manager().GetOrCreatePacketFieldHandle("foo");
+  PacketFieldHandle bar = Manager().GetOrCreatePacketFieldHandle("bar");
   EXPECT_EQ(Manager().GetFieldName(foo), "foo");
   EXPECT_EQ(Manager().GetFieldName(bar), "bar");
 }

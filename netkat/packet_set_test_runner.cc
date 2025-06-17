@@ -19,7 +19,7 @@
 #include <vector>
 
 #include "netkat/netkat_proto_constructors.h"
-#include "netkat/symbolic_packet.h"
+#include "netkat/packet_set.h"
 
 namespace netkat {
 namespace {
@@ -73,14 +73,13 @@ std::vector<TestCase> TestCases() {
 void main() {
   // This test needs a deterministic field interning order, and thus must start
   // from a fresh manager.
-  SymbolicPacketManager manager;
+  PacketSetManager manager;
   for (const TestCase& test_case : TestCases()) {
-    netkat::SymbolicPacket symbolic_packet =
-        manager.Compile(test_case.predicate);
+    netkat::PacketSetHandle packet_set = manager.Compile(test_case.predicate);
     std::cout << kBanner << "Test case: " << test_case.description << std::endl
               << kBanner;
-    std::cout << kStringHeader << manager.ToString(symbolic_packet);
-    std::cout << kDotHeader << manager.ToDot(symbolic_packet);
+    std::cout << kStringHeader << manager.ToString(packet_set);
+    std::cout << kDotHeader << manager.ToDot(packet_set);
   }
 }
 

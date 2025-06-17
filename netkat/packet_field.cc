@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "netkat/interned_field.h"
+#include "netkat/packet_field.h"
 
 #include <string>
 
@@ -23,32 +23,32 @@
 
 namespace netkat {
 
-InternedField InternedFieldManager::GetOrCreateInternedField(
+PacketFieldHandle PacketFieldManager::GetOrCreatePacketFieldHandle(
     absl::string_view field_name) {
-  auto [it, inserted] = interned_field_by_name_.try_emplace(
-      field_name, InternedField(field_names_.size()));
+  auto [it, inserted] = packet_field_by_name_.try_emplace(
+      field_name, PacketFieldHandle(field_names_.size()));
   if (inserted) field_names_.push_back(std::string(field_name));
   return it->second;
 }
 
-std::string InternedFieldManager::GetFieldName(InternedField field) const {
+std::string PacketFieldManager::GetFieldName(PacketFieldHandle field) const {
   if (field.index_ >= field_names_.size()) {
-    LOG(DFATAL) << "InternedFieldManager::GetFieldName: field index "
+    LOG(DFATAL) << "PacketFieldManager::GetFieldName: field index "
                 << field.index_
                 << " out of bounds. Returning arbitrary string.";
-    return "INTERNAL ERROR: InternedFieldManager::GetFieldName out of bounds";
+    return "INTERNAL ERROR: PacketFieldManager::GetFieldName out of bounds";
   }
   return field_names_[field.index_];
 }
 
-absl::Status InternedFieldManager::CheckInternalInvariants() const {
+absl::Status PacketFieldManager::CheckInternalInvariants() const {
   for (int i = 0; i < field_names_.size(); ++i) {
-    auto it = interned_field_by_name_.find(field_names_[i]);
-    RET_CHECK(it != interned_field_by_name_.end());
+    auto it = packet_field_by_name_.find(field_names_[i]);
+    RET_CHECK(it != packet_field_by_name_.end());
     RET_CHECK(it->second.index_ == i);
   }
 
-  for (const auto& [name, field] : interned_field_by_name_) {
+  for (const auto& [name, field] : packet_field_by_name_) {
     RET_CHECK(field.index_ < field_names_.size());
     RET_CHECK(field_names_[field.index_] == name);
   }

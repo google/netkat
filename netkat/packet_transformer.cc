@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "netkat/symbolic_packet_transformer.h"
+#include "netkat/packet_transformer.h"
 
 #include <cstdint>
 #include <iterator>
@@ -37,9 +37,9 @@
 #include "absl/strings/string_view.h"
 #include "gutil/status.h"
 #include "netkat/evaluator.h"
-#include "netkat/interned_field.h"
 #include "netkat/netkat.pb.h"
-#include "netkat/symbolic_packet.h"
+#include "netkat/packet_field.h"
+#include "netkat/packet_set.h"
 
 namespace netkat {
 
@@ -57,35 +57,34 @@ enum SentinelNodeIndex : uint32_t {
   kMinSentinel = kAccept,
 };
 
-SymbolicPacketTransformer::SymbolicPacketTransformer()
+PacketTransformerHandle::PacketTransformerHandle()
     : node_index_(SentinelNodeIndex::kDeny) {}
 
-std::string SymbolicPacketTransformer::ToString() const {
+std::string PacketTransformerHandle::ToString() const {
   if (node_index_ == SentinelNodeIndex::kDeny) {
-    return "SymbolicPacketTransformer<deny>";
+    return "PacketTransformerHandle<deny>";
   } else if (node_index_ == SentinelNodeIndex::kAccept) {
-    return "SymbolicPacketTransformer<accept>";
+    return "PacketTransformerHandle<accept>";
   } else {
-    return absl::StrFormat("SymbolicPacketTransformer<%d>", node_index_);
+    return absl::StrFormat("PacketTransformerHandle<%d>", node_index_);
   }
 }
 
-const SymbolicPacketTransformerManager::DecisionNode&
-SymbolicPacketTransformerManager::GetNodeOrDie(
-    SymbolicPacketTransformer transformer) const {
+const PacketTransformerManager::DecisionNode&
+PacketTransformerManager::GetNodeOrDie(
+    PacketTransformerHandle transformer) const {
   CHECK_LT(transformer.node_index_, nodes_.size());  // Crash ok
   return nodes_[transformer.node_index_];
 }
 
 // TODO(dilo): Creating as many map copies as this method facilitates is
 // probably going to cause terrible performance, and needs to be revisited.
-absl::btree_map<int, SymbolicPacketTransformer>
-SymbolicPacketTransformerManager::GetMapAtValue(const DecisionNode& node,
-                                                int value) {
+absl::btree_map<int, PacketTransformerHandle>
+PacketTransformerManager::GetMapAtValue(const DecisionNode& node, int value) {
   if (node.modify_branch_by_field_match.contains(value))
     return node.modify_branch_by_field_match.at(value);
 
-  absl::btree_map<int, SymbolicPacketTransformer> result =
+  absl::btree_map<int, PacketTransformerHandle> result =
       node.default_branch_by_field_modification;
   if (result.contains(value) || IsDeny(node.default_branch)) return result;
 
@@ -95,7 +94,7 @@ SymbolicPacketTransformerManager::GetMapAtValue(const DecisionNode& node,
 }
 
 // Canonicalizes a decision node and returns a transformer.
-SymbolicPacketTransformer SymbolicPacketTransformerManager::NodeToTransformer(
+PacketTransformerHandle PacketTransformerManager::NodeToTransformer(
     DecisionNode&& node) {
   // Remove any default branches pointing to Deny, saving the value.
   absl::flat_hash_set<int> deny_values;
@@ -173,7 +172,7 @@ SymbolicPacketTransformer SymbolicPacketTransformerManager::NodeToTransformer(
     return node.default_branch;
 
   auto [it, inserted] = transformer_by_node_.try_emplace(
-      node, SymbolicPacketTransformer(nodes_.size()));
+      node, PacketTransformerHandle(nodes_.size()));
   if (inserted) {
     nodes_.push_back(std::move(node));
     LOG_IF(DFATAL, nodes_.size() > SentinelNodeIndex::kMinSentinel)
@@ -184,56 +183,55 @@ SymbolicPacketTransformer SymbolicPacketTransformerManager::NodeToTransformer(
   return it->second;
 }
 
-bool SymbolicPacketTransformerManager::IsDeny(
-    SymbolicPacketTransformer transformer) const {
+bool PacketTransformerManager::IsDeny(
+    PacketTransformerHandle transformer) const {
   return transformer == Deny();
 }
 
-bool SymbolicPacketTransformerManager::IsAccept(
-    SymbolicPacketTransformer transformer) const {
+bool PacketTransformerManager::IsAccept(
+    PacketTransformerHandle transformer) const {
   return transformer == Accept();
 }
 
 absl::flat_hash_set<Packet> RunWithNewValueThenReset(
-    const SymbolicPacketTransformerManager& manager,
-    SymbolicPacketTransformer transformer, Packet& concrete_packet,
+    const PacketTransformerManager& manager,
+    PacketTransformerHandle transformer, Packet& packet,
     absl::string_view field, int new_value) {
-  // Record the original value of 'field' if it exists in 'concrete_packet'.
+  // Record the original value of 'field' if it exists in 'packet'.
   std::optional<int> original_value;
-  if (auto it = concrete_packet.find(field); it != concrete_packet.end()) {
+  if (auto it = packet.find(field); it != packet.end()) {
     original_value = it->second;
   }
 
   // Set 'field' to 'new_value' for the duration of the Run call.
   // This will insert if 'field' doesn't exist, or update if it does.
-  concrete_packet[field] = new_value;
+  packet[field] = new_value;
 
-  absl::flat_hash_set<Packet> result =
-      manager.Run(transformer, concrete_packet);
+  absl::flat_hash_set<Packet> result = manager.Run(transformer, packet);
 
-  // Restore 'concrete_packet' to its original state regarding 'field'.
+  // Restore 'packet' to its original state regarding 'field'.
   if (original_value.has_value()) {
     // Field originally existed, restore its value.
-    concrete_packet[field] = *original_value;
+    packet[field] = *original_value;
   } else {
     // Field did not originally exist, so remove the one we added.
-    concrete_packet.erase(field);
+    packet.erase(field);
   }
   return result;
 }
 
-absl::flat_hash_set<Packet> SymbolicPacketTransformerManager::Run(
-    SymbolicPacketTransformer transformer, Packet& concrete_packet) const {
+absl::flat_hash_set<Packet> PacketTransformerManager::Run(
+    PacketTransformerHandle transformer, Packet& packet) const {
   if (IsDeny(transformer)) return {};
-  if (IsAccept(transformer)) return {concrete_packet};
+  if (IsAccept(transformer)) return {packet};
 
   absl::flat_hash_set<Packet> result;
   const DecisionNode& node = GetNodeOrDie(transformer);
   std::string field =
-      symbolic_packet_manager_.field_manager_.GetFieldName(node.field);
+      packet_set_manager_.field_manager_.GetFieldName(node.field);
   // If a field doesn't exist, it does not match any value.
   std::optional<int> initial_field_value;
-  if (auto it = concrete_packet.find(field); it != concrete_packet.end()) {
+  if (auto it = packet.find(field); it != packet.end()) {
     initial_field_value = it->second;
   }
   bool matched = false;
@@ -245,8 +243,8 @@ absl::flat_hash_set<Packet> SymbolicPacketTransformerManager::Run(
         mod_map_it != node.modify_branch_by_field_match.end()) {
       matched = true;
       for (const auto& [value, branch] : mod_map_it->second) {
-        result.merge(RunWithNewValueThenReset(*this, branch, concrete_packet,
-                                              field, value));
+        result.merge(
+            RunWithNewValueThenReset(*this, branch, packet, field, value));
       }
     }
   }
@@ -265,14 +263,13 @@ absl::flat_hash_set<Packet> SymbolicPacketTransformerManager::Run(
       matched = true;
     }
 
-    result.merge(
-        RunWithNewValueThenReset(*this, branch, concrete_packet, field, value));
+    result.merge(RunWithNewValueThenReset(*this, branch, packet, field, value));
   }
-  if (!matched) result.merge(Run(node.default_branch, concrete_packet));
+  if (!matched) result.merge(Run(node.default_branch, packet));
   return result;
 }
 
-SymbolicPacketTransformer SymbolicPacketTransformerManager::Compile(
+PacketTransformerHandle PacketTransformerManager::Compile(
     const PolicyProto& policy) {
   switch (policy.policy_case()) {
     case PolicyProto::kFilter:
@@ -299,34 +296,34 @@ SymbolicPacketTransformer SymbolicPacketTransformerManager::Compile(
   return Deny();
 }
 
-SymbolicPacketTransformer SymbolicPacketTransformerManager::Deny() const {
-  return SymbolicPacketTransformer(SentinelNodeIndex::kDeny);
+PacketTransformerHandle PacketTransformerManager::Deny() const {
+  return PacketTransformerHandle(SentinelNodeIndex::kDeny);
 }
 
-SymbolicPacketTransformer SymbolicPacketTransformerManager::Accept() const {
-  return SymbolicPacketTransformer(SentinelNodeIndex::kAccept);
+PacketTransformerHandle PacketTransformerManager::Accept() const {
+  return PacketTransformerHandle(SentinelNodeIndex::kAccept);
 }
 
-SymbolicPacketTransformer SymbolicPacketTransformerManager::FromSymbolicPacket(
-    SymbolicPacket symbolic_packet) {
-  if (symbolic_packet_manager_.IsEmptySet(symbolic_packet)) return Deny();
-  if (symbolic_packet_manager_.IsFullSet(symbolic_packet)) return Accept();
+PacketTransformerHandle PacketTransformerManager::FromPacketSetHandle(
+    PacketSetHandle packet_set) {
+  if (packet_set_manager_.IsEmptySet(packet_set)) return Deny();
+  if (packet_set_manager_.IsFullSet(packet_set)) return Accept();
 
-  const SymbolicPacketManager::DecisionNode& packet_node =
-      symbolic_packet_manager_.GetNodeOrDie(symbolic_packet);
+  const PacketSetManager::DecisionNode& packet_node =
+      packet_set_manager_.GetNodeOrDie(packet_set);
 
   DecisionNode transformer_node{
       .field = packet_node.field,
       // This starts out empty and will be populated below.
       .modify_branch_by_field_match = {},
-      // Since symbolic packets are not modified, we don't want any default
+      // Since packet sets are not modified, we don't want any default
       // field modification branches.
       .default_branch_by_field_modification = {},
-      .default_branch = FromSymbolicPacket(packet_node.default_branch),
+      .default_branch = FromPacketSetHandle(packet_node.default_branch),
   };
 
   for (const auto& [value, branch] : packet_node.branch_by_field_value) {
-    SymbolicPacketTransformer transformer_branch = FromSymbolicPacket(branch);
+    PacketTransformerHandle transformer_branch = FromPacketSetHandle(branch);
     DCHECK(transformer_branch != transformer_node.default_branch);
     transformer_node.modify_branch_by_field_match[value][value] =
         transformer_branch;
@@ -337,15 +334,15 @@ SymbolicPacketTransformer SymbolicPacketTransformerManager::FromSymbolicPacket(
 
 // TODO(dilo): There are efficiency improvements we could make here, like
 // getting rid of predicates entirely and moving to a normalized form.
-SymbolicPacketTransformer SymbolicPacketTransformerManager::Filter(
+PacketTransformerHandle PacketTransformerManager::Filter(
     const PredicateProto& predicate) {
-  return FromSymbolicPacket(symbolic_packet_manager_.Compile(predicate));
+  return FromPacketSetHandle(packet_set_manager_.Compile(predicate));
 }
 
-SymbolicPacketTransformer SymbolicPacketTransformerManager::Modification(
+PacketTransformerHandle PacketTransformerManager::Modification(
     absl::string_view field, int value) {
   return NodeToTransformer(DecisionNode{
-      .field = symbolic_packet_manager_.field_manager_.GetOrCreateInternedField(
+      .field = packet_set_manager_.field_manager_.GetOrCreatePacketFieldHandle(
           field),
       .modify_branch_by_field_match = {},
       .default_branch_by_field_modification = {{value, Accept()}},
@@ -354,14 +351,14 @@ SymbolicPacketTransformer SymbolicPacketTransformerManager::Modification(
 }
 
 namespace {
-absl::btree_map<int, SymbolicPacketTransformer> CombineModifyBranches(
-    const absl::btree_map<int, SymbolicPacketTransformer>& left,
-    const absl::btree_map<int, SymbolicPacketTransformer>& right,
-    absl::AnyInvocable<SymbolicPacketTransformer(SymbolicPacketTransformer,
-                                                 SymbolicPacketTransformer)>
+absl::btree_map<int, PacketTransformerHandle> CombineModifyBranches(
+    const absl::btree_map<int, PacketTransformerHandle>& left,
+    const absl::btree_map<int, PacketTransformerHandle>& right,
+    absl::AnyInvocable<PacketTransformerHandle(PacketTransformerHandle,
+                                               PacketTransformerHandle)>
         combiner,
-    SymbolicPacketTransformer default_value) {
-  absl::btree_map<int, SymbolicPacketTransformer> result;
+    PacketTransformerHandle default_value) {
+  absl::btree_map<int, PacketTransformerHandle> result;
   for (const auto& [value, branch] : left) {
     if (right.contains(value)) {
       result[value] = combiner(branch, right.at(value));
@@ -378,12 +375,12 @@ absl::btree_map<int, SymbolicPacketTransformer> CombineModifyBranches(
 
 }  // namespace
 
-SymbolicPacketTransformer SymbolicPacketTransformerManager::Sequence(
-    DecisionNode left, DecisionNode right) {
+PacketTransformerHandle PacketTransformerManager::Sequence(DecisionNode left,
+                                                           DecisionNode right) {
   // left.field > right.field: Expand the left node, reducing to the inductive
   // case.
   if (left.field > right.field) {
-    InternedField first_field = right.field;
+    PacketFieldHandle first_field = right.field;
     return Sequence(
         DecisionNode{
             .field = first_field,
@@ -395,7 +392,7 @@ SymbolicPacketTransformer SymbolicPacketTransformerManager::Sequence(
   // left.field < right.field: Expand the right node, reducing to the inductive
   // case.
   if (left.field < right.field) {
-    InternedField first_field = left.field;
+    PacketFieldHandle first_field = left.field;
     return Sequence(std::move(left),
                     DecisionNode{
                         .field = first_field,
@@ -412,24 +409,25 @@ SymbolicPacketTransformer SymbolicPacketTransformerManager::Sequence(
 
   // Construct the possible results of applying the right node to packets gotten
   // by taken default modification branches in the left node.
-  absl::btree_map<int, SymbolicPacketTransformer>
+  absl::btree_map<int, PacketTransformerHandle>
       right_applied_to_left_modifications;
   for (const auto& [value, branch] :
        left.default_branch_by_field_modification) {
-    absl::btree_map<int, SymbolicPacketTransformer>
-        right_at_value_with_sequence = CombineModifyBranches(
+    absl::btree_map<int, PacketTransformerHandle> right_at_value_with_sequence =
+        CombineModifyBranches(
             {}, GetMapAtValue(right, value),
             /*combiner=*/
-            [this](SymbolicPacketTransformer left,
-                   SymbolicPacketTransformer right) {
+            [this](PacketTransformerHandle left,
+                   PacketTransformerHandle right) {
               return Sequence(left, right);
             },
             /*default_value=*/branch);
     right_applied_to_left_modifications = CombineModifyBranches(
         right_applied_to_left_modifications, right_at_value_with_sequence,
         /*combiner=*/
-        [this](SymbolicPacketTransformer left,
-               SymbolicPacketTransformer right) { return Union(left, right); },
+        [this](PacketTransformerHandle left, PacketTransformerHandle right) {
+          return Union(left, right);
+        },
         /*default_value=*/Deny());
   }
 
@@ -437,12 +435,11 @@ SymbolicPacketTransformer SymbolicPacketTransformerManager::Sequence(
       right_applied_to_left_modifications,
       CombineModifyBranches(
           {}, right.default_branch_by_field_modification,
-          [this](SymbolicPacketTransformer left,
-                 SymbolicPacketTransformer right) {
+          [this](PacketTransformerHandle left, PacketTransformerHandle right) {
             return Sequence(left, right);
           },
           /*default_value=*/left.default_branch),
-      [this](SymbolicPacketTransformer left, SymbolicPacketTransformer right) {
+      [this](PacketTransformerHandle left, PacketTransformerHandle right) {
         return Union(left, right);
       },
       /*default_value=*/Deny());
@@ -492,14 +489,13 @@ SymbolicPacketTransformer SymbolicPacketTransformerManager::Sequence(
           CombineModifyBranches(
               {}, GetMapAtValue(right, left_value),
               /*combiner=*/
-              [this](SymbolicPacketTransformer left,
-                     SymbolicPacketTransformer right) {
+              [this](PacketTransformerHandle left,
+                     PacketTransformerHandle right) {
                 return Sequence(left, right);
               },
               /*default_value=*/left_spp),
           /*combiner=*/
-          [this](SymbolicPacketTransformer left,
-                 SymbolicPacketTransformer right) {
+          [this](PacketTransformerHandle left, PacketTransformerHandle right) {
             return Union(left, right);
           },
           /*default_value=*/Deny());
@@ -509,8 +505,8 @@ SymbolicPacketTransformer SymbolicPacketTransformerManager::Sequence(
   return NodeToTransformer(std::move(result_node));
 }
 
-SymbolicPacketTransformer SymbolicPacketTransformerManager::Sequence(
-    SymbolicPacketTransformer left, SymbolicPacketTransformer right) {
+PacketTransformerHandle PacketTransformerManager::Sequence(
+    PacketTransformerHandle left, PacketTransformerHandle right) {
   // Base cases.
   if (IsDeny(left) || IsDeny(right)) return Deny();
   if (IsAccept(left)) return right;
@@ -520,12 +516,12 @@ SymbolicPacketTransformer SymbolicPacketTransformerManager::Sequence(
   return Sequence(GetNodeOrDie(left), GetNodeOrDie(right));
 }
 
-SymbolicPacketTransformer SymbolicPacketTransformerManager::Union(
-    DecisionNode left, DecisionNode right) {
+PacketTransformerHandle PacketTransformerManager::Union(DecisionNode left,
+                                                        DecisionNode right) {
   // left.field > right.field: Expand the left node, reducing to the inductive
   // case.
   if (left.field > right.field) {
-    InternedField first_field = right.field;
+    PacketFieldHandle first_field = right.field;
     return Union(
         DecisionNode{
             .field = first_field,
@@ -537,7 +533,7 @@ SymbolicPacketTransformer SymbolicPacketTransformerManager::Union(
   // left.field < right.field: Expand the right node, reducing to the inductive
   // case.
   if (left.field < right.field) {
-    InternedField first_field = left.field;
+    PacketFieldHandle first_field = left.field;
     return Union(std::move(left),
                  DecisionNode{
                      .field = first_field,
@@ -553,8 +549,7 @@ SymbolicPacketTransformer SymbolicPacketTransformerManager::Union(
           left.default_branch_by_field_modification,
           right.default_branch_by_field_modification,
           /*combiner=*/
-          [this](SymbolicPacketTransformer left,
-                 SymbolicPacketTransformer right) {
+          [this](PacketTransformerHandle left, PacketTransformerHandle right) {
             return Union(left, right);
           },
           /*default_value=*/Deny()),
@@ -588,23 +583,24 @@ SymbolicPacketTransformer SymbolicPacketTransformerManager::Union(
 
   // For every value in mapped in each node, construct the proper new branch.
   // TODO(dilo): Would like to use absl::bind_front here instead of a lambda:
-  //   absl::bind_front<SymbolicPacketTransformer(SymbolicPacketTransformer,
-  //     SymbolicPacketTransformer)>(
-  // &SymbolicPacketTransformerManager::Union, this),
+  //   absl::bind_front<PacketTransformerHandle(PacketTransformerHandle,
+  //     PacketTransformerHandle)>(
+  // &PacketTransformerManager::Union, this),
   for (int value : all_possible_values) {
     result_node.modify_branch_by_field_match[value] = CombineModifyBranches(
         GetMapAtValue(left, value), GetMapAtValue(right, value),
         /*combiner=*/
-        [this](SymbolicPacketTransformer left,
-               SymbolicPacketTransformer right) { return Union(left, right); },
+        [this](PacketTransformerHandle left, PacketTransformerHandle right) {
+          return Union(left, right);
+        },
         /*default_value=*/Deny());
   }
 
   return NodeToTransformer(std::move(result_node));
 }
 
-SymbolicPacketTransformer SymbolicPacketTransformerManager::Union(
-    SymbolicPacketTransformer left, SymbolicPacketTransformer right) {
+PacketTransformerHandle PacketTransformerManager::Union(
+    PacketTransformerHandle left, PacketTransformerHandle right) {
   // Base cases.
   if (left == right) return left;
   if (IsDeny(right)) return left;
@@ -626,10 +622,10 @@ SymbolicPacketTransformer SymbolicPacketTransformerManager::Union(
   return Union(GetNodeOrDie(left), GetNodeOrDie(right));
 }
 
-SymbolicPacketTransformer SymbolicPacketTransformerManager::Iterate(
-    SymbolicPacketTransformer iterable) {
-  SymbolicPacketTransformer previous_approximation = Accept();
-  SymbolicPacketTransformer current_approximation = Union(Accept(), iterable);
+PacketTransformerHandle PacketTransformerManager::Iterate(
+    PacketTransformerHandle iterable) {
+  PacketTransformerHandle previous_approximation = Accept();
+  PacketTransformerHandle current_approximation = Union(Accept(), iterable);
   // Iterate until we reach a fixed point.
   while (current_approximation != previous_approximation) {
     previous_approximation = current_approximation;
@@ -639,26 +635,25 @@ SymbolicPacketTransformer SymbolicPacketTransformerManager::Iterate(
   return current_approximation;
 }
 
-// SymbolicPacket SymbolicPacketTransformerManager::Push(
-//     SymbolicPacket packet, SymbolicPacketTransformer transformer) const {
+// PacketSetHandle PacketTransformerManager::Push(
+//     PacketSetHandle packet_set, PacketTransformerHandle transformer) const {
 //   LOG(DFATAL) << "Push is not implemented yet.";
-//   return SymbolicPacket();
+//   return PacketSetHandle();
 // }
 
-// SymbolicPacket SymbolicPacketTransformerManager::Pull(
-//     SymbolicPacketTransformer transformer, SymbolicPacket packet) const {
+// PacketSetHandle PacketTransformerManager::Pull(
+//     PacketTransformerHandle transformer, PacketSetHandle packet_set) const {
 //   LOG(DFATAL) << "Pull is not implemented yet.";
-//   return SymbolicPacket();
+//   return PacketSetHandle();
 // }
 
-std::string SymbolicPacketTransformerManager::ToString(
-    const DecisionNode& node) const {
+std::string PacketTransformerManager::ToString(const DecisionNode& node) const {
   std::string result;
-  std::vector<SymbolicPacketTransformer> work_list;
+  std::vector<PacketTransformerHandle> work_list;
 
   auto pretty_print_map =
       [&](absl::string_view field,
-          const absl::btree_map<int, SymbolicPacketTransformer>& map) {
+          const absl::btree_map<int, PacketTransformerHandle>& map) {
         for (const auto& [value, branch] : map) {
           absl::StrAppendFormat(&result, "    %s := %d -> %v\n", field, value,
                                 branch);
@@ -669,7 +664,7 @@ std::string SymbolicPacketTransformerManager::ToString(
   std::string field = absl::StrFormat(
       "%v:'%s'", node.field,
       absl::CEscape(
-          symbolic_packet_manager_.field_manager_.GetFieldName(node.field)));
+          packet_set_manager_.field_manager_.GetFieldName(node.field)));
 
   for (const auto& [value, modify_map] : node.modify_branch_by_field_match) {
     absl::StrAppendFormat(&result, "  %s == %d:\n", field, value);
@@ -677,28 +672,28 @@ std::string SymbolicPacketTransformerManager::ToString(
   }
   absl::StrAppendFormat(&result, "  %s == *:\n", field);
   pretty_print_map(field, node.default_branch_by_field_modification);
-  SymbolicPacketTransformer fallthrough = node.default_branch;
+  PacketTransformerHandle fallthrough = node.default_branch;
   absl::StrAppendFormat(&result, "  %s == * -> %v\n", field, fallthrough);
   if (!IsAccept(fallthrough) && !IsDeny(fallthrough))
     work_list.push_back(fallthrough);
 
-  for (const SymbolicPacketTransformer& branch : work_list) {
+  for (const PacketTransformerHandle& branch : work_list) {
     absl::StrAppend(&result, ToString(branch));
   }
 
   return result;
 }
 
-std::string SymbolicPacketTransformerManager::ToString(
-    SymbolicPacketTransformer transformer) const {
+std::string PacketTransformerManager::ToString(
+    PacketTransformerHandle transformer) const {
   std::string result;
-  std::queue<SymbolicPacketTransformer> work_list;
+  std::queue<PacketTransformerHandle> work_list;
   work_list.push(transformer);
-  absl::flat_hash_set<SymbolicPacketTransformer> visited = {transformer};
+  absl::flat_hash_set<PacketTransformerHandle> visited = {transformer};
 
   auto pretty_print_map =
       [&](absl::string_view field,
-          const absl::btree_map<int, SymbolicPacketTransformer>& map) {
+          const absl::btree_map<int, PacketTransformerHandle>& map) {
         for (const auto& [value, branch] : map) {
           absl::StrAppendFormat(&result, "    %s := %d -> %v\n", field, value,
                                 branch);
@@ -709,7 +704,7 @@ std::string SymbolicPacketTransformerManager::ToString(
       };
 
   while (!work_list.empty()) {
-    SymbolicPacketTransformer transformer = work_list.front();
+    PacketTransformerHandle transformer = work_list.front();
     work_list.pop();
     absl::StrAppend(&result, transformer);
 
@@ -720,14 +715,14 @@ std::string SymbolicPacketTransformerManager::ToString(
     std::string field = absl::StrFormat(
         "%v:'%s'", node.field,
         absl::CEscape(
-            symbolic_packet_manager_.field_manager_.GetFieldName(node.field)));
+            packet_set_manager_.field_manager_.GetFieldName(node.field)));
     for (const auto& [value, modify_map] : node.modify_branch_by_field_match) {
       absl::StrAppendFormat(&result, "  %s == %d:\n", field, value);
       pretty_print_map(field, modify_map);
     }
     absl::StrAppendFormat(&result, "  %s == *:\n", field);
     pretty_print_map(field, node.default_branch_by_field_modification);
-    SymbolicPacketTransformer fallthrough = node.default_branch;
+    PacketTransformerHandle fallthrough = node.default_branch;
     absl::StrAppendFormat(&result, "  %s == * -> %v\n", field, fallthrough);
     if (IsAccept(fallthrough) || IsDeny(fallthrough)) continue;
     bool new_branch = visited.insert(fallthrough).second;
@@ -737,21 +732,21 @@ std::string SymbolicPacketTransformerManager::ToString(
 }
 
 // Returns a dot string representation of the given
-// `symbolic_packet_transformer`.
-std::string SymbolicPacketTransformerManager::ToDot(
-    const SymbolicPacketTransformer& transformer) const {
+// `packet_transformer`.
+std::string PacketTransformerManager::ToDot(
+    const PacketTransformerHandle& transformer) const {
   std::string result = "digraph {\n";
   absl::StrAppendFormat(&result, "  %d [label=\"T\" shape=box]\n",
                         SentinelNodeIndex::kAccept);
   absl::StrAppendFormat(&result, "  %d [label=\"F\" shape=box]\n",
                         SentinelNodeIndex::kDeny);
-  std::queue<SymbolicPacketTransformer> work_list;
+  std::queue<PacketTransformerHandle> work_list;
   work_list.push(transformer);
-  absl::flat_hash_set<SymbolicPacketTransformer> visited = {transformer};
+  absl::flat_hash_set<PacketTransformerHandle> visited = {transformer};
 
   auto dotify_map =
       [&](absl::string_view field, absl::string_view old_value, int node_index,
-          const absl::btree_map<int, SymbolicPacketTransformer>& map) {
+          const absl::btree_map<int, PacketTransformerHandle>& map) {
         for (const auto& [new_value, branch] : map) {
           absl::StrAppendFormat(
               &result, "  %d -> %d [label=\"%s==%s; %s:=%d\"]\n", node_index,
@@ -763,14 +758,14 @@ std::string SymbolicPacketTransformerManager::ToDot(
       };
 
   while (!work_list.empty()) {
-    SymbolicPacketTransformer transformer = work_list.front();
+    PacketTransformerHandle transformer = work_list.front();
     work_list.pop();
 
     if (IsAccept(transformer) || IsDeny(transformer)) continue;
 
     const DecisionNode& node = GetNodeOrDie(transformer);
     std::string field =
-        symbolic_packet_manager_.field_manager_.GetFieldName(node.field);
+        packet_set_manager_.field_manager_.GetFieldName(node.field);
     absl::StrAppendFormat(&result, "  %d [label=\"%s\"]\n",
                           transformer.node_index_, field);
     for (const auto& [value, modify_map] : node.modify_branch_by_field_match) {
@@ -779,7 +774,7 @@ std::string SymbolicPacketTransformerManager::ToDot(
     }
     dotify_map(field, "*", transformer.node_index_,
                node.default_branch_by_field_modification);
-    SymbolicPacketTransformer fallthrough = node.default_branch;
+    PacketTransformerHandle fallthrough = node.default_branch;
     absl::StrAppendFormat(&result, "  %d -> %d [style=dashed]\n",
                           transformer.node_index_, fallthrough.node_index_);
     if (IsAccept(fallthrough) || IsDeny(fallthrough)) continue;
@@ -790,7 +785,7 @@ std::string SymbolicPacketTransformerManager::ToDot(
   return result;
 }
 
-absl::Status SymbolicPacketTransformerManager::CheckInternalInvariants() const {
+absl::Status PacketTransformerManager::CheckInternalInvariants() const {
   // Invariant: Proper and sentinel node indices are disjoint.
   RET_CHECK(nodes_.size() <= SentinelNodeIndex::kMinSentinel);
 
@@ -804,7 +799,7 @@ absl::Status SymbolicPacketTransformerManager::CheckInternalInvariants() const {
     const DecisionNode& node = nodes_[i];
     auto it = transformer_by_node_.find(node);
     RET_CHECK(it != transformer_by_node_.end());
-    RET_CHECK(it->second == SymbolicPacketTransformer(i));
+    RET_CHECK(it->second == PacketTransformerHandle(i));
   }
 
   // Node Invariants.
@@ -849,9 +844,8 @@ absl::Status SymbolicPacketTransformerManager::CheckInternalInvariants() const {
     }
 
     // Invariant: node field is interned by
-    // `symbolic_packet_manager_.field_manager_`.
-    symbolic_packet_manager_.field_manager_.GetFieldName(
-        node.field);  // No crash.
+    // `packet_set_manager_.field_manager_`.
+    packet_set_manager_.field_manager_.GetFieldName(node.field);  // No crash.
   }
 
   return absl::OkStatus();

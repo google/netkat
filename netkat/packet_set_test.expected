@@ -2,19 +2,19 @@
 Test case: p := (a=3 && b=4) || (b!=5 && c=5). Example from Katch paper Fig 3.
 ================================================================================
 -- STRING ----------------------------------------------------------------------
-SymbolicPacket<14>:
-  InternedField<0>:'a' == 3 -> SymbolicPacket<13>
-  InternedField<0>:'a' == * -> SymbolicPacket<6>
-SymbolicPacket<13>:
-  InternedField<1>:'b' == 4 -> SymbolicPacket<full>
-  InternedField<1>:'b' == 5 -> SymbolicPacket<empty>
-  InternedField<1>:'b' == * -> SymbolicPacket<5>
-SymbolicPacket<6>:
-  InternedField<1>:'b' == 5 -> SymbolicPacket<empty>
-  InternedField<1>:'b' == * -> SymbolicPacket<5>
-SymbolicPacket<5>:
-  InternedField<2>:'c' == 5 -> SymbolicPacket<full>
-  InternedField<2>:'c' == * -> SymbolicPacket<empty>
+PacketSetHandle<14>:
+  PacketFieldHandle<0>:'a' == 3 -> PacketSetHandle<13>
+  PacketFieldHandle<0>:'a' == * -> PacketSetHandle<6>
+PacketSetHandle<13>:
+  PacketFieldHandle<1>:'b' == 4 -> PacketSetHandle<full>
+  PacketFieldHandle<1>:'b' == 5 -> PacketSetHandle<empty>
+  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<5>
+PacketSetHandle<6>:
+  PacketFieldHandle<1>:'b' == 5 -> PacketSetHandle<empty>
+  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<5>
+PacketSetHandle<5>:
+  PacketFieldHandle<2>:'c' == 5 -> PacketSetHandle<full>
+  PacketFieldHandle<2>:'c' == * -> PacketSetHandle<empty>
 -- DOT -------------------------------------------------------------------------
 digraph {
   4294967294 [label="T" shape=box]
@@ -37,18 +37,18 @@ digraph {
 Test case: q := (b=3 && c=4) || (a=5 && c!=5). Example from Katch paper Fig 3.
 ================================================================================
 -- STRING ----------------------------------------------------------------------
-SymbolicPacket<24>:
-  InternedField<0>:'a' == 5 -> SymbolicPacket<9>
-  InternedField<0>:'a' == * -> SymbolicPacket<17>
-SymbolicPacket<9>:
-  InternedField<2>:'c' == 5 -> SymbolicPacket<empty>
-  InternedField<2>:'c' == * -> SymbolicPacket<full>
-SymbolicPacket<17>:
-  InternedField<1>:'b' == 3 -> SymbolicPacket<16>
-  InternedField<1>:'b' == * -> SymbolicPacket<empty>
-SymbolicPacket<16>:
-  InternedField<2>:'c' == 4 -> SymbolicPacket<full>
-  InternedField<2>:'c' == * -> SymbolicPacket<empty>
+PacketSetHandle<24>:
+  PacketFieldHandle<0>:'a' == 5 -> PacketSetHandle<9>
+  PacketFieldHandle<0>:'a' == * -> PacketSetHandle<17>
+PacketSetHandle<9>:
+  PacketFieldHandle<2>:'c' == 5 -> PacketSetHandle<empty>
+  PacketFieldHandle<2>:'c' == * -> PacketSetHandle<full>
+PacketSetHandle<17>:
+  PacketFieldHandle<1>:'b' == 3 -> PacketSetHandle<16>
+  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<empty>
+PacketSetHandle<16>:
+  PacketFieldHandle<2>:'c' == 4 -> PacketSetHandle<full>
+  PacketFieldHandle<2>:'c' == * -> PacketSetHandle<empty>
 -- DOT -------------------------------------------------------------------------
 digraph {
   4294967294 [label="T" shape=box]
@@ -70,32 +70,32 @@ digraph {
 Test case: p + q. Example from Katch paper Fig 3.
 ================================================================================
 -- STRING ----------------------------------------------------------------------
-SymbolicPacket<34>:
-  InternedField<0>:'a' == 3 -> SymbolicPacket<32>
-  InternedField<0>:'a' == 5 -> SymbolicPacket<33>
-  InternedField<0>:'a' == * -> SymbolicPacket<31>
-SymbolicPacket<32>:
-  InternedField<1>:'b' == 3 -> SymbolicPacket<30>
-  InternedField<1>:'b' == 4 -> SymbolicPacket<full>
-  InternedField<1>:'b' == 5 -> SymbolicPacket<empty>
-  InternedField<1>:'b' == * -> SymbolicPacket<5>
-SymbolicPacket<33>:
-  InternedField<1>:'b' == 5 -> SymbolicPacket<9>
-  InternedField<1>:'b' == * -> SymbolicPacket<full>
-SymbolicPacket<31>:
-  InternedField<1>:'b' == 3 -> SymbolicPacket<30>
-  InternedField<1>:'b' == 5 -> SymbolicPacket<empty>
-  InternedField<1>:'b' == * -> SymbolicPacket<5>
-SymbolicPacket<30>:
-  InternedField<2>:'c' == 4 -> SymbolicPacket<full>
-  InternedField<2>:'c' == 5 -> SymbolicPacket<full>
-  InternedField<2>:'c' == * -> SymbolicPacket<empty>
-SymbolicPacket<5>:
-  InternedField<2>:'c' == 5 -> SymbolicPacket<full>
-  InternedField<2>:'c' == * -> SymbolicPacket<empty>
-SymbolicPacket<9>:
-  InternedField<2>:'c' == 5 -> SymbolicPacket<empty>
-  InternedField<2>:'c' == * -> SymbolicPacket<full>
+PacketSetHandle<34>:
+  PacketFieldHandle<0>:'a' == 3 -> PacketSetHandle<32>
+  PacketFieldHandle<0>:'a' == 5 -> PacketSetHandle<33>
+  PacketFieldHandle<0>:'a' == * -> PacketSetHandle<31>
+PacketSetHandle<32>:
+  PacketFieldHandle<1>:'b' == 3 -> PacketSetHandle<30>
+  PacketFieldHandle<1>:'b' == 4 -> PacketSetHandle<full>
+  PacketFieldHandle<1>:'b' == 5 -> PacketSetHandle<empty>
+  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<5>
+PacketSetHandle<33>:
+  PacketFieldHandle<1>:'b' == 5 -> PacketSetHandle<9>
+  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<full>
+PacketSetHandle<31>:
+  PacketFieldHandle<1>:'b' == 3 -> PacketSetHandle<30>
+  PacketFieldHandle<1>:'b' == 5 -> PacketSetHandle<empty>
+  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<5>
+PacketSetHandle<30>:
+  PacketFieldHandle<2>:'c' == 4 -> PacketSetHandle<full>
+  PacketFieldHandle<2>:'c' == 5 -> PacketSetHandle<full>
+  PacketFieldHandle<2>:'c' == * -> PacketSetHandle<empty>
+PacketSetHandle<5>:
+  PacketFieldHandle<2>:'c' == 5 -> PacketSetHandle<full>
+  PacketFieldHandle<2>:'c' == * -> PacketSetHandle<empty>
+PacketSetHandle<9>:
+  PacketFieldHandle<2>:'c' == 5 -> PacketSetHandle<empty>
+  PacketFieldHandle<2>:'c' == * -> PacketSetHandle<full>
 -- DOT -------------------------------------------------------------------------
 digraph {
   4294967294 [label="T" shape=box]
