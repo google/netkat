@@ -1,0 +1,171 @@
+================================================================================
+Test case: p := (a=5 + b=2);(b:=1 + c=5). Example from Katch paper Fig 5.
+================================================================================
+-- STRING ----------------------------------------------------------------------
+PacketTransformerHandle<7>:
+  PacketFieldHandle<0>:'a' == 5:
+    PacketFieldHandle<0>:'a' := 5 -> PacketTransformerHandle<5>
+  PacketFieldHandle<0>:'a' == *:
+  PacketFieldHandle<0>:'a' == * -> PacketTransformerHandle<6>
+PacketTransformerHandle<5>:
+  PacketFieldHandle<1>:'b' == *:
+    PacketFieldHandle<1>:'b' := 1 -> PacketTransformerHandle<accept>
+  PacketFieldHandle<1>:'b' == * -> PacketTransformerHandle<4>
+PacketTransformerHandle<6>:
+  PacketFieldHandle<1>:'b' == 2:
+    PacketFieldHandle<1>:'b' := 1 -> PacketTransformerHandle<accept>
+    PacketFieldHandle<1>:'b' := 2 -> PacketTransformerHandle<4>
+  PacketFieldHandle<1>:'b' == *:
+  PacketFieldHandle<1>:'b' == * -> PacketTransformerHandle<deny>
+PacketTransformerHandle<4>:
+  PacketFieldHandle<2>:'c' == 5:
+    PacketFieldHandle<2>:'c' := 5 -> PacketTransformerHandle<accept>
+  PacketFieldHandle<2>:'c' == *:
+  PacketFieldHandle<2>:'c' == * -> PacketTransformerHandle<deny>
+-- DOT -------------------------------------------------------------------------
+digraph {
+  4294967294 [label="T" shape=box]
+  4294967295 [label="F" shape=box]
+  7 [label="a"]
+  7 -> 5 [label="a==5; a:=5"]
+  7 -> 6 [style=dashed]
+  5 [label="b"]
+  5 -> 4294967294 [label="b==*; b:=1"]
+  5 -> 4 [style=dashed]
+  6 [label="b"]
+  6 -> 4294967294 [label="b==2; b:=1"]
+  6 -> 4 [label="b==2; b:=2"]
+  6 -> 4294967295 [style=dashed]
+  4 [label="c"]
+  4 -> 4294967294 [label="c==5; c:=5"]
+  4 -> 4294967295 [style=dashed]
+}
+================================================================================
+Test case: q := (b=1 + c:=4 + a:=5;b:=1). Example from Katch paper Fig 5.
+================================================================================
+-- STRING ----------------------------------------------------------------------
+PacketTransformerHandle<16>:
+  PacketFieldHandle<0>:'a' == 1:
+    PacketFieldHandle<0>:'a' := 1 -> PacketTransformerHandle<13>
+  PacketFieldHandle<0>:'a' == *:
+    PacketFieldHandle<0>:'a' := 1 -> PacketTransformerHandle<3>
+  PacketFieldHandle<0>:'a' == * -> PacketTransformerHandle<15>
+PacketTransformerHandle<13>:
+  PacketFieldHandle<1>:'b' == 1:
+    PacketFieldHandle<1>:'b' := 1 -> PacketTransformerHandle<12>
+  PacketFieldHandle<1>:'b' == *:
+    PacketFieldHandle<1>:'b' := 1 -> PacketTransformerHandle<accept>
+  PacketFieldHandle<1>:'b' == * -> PacketTransformerHandle<9>
+PacketTransformerHandle<3>:
+  PacketFieldHandle<1>:'b' == *:
+    PacketFieldHandle<1>:'b' := 1 -> PacketTransformerHandle<accept>
+  PacketFieldHandle<1>:'b' == * -> PacketTransformerHandle<deny>
+PacketTransformerHandle<15>:
+  PacketFieldHandle<1>:'b' == 1:
+    PacketFieldHandle<1>:'b' := 1 -> PacketTransformerHandle<12>
+  PacketFieldHandle<1>:'b' == *:
+  PacketFieldHandle<1>:'b' == * -> PacketTransformerHandle<9>
+PacketTransformerHandle<12>:
+  PacketFieldHandle<2>:'c' == *:
+    PacketFieldHandle<2>:'c' := 4 -> PacketTransformerHandle<accept>
+  PacketFieldHandle<2>:'c' == * -> PacketTransformerHandle<accept>
+PacketTransformerHandle<9>:
+  PacketFieldHandle<2>:'c' == *:
+    PacketFieldHandle<2>:'c' := 4 -> PacketTransformerHandle<accept>
+  PacketFieldHandle<2>:'c' == * -> PacketTransformerHandle<deny>
+-- DOT -------------------------------------------------------------------------
+digraph {
+  4294967294 [label="T" shape=box]
+  4294967295 [label="F" shape=box]
+  16 [label="a"]
+  16 -> 13 [label="a==1; a:=1"]
+  16 -> 3 [label="a==*; a:=1"]
+  16 -> 15 [style=dashed]
+  13 [label="b"]
+  13 -> 12 [label="b==1; b:=1"]
+  13 -> 4294967294 [label="b==*; b:=1"]
+  13 -> 9 [style=dashed]
+  3 [label="b"]
+  3 -> 4294967294 [label="b==*; b:=1"]
+  3 -> 4294967295 [style=dashed]
+  15 [label="b"]
+  15 -> 12 [label="b==1; b:=1"]
+  15 -> 9 [style=dashed]
+  12 [label="c"]
+  12 -> 4294967294 [label="c==*; c:=4"]
+  12 -> 4294967294 [style=dashed]
+  9 [label="c"]
+  9 -> 4294967294 [label="c==*; c:=4"]
+  9 -> 4294967295 [style=dashed]
+}
+================================================================================
+Test case: p;q. Example from Katch paper Fig 5.
+================================================================================
+-- STRING ----------------------------------------------------------------------
+PacketTransformerHandle<21>:
+  PacketFieldHandle<0>:'a' == 1:
+    PacketFieldHandle<0>:'a' := 1 -> PacketTransformerHandle<18>
+  PacketFieldHandle<0>:'a' == 5:
+    PacketFieldHandle<0>:'a' := 1 -> PacketTransformerHandle<3>
+    PacketFieldHandle<0>:'a' := 5 -> PacketTransformerHandle<20>
+  PacketFieldHandle<0>:'a' == *:
+    PacketFieldHandle<0>:'a' := 1 -> PacketTransformerHandle<19>
+  PacketFieldHandle<0>:'a' == * -> PacketTransformerHandle<18>
+PacketTransformerHandle<18>:
+  PacketFieldHandle<1>:'b' == 2:
+    PacketFieldHandle<1>:'b' := 1 -> PacketTransformerHandle<12>
+    PacketFieldHandle<1>:'b' := 2 -> PacketTransformerHandle<17>
+  PacketFieldHandle<1>:'b' == *:
+  PacketFieldHandle<1>:'b' == * -> PacketTransformerHandle<deny>
+PacketTransformerHandle<3>:
+  PacketFieldHandle<1>:'b' == *:
+    PacketFieldHandle<1>:'b' := 1 -> PacketTransformerHandle<accept>
+  PacketFieldHandle<1>:'b' == * -> PacketTransformerHandle<deny>
+PacketTransformerHandle<20>:
+  PacketFieldHandle<1>:'b' == *:
+    PacketFieldHandle<1>:'b' := 1 -> PacketTransformerHandle<12>
+  PacketFieldHandle<1>:'b' == * -> PacketTransformerHandle<17>
+PacketTransformerHandle<19>:
+  PacketFieldHandle<1>:'b' == 2:
+    PacketFieldHandle<1>:'b' := 1 -> PacketTransformerHandle<accept>
+  PacketFieldHandle<1>:'b' == *:
+  PacketFieldHandle<1>:'b' == * -> PacketTransformerHandle<deny>
+PacketTransformerHandle<12>:
+  PacketFieldHandle<2>:'c' == *:
+    PacketFieldHandle<2>:'c' := 4 -> PacketTransformerHandle<accept>
+  PacketFieldHandle<2>:'c' == * -> PacketTransformerHandle<accept>
+PacketTransformerHandle<17>:
+  PacketFieldHandle<2>:'c' == 5:
+    PacketFieldHandle<2>:'c' := 4 -> PacketTransformerHandle<accept>
+  PacketFieldHandle<2>:'c' == *:
+  PacketFieldHandle<2>:'c' == * -> PacketTransformerHandle<deny>
+-- DOT -------------------------------------------------------------------------
+digraph {
+  4294967294 [label="T" shape=box]
+  4294967295 [label="F" shape=box]
+  21 [label="a"]
+  21 -> 18 [label="a==1; a:=1"]
+  21 -> 3 [label="a==5; a:=1"]
+  21 -> 20 [label="a==5; a:=5"]
+  21 -> 19 [label="a==*; a:=1"]
+  21 -> 18 [style=dashed]
+  18 [label="b"]
+  18 -> 12 [label="b==2; b:=1"]
+  18 -> 17 [label="b==2; b:=2"]
+  18 -> 4294967295 [style=dashed]
+  3 [label="b"]
+  3 -> 4294967294 [label="b==*; b:=1"]
+  3 -> 4294967295 [style=dashed]
+  20 [label="b"]
+  20 -> 12 [label="b==*; b:=1"]
+  20 -> 17 [style=dashed]
+  19 [label="b"]
+  19 -> 4294967294 [label="b==2; b:=1"]
+  19 -> 4294967295 [style=dashed]
+  12 [label="c"]
+  12 -> 4294967294 [label="c==*; c:=4"]
+  12 -> 4294967294 [style=dashed]
+  17 [label="c"]
+  17 -> 4294967294 [label="c==5; c:=4"]
+  17 -> 4294967295 [style=dashed]
+}

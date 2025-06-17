@@ -26,8 +26,8 @@
 #include "absl/strings/str_cat.h"
 #include "netkat/frontend.h"
 #include "netkat/netkat.pb.h"
-#include "netkat/symbolic_packet.h"
-#include "netkat/symbolic_packet_transformer.h"
+#include "netkat/packet_set.h"
+#include "netkat/packet_transformer.h"
 
 namespace netkat {
 namespace {
@@ -78,28 +78,27 @@ absl::Status VerifyActionHasNoPredicate(const Policy& action) {
 // requirement.
 //
 // This is only run against rules of the same priority.
-absl::Status VerifyRuleDeterminism(
-    const NetkatTable::PendingRuleInfo& info,
-    SymbolicPacketTransformerManager& policy_manager) {
+absl::Status VerifyRuleDeterminism(const NetkatTable::PendingRuleInfo& info,
+                                   PacketTransformerManager& policy_manager) {
   if (info.existing_match == nullptr || info.existing_policy == nullptr) {
     return absl::OkStatus();
   }
 
-  SymbolicPacketManager& packet_manager =
-      policy_manager.GetSymbolicPacketManager();
-  SymbolicPacket new_packet = packet_manager.Compile(info.new_match.GetProto());
-  SymbolicPacket old_packet =
-      packet_manager.Compile(info.existing_match->GetProto());
-  SymbolicPacket new_and_old = packet_manager.And(new_packet, old_packet);
-  if (new_and_old == packet_manager.EmptySet()) {
+  PacketSetManager& packet_set_manager = policy_manager.GetPacketSetManager();
+  PacketSetHandle new_packet =
+      packet_set_manager.Compile(info.new_match.GetProto());
+  PacketSetHandle old_packet =
+      packet_set_manager.Compile(info.existing_match->GetProto());
+  PacketSetHandle new_and_old = packet_set_manager.And(new_packet, old_packet);
+  if (new_and_old == packet_set_manager.EmptySet()) {
     return absl::OkStatus();
   }
 
-  SymbolicPacketTransformer new_and_old_policy =
-      policy_manager.FromSymbolicPacket(new_and_old);
-  SymbolicPacketTransformer with_new_action = policy_manager.Sequence(
+  PacketTransformerHandle new_and_old_policy =
+      policy_manager.FromPacketSetHandle(new_and_old);
+  PacketTransformerHandle with_new_action = policy_manager.Sequence(
       new_and_old_policy, policy_manager.Compile(info.new_action.GetProto()));
-  SymbolicPacketTransformer with_old_action = policy_manager.Sequence(
+  PacketTransformerHandle with_old_action = policy_manager.Sequence(
       new_and_old_policy,
       policy_manager.Compile(info.existing_policy->GetProto()));
   if (with_new_action != with_old_action) {

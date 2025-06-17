@@ -30,7 +30,7 @@
 #include "absl/container/btree_map.h"
 #include "absl/status/status.h"
 #include "netkat/frontend.h"
-#include "netkat/symbolic_packet_transformer.h"
+#include "netkat/packet_transformer.h"
 
 namespace netkat {
 
@@ -166,7 +166,7 @@ class NetkatTable {
   absl::btree_map<int, std::pair<Predicate, Policy>> rules_;
 
   // Manager for evaluating policy against contraints. E.g. rule determinism.
-  SymbolicPacketTransformerManager policy_manager_;
+  PacketTransformerManager policy_manager_;
 };
 
 }  // namespace netkat

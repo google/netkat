@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "netkat/symbolic_packet_transformer.h"
+#include "netkat/packet_transformer.h"
 
 #include <cstdint>
 #include <ostream>
@@ -32,7 +32,7 @@
 #include "netkat/evaluator.h"
 #include "netkat/netkat.pb.h"
 #include "netkat/netkat_proto_constructors.h"
-#include "netkat/symbolic_packet.h"
+#include "netkat/packet_set.h"
 #include "re2/re2.h"
 
 namespace netkat {
@@ -40,18 +40,18 @@ namespace netkat {
 // We use a global manager object to exercise statefulness more deeply across
 // test cases. This also enables better pretty printing for debugging, see
 // `PrintTo`.
-SymbolicPacketTransformerManager& Manager() {
-  static absl::NoDestructor<SymbolicPacketTransformerManager> manager;
+PacketTransformerManager& Manager() {
+  static absl::NoDestructor<PacketTransformerManager> manager;
   return *manager;
 }
 
-// The default `SymbolicPacketTransformer` pretty printer sucks! It does not
+// The default `PacketTransformerHandle` pretty printer sucks! It does not
 // have access to the graph structure representing the packet, since that is
 // stored in the manager object. Thus, it returns opaque strings like
-// "SymbolicPacketTransformer<123>".
+// "PacketTransformerHandle<123>".
 //
 // We define this much better override, which GoogleTest gives precedence to.
-void PrintTo(const SymbolicPacketTransformer& transformer, std::ostream* os) {
+void PrintTo(const PacketTransformerHandle& transformer, std::ostream* os) {
   *os << Manager().ToString(transformer);
 }
 
@@ -66,84 +66,82 @@ using ::testing::UnorderedElementsAre;
 // After executing all tests, we check once that no invariants are violated, for
 // defense in depth. Checking invariants after each test (e.g. using a fixture)
 // would likely not scale and seems overkill.
-class CheckSymbolicPacketTransformerManagerInvariantsOnTearDown
+class CheckPacketTransformerManagerInvariantsOnTearDown
     : public testing::Environment {
  public:
-  ~CheckSymbolicPacketTransformerManagerInvariantsOnTearDown() override =
-      default;
+  ~CheckPacketTransformerManagerInvariantsOnTearDown() override = default;
   void SetUp() override {}
   void TearDown() override { ASSERT_OK(Manager().CheckInternalInvariants()); }
 };
 testing::Environment* const foo_env = testing::AddGlobalTestEnvironment(
-    new CheckSymbolicPacketTransformerManagerInvariantsOnTearDown);
+    new CheckPacketTransformerManagerInvariantsOnTearDown);
 
 /*--- Basic tests ------------------------------------------------------------*/
 
-TEST(SymbolicPacketTransformerManagerTest, DenyIsDeny) {
+TEST(PacketTransformerManagerTest, DenyIsDeny) {
   EXPECT_TRUE(Manager().IsDeny(Manager().Deny()));
   EXPECT_FALSE(Manager().IsAccept(Manager().Deny()));
 }
 
-TEST(SymbolicPacketTransformerManagerTest, AcceptIsAccept) {
+TEST(PacketTransformerManagerTest, AcceptIsAccept) {
   EXPECT_TRUE(Manager().IsAccept(Manager().Accept()));
   EXPECT_FALSE(Manager().IsDeny(Manager().Accept()));
 }
 
-TEST(SymbolicPacketTransformerManagerTest, DenyDoesNotEqualAccept) {
+TEST(PacketTransformerManagerTest, DenyDoesNotEqualAccept) {
   EXPECT_NE(Manager().Deny(), Manager().Accept());
 }
 
-TEST(SymbolicPacketTransformerManagerTest, AbslStringifyWorksForDeny) {
+TEST(PacketTransformerManagerTest, AbslStringifyWorksForDeny) {
   EXPECT_THAT(absl::StrCat(Manager().Deny()),
-              StartsWith("SymbolicPacketTransformer"));
+              StartsWith("PacketTransformerHandle"));
 }
 
-TEST(SymbolicPacketTransformerManagerTest, AbslStringifyWorksForAccept) {
+TEST(PacketTransformerManagerTest, AbslStringifyWorksForAccept) {
   EXPECT_THAT(absl::StrCat(Manager().Accept()),
-              StartsWith("SymbolicPacketTransformer"));
+              StartsWith("PacketTransformerHandle"));
 }
 
-TEST(SymbolicPacketTransformerManagerTest, AbslHashValueWorks) {
-  absl::flat_hash_set<SymbolicPacketTransformer> set = {
+TEST(PacketTransformerManagerTest, AbslHashValueWorks) {
+  absl::flat_hash_set<PacketTransformerHandle> set = {
       Manager().Deny(),
       Manager().Accept(),
   };
   EXPECT_EQ(set.size(), 2);
 }
 
-TEST(SymbolicPacketTransformerManagerTest, EmptyPolicyCompilesToDeny) {
+TEST(PacketTransformerManagerTest, EmptyPolicyCompilesToDeny) {
   EXPECT_TRUE(Manager().IsDeny(Manager().Compile(PolicyProto())));
 }
 
-TEST(SymbolicPacketTransformerManagerTest, RecordPolicyCompilesToAccept) {
+TEST(PacketTransformerManagerTest, RecordPolicyCompilesToAccept) {
   EXPECT_TRUE(Manager().IsAccept(Manager().Compile(RecordProto())));
 }
 
-// Symbolic packet transformer compile should give the same result as
-// SymbolicPacket -> OfSymbolicPacket, if PolicyProto is only a Filter.
-void CompileIsSameAsOfCompiledSymbolicPacket(PredicateProto predicate) {
-  SymbolicPacket packet1 =
-      Manager().GetSymbolicPacketManager().Compile(predicate);
+// packet transformer compile should give the same result as
+// PacketSetHandle -> OfPacketSetHandle, if PolicyProto is only a Filter.
+void CompileIsSameAsOfCompiledPacketSetHandle(PredicateProto predicate) {
+  PacketSetHandle set_1 = Manager().GetPacketSetManager().Compile(predicate);
   EXPECT_EQ(Manager().Compile(FilterProto(predicate)),
-            Manager().FromSymbolicPacket(packet1));
+            Manager().FromPacketSetHandle(set_1));
 
-  // Using a newly constructed SymbolicPacketManager.
-  SymbolicPacketManager packet_manager;
-  SymbolicPacket packet2 = packet_manager.Compile(predicate);
-  SymbolicPacketTransformerManager manager(std::move(packet_manager));
+  // Using a newly constructed PacketSetManager.
+  PacketSetManager packet_set_manager;
+  PacketSetHandle set_2 = packet_set_manager.Compile(predicate);
+  PacketTransformerManager manager(std::move(packet_set_manager));
   EXPECT_EQ(manager.Compile(FilterProto(predicate)),
-            manager.FromSymbolicPacket(packet2));
+            manager.FromPacketSetHandle(set_2));
 }
-FUZZ_TEST(SymbolicPacketTransformerManagerTest,
-          CompileIsSameAsOfCompiledSymbolicPacket);
+FUZZ_TEST(PacketTransformerManagerTest,
+          CompileIsSameAsOfCompiledPacketSetHandle);
 
 /*--- Basic compilation and method consistency checks ------------------------*/
 
-TEST(SymbolicPacketTransformerManagerTest, AcceptCompilesToAccept) {
+TEST(PacketTransformerManagerTest, AcceptCompilesToAccept) {
   EXPECT_EQ(Manager().Compile(AcceptProto()), Manager().Accept());
 }
 
-TEST(SymbolicPacketTransformerManagerTest, DenyCompilesToDeny) {
+TEST(PacketTransformerManagerTest, DenyCompilesToDeny) {
   EXPECT_EQ(Manager().Compile(DenyProto()), Manager().Deny());
 }
 
@@ -151,33 +149,32 @@ void FilterCompilesToFilter(PredicateProto predicate) {
   EXPECT_EQ(Manager().Compile(FilterProto(predicate)),
             Manager().Filter(predicate));
 }
-FUZZ_TEST(SymbolicPacketTransformerManagerTest, FilterCompilesToFilter);
+FUZZ_TEST(PacketTransformerManagerTest, FilterCompilesToFilter);
 
 void ModificationCompilesToModification(std::string field, int value) {
   EXPECT_EQ(Manager().Compile(ModificationProto(field, value)),
             Manager().Modification(field, value));
 }
-FUZZ_TEST(SymbolicPacketTransformerManagerTest,
-          ModificationCompilesToModification);
+FUZZ_TEST(PacketTransformerManagerTest, ModificationCompilesToModification);
 
 void UnionCompilesToUnion(PolicyProto left, PolicyProto right) {
   EXPECT_EQ(Manager().Compile(UnionProto(left, right)),
             Manager().Union(Manager().Compile(left), Manager().Compile(right)));
 }
-FUZZ_TEST(SymbolicPacketTransformerManagerTest, UnionCompilesToUnion);
+FUZZ_TEST(PacketTransformerManagerTest, UnionCompilesToUnion);
 
 void SequenceCompilesToSequence(PolicyProto left, PolicyProto right) {
   EXPECT_EQ(
       Manager().Compile(SequenceProto(left, right)),
       Manager().Sequence(Manager().Compile(left), Manager().Compile(right)));
 }
-FUZZ_TEST(SymbolicPacketTransformerManagerTest, SequenceCompilesToSequence);
+FUZZ_TEST(PacketTransformerManagerTest, SequenceCompilesToSequence);
 
 void IterateCompilesToIterate(PolicyProto iterable) {
   EXPECT_EQ(Manager().Compile(IterateProto(iterable)),
             Manager().Iterate(Manager().Compile(iterable)));
 }
-FUZZ_TEST(SymbolicPacketTransformerManagerTest, IterateCompilesToIterate);
+FUZZ_TEST(PacketTransformerManagerTest, IterateCompilesToIterate);
 
 /*--- Kleene algebra axioms and equivalences ---------------------------------*/
 
@@ -185,31 +182,31 @@ void UnionIsAssociative(PolicyProto a, PolicyProto b, PolicyProto c) {
   EXPECT_EQ(Manager().Compile(UnionProto(a, UnionProto(b, c))),
             Manager().Compile(UnionProto(UnionProto(a, b), c)));
 }
-FUZZ_TEST(SymbolicPacketTransformerManagerTest, UnionIsAssociative);
+FUZZ_TEST(PacketTransformerManagerTest, UnionIsAssociative);
 
 void UnionIsCommutative(PolicyProto a, PolicyProto b) {
   EXPECT_EQ(Manager().Compile(UnionProto(a, b)),
             Manager().Compile(UnionProto(b, a)));
 }
-FUZZ_TEST(SymbolicPacketTransformerManagerTest, UnionIsCommutative);
+FUZZ_TEST(PacketTransformerManagerTest, UnionIsCommutative);
 
 void UnionDenyIsIdentity(PolicyProto policy) {
   EXPECT_EQ(Manager().Compile(UnionProto(policy, DenyProto())),
             Manager().Compile(policy));
 }
-FUZZ_TEST(SymbolicPacketTransformerManagerTest, UnionDenyIsIdentity);
+FUZZ_TEST(PacketTransformerManagerTest, UnionDenyIsIdentity);
 
 void UnionIsIdempotent(PolicyProto policy) {
   EXPECT_EQ(Manager().Compile(UnionProto(policy, policy)),
             Manager().Compile(policy));
 }
-FUZZ_TEST(SymbolicPacketTransformerManagerTest, UnionIsIdempotent);
+FUZZ_TEST(PacketTransformerManagerTest, UnionIsIdempotent);
 
 void SequenceIsAssociative(PolicyProto a, PolicyProto b, PolicyProto c) {
   EXPECT_EQ(Manager().Compile(SequenceProto(a, SequenceProto(b, c))),
             Manager().Compile(SequenceProto(SequenceProto(a, b), c)));
 }
-FUZZ_TEST(SymbolicPacketTransformerManagerTest, SequenceIsAssociative);
+FUZZ_TEST(PacketTransformerManagerTest, SequenceIsAssociative);
 
 void SequenceAcceptIsIdentity(PolicyProto policy) {
   EXPECT_EQ(Manager().Compile(SequenceProto(policy, AcceptProto())),
@@ -217,7 +214,7 @@ void SequenceAcceptIsIdentity(PolicyProto policy) {
   EXPECT_EQ(Manager().Compile(SequenceProto(AcceptProto(), policy)),
             Manager().Compile(policy));
 }
-FUZZ_TEST(SymbolicPacketTransformerManagerTest, SequenceAcceptIsIdentity);
+FUZZ_TEST(PacketTransformerManagerTest, SequenceAcceptIsIdentity);
 
 void SequenceDenyIsAlwaysDeny(PolicyProto policy) {
   EXPECT_TRUE(
@@ -225,7 +222,7 @@ void SequenceDenyIsAlwaysDeny(PolicyProto policy) {
   EXPECT_TRUE(
       Manager().IsDeny(Manager().Compile(SequenceProto(DenyProto(), policy))));
 }
-FUZZ_TEST(SymbolicPacketTransformerManagerTest, SequenceDenyIsAlwaysDeny);
+FUZZ_TEST(PacketTransformerManagerTest, SequenceDenyIsAlwaysDeny);
 
 void DistributiveLawsHold(PolicyProto a, PolicyProto b, PolicyProto c) {
   // Left distribution.
@@ -237,7 +234,7 @@ void DistributiveLawsHold(PolicyProto a, PolicyProto b, PolicyProto c) {
       Manager().Compile(SequenceProto(UnionProto(a, b), c)),
       Manager().Compile(UnionProto(SequenceProto(a, c), SequenceProto(b, c))));
 }
-FUZZ_TEST(SymbolicPacketTransformerManagerTest, DistributiveLawsHold);
+FUZZ_TEST(PacketTransformerManagerTest, DistributiveLawsHold);
 
 void IterateUnrollOnce(PolicyProto policy) {
   // Left unroll.
@@ -249,7 +246,7 @@ void IterateUnrollOnce(PolicyProto policy) {
                 AcceptProto(), SequenceProto(IterateProto(policy), policy))),
             Manager().Compile(IterateProto(policy)));
 }
-FUZZ_TEST(SymbolicPacketTransformerManagerTest, IterateUnrollOnce);
+FUZZ_TEST(PacketTransformerManagerTest, IterateUnrollOnce);
 
 // This test checks that iterate is the least-fixed point on the left and right
 // side of a sequence. I.e. that if there is a term x such that x;y (or y;x) is
@@ -271,11 +268,11 @@ void IterateIsLeastFixedPoint(PolicyProto p, PolicyProto q, PolicyProto r) {
               Manager().Compile(q));
   }
 }
-FUZZ_TEST(SymbolicPacketTransformerManagerTest, IterateIsLeastFixedPoint);
+FUZZ_TEST(PacketTransformerManagerTest, IterateIsLeastFixedPoint);
 
 /*--- Tests with concrete protos ---------------------------------------------*/
 
-TEST(SymbolicPacketTransformerManagerTest, KatchPaperFig5) {
+TEST(PacketTransformerManagerTest, KatchPaperFig5) {
   // (a=5 + b=2);(b:=1 + c=5)
   PolicyProto p = SequenceProto(
       UnionProto(FilterProto(MatchProto("a", 5)),
@@ -289,17 +286,16 @@ TEST(SymbolicPacketTransformerManagerTest, KatchPaperFig5) {
           ModificationProto("c", 4),
           SequenceProto(ModificationProto("a", 1), ModificationProto("b", 1))));
 
-  SymbolicPacketTransformer p_transformer = Manager().Compile(p);
-  SymbolicPacketTransformer q_transformer = Manager().Compile(q);
-  SymbolicPacketTransformer sequence_transformer =
+  PacketTransformerHandle p_transformer = Manager().Compile(p);
+  PacketTransformerHandle q_transformer = Manager().Compile(q);
+  PacketTransformerHandle sequence_transformer =
       Manager().Compile(SequenceProto(p, q));
 
   EXPECT_EQ(Manager().Sequence(p_transformer, q_transformer),
             sequence_transformer);
 }
 
-TEST(SymbolicPacketTransformerManagerTest,
-     SequenceOfNonLoopProducerConvergesToDeny) {
+TEST(PacketTransformerManagerTest, SequenceOfNonLoopProducerConvergesToDeny) {
   // a=1 ; b:=1 ; a:=0
   PolicyProto a_to_b = SequenceProto(
       FilterProto(MatchProto("a", 1)),
@@ -315,14 +311,14 @@ TEST(SymbolicPacketTransformerManagerTest,
       SequenceProto(FilterProto(NotProto(MatchProto("once", 1))),
                     SequenceProto(b_to_a, ModificationProto("once", 1)));
 
-  SymbolicPacketTransformer a_to_b_and_b_to_a_once_transformer =
+  PacketTransformerHandle a_to_b_and_b_to_a_once_transformer =
       Manager().Compile(UnionProto(a_to_b, b_to_a_once));
 
-  SymbolicPacketTransformer sequenced_transformer2 = Manager().Sequence(
+  PacketTransformerHandle sequenced_transformer2 = Manager().Sequence(
       a_to_b_and_b_to_a_once_transformer, a_to_b_and_b_to_a_once_transformer);
 
   // Should converge to Deny if sequenced 4 times.
-  SymbolicPacketTransformer sequenced_transformer4 =
+  PacketTransformerHandle sequenced_transformer4 =
       Manager().Sequence(sequenced_transformer2, sequenced_transformer2);
 
   EXPECT_TRUE(Manager().IsDeny(sequenced_transformer4))
@@ -332,8 +328,7 @@ TEST(SymbolicPacketTransformerManagerTest,
       << Manager().ToString(sequenced_transformer4);
 }
 
-TEST(SymbolicPacketTransformerManagerTest,
-     SequenceOfLoopProducerConvergesToNonDeny) {
+TEST(PacketTransformerManagerTest, SequenceOfLoopProducerConvergesToNonDeny) {
   // a=1 ; b:=1 ; a:=0
   PolicyProto a_to_b = SequenceProto(
       FilterProto(MatchProto("a", 1)),
@@ -344,12 +339,12 @@ TEST(SymbolicPacketTransformerManagerTest,
       FilterProto(MatchProto("b", 1)),
       SequenceProto(ModificationProto("b", 0), ModificationProto("a", 1)));
 
-  SymbolicPacketTransformer a_to_b_and_b_to_a_transformer =
+  PacketTransformerHandle a_to_b_and_b_to_a_transformer =
       Manager().Compile(UnionProto(a_to_b, b_to_a));
 
-  SymbolicPacketTransformer sequenced_transformer2 = Manager().Sequence(
+  PacketTransformerHandle sequenced_transformer2 = Manager().Sequence(
       a_to_b_and_b_to_a_transformer, a_to_b_and_b_to_a_transformer);
-  SymbolicPacketTransformer sequenced_transformer4 =
+  PacketTransformerHandle sequenced_transformer4 =
       Manager().Sequence(sequenced_transformer2, sequenced_transformer2);
 
   EXPECT_FALSE(Manager().IsDeny(sequenced_transformer4));
@@ -362,8 +357,7 @@ TEST(SymbolicPacketTransformerManagerTest,
 
 // Tests that a simple sequence of modification then filter same field with
 // different value is Deny.
-TEST(SymbolicPacketTransformerManagerTest,
-     ModifyThenFilterDifferentValueIsDeny) {
+TEST(PacketTransformerManagerTest, ModifyThenFilterDifferentValueIsDeny) {
   // a:=0 ; a=1
   PolicyProto make_false_then_test =
       SequenceProto(ModificationProto("a", 0), FilterProto(MatchProto("a", 1)));
@@ -374,7 +368,7 @@ TEST(SymbolicPacketTransformerManagerTest,
 
 // Tests that a simple sequence of modification then filter same field with
 // same value is Modify.
-TEST(SymbolicPacketTransformerManagerTest, ModifyThenFilterSameValueIsModify) {
+TEST(PacketTransformerManagerTest, ModifyThenFilterSameValueIsModify) {
   // a:=1 ; a=1
   PolicyProto make_true = ModificationProto("a", 1);
   PolicyProto make_true_then_test =
@@ -386,7 +380,7 @@ TEST(SymbolicPacketTransformerManagerTest, ModifyThenFilterSameValueIsModify) {
 
 /*--- Tests with packets -----------------------------------------------------*/
 
-TEST(SymbolicPacketTransformerManagerTest, RunDenyAndAccept) {
+TEST(PacketTransformerManagerTest, RunDenyAndAccept) {
   Packet packet = {{"field", 1}};
   Packet original_packet = packet;
   EXPECT_THAT(Manager().Run(Manager().Deny(), packet), IsEmpty());
@@ -398,17 +392,17 @@ TEST(SymbolicPacketTransformerManagerTest, RunDenyAndAccept) {
 
 // We expect that any concrete packet that is `Run` through a `policy` gives the
 // same result as when it is `Evaluate`d on that policy.
-void RunIsSameAsEvaluate(PolicyProto policy, Packet concrete_packet) {
-  Packet original_packet = concrete_packet;
-  EXPECT_THAT(Manager().Run(Manager().Compile(policy), concrete_packet),
-              ContainerEq(Evaluate(policy, concrete_packet)));
-  EXPECT_EQ(concrete_packet, original_packet);
+void RunIsSameAsEvaluate(PolicyProto policy, Packet packet) {
+  Packet original_packet = packet;
+  EXPECT_THAT(Manager().Run(Manager().Compile(policy), packet),
+              ContainerEq(Evaluate(policy, packet)));
+  EXPECT_EQ(packet, original_packet);
 }
-FUZZ_TEST(SymbolicPacketTransformerManagerTest, RunIsSameAsEvaluate);
+FUZZ_TEST(PacketTransformerManagerTest, RunIsSameAsEvaluate);
 
-TEST(SymbolicPacketTransformerManagerTest, SimpleSequenceRunTest1) {
+TEST(PacketTransformerManagerTest, SimpleSequenceRunTest1) {
   // !(once=1) ; a:=1 ; once:=1
-  SymbolicPacketTransformer match_then_modify_transformer = Manager().Compile(
+  PacketTransformerHandle match_then_modify_transformer = Manager().Compile(
       SequenceProto(FilterProto(NotProto(MatchProto("once", 1))),
                     SequenceProto(ModificationProto("a", 1),
                                   ModificationProto("once", 1))));
@@ -432,18 +426,18 @@ TEST(SymbolicPacketTransformerManagerTest, SimpleSequenceRunTest1) {
   EXPECT_EQ(packet_with_once_0, packet_with_once_0_copy);
 }
 
-TEST(SymbolicPacketTransformerManagerTest, SimpleSequenceAndUnionRunTest2) {
+TEST(PacketTransformerManagerTest, SimpleSequenceAndUnionRunTest2) {
   // a=1 ; a:=0
-  SymbolicPacketTransformer check_a = Manager().Compile(SequenceProto(
+  PacketTransformerHandle check_a = Manager().Compile(SequenceProto(
       FilterProto(MatchProto("a", 1)), ModificationProto("a", 0)));
 
   // Does `a:=1` exactly once.
   // !(once=1) ; a:=1 ; once:=1
-  SymbolicPacketTransformer a_once = Manager().Compile(SequenceProto(
+  PacketTransformerHandle a_once = Manager().Compile(SequenceProto(
       FilterProto(NotProto(MatchProto("once", 1))),
       SequenceProto(ModificationProto("a", 1), ModificationProto("once", 1))));
 
-  SymbolicPacketTransformer check_a_and_a_once_transformer =
+  PacketTransformerHandle check_a_and_a_once_transformer =
       Manager().Union(check_a, a_once);
 
   Packet packet_without_fields;
@@ -478,7 +472,7 @@ TEST(SymbolicPacketTransformerManagerTest, SimpleSequenceAndUnionRunTest2) {
 
   // This should be the same as running the original packets through
   // `sequenced_transformer2`.
-  SymbolicPacketTransformer sequenced_transformer2 = Manager().Sequence(
+  PacketTransformerHandle sequenced_transformer2 = Manager().Sequence(
       check_a_and_a_once_transformer, check_a_and_a_once_transformer);
   // Same result as running `expected_packet_a1` again above:
   EXPECT_THAT(Manager().Run(sequenced_transformer2, packet_without_fields),
@@ -500,7 +494,7 @@ TEST(SymbolicPacketTransformerManagerTest, SimpleSequenceAndUnionRunTest2) {
               IsEmpty());
 
   // Should converge to Deny if sequenced 4 times.
-  SymbolicPacketTransformer sequenced_transformer4 =
+  PacketTransformerHandle sequenced_transformer4 =
       Manager().Sequence(sequenced_transformer2, sequenced_transformer2);
 
   EXPECT_TRUE(Manager().IsDeny(sequenced_transformer4))
