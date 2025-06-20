@@ -131,7 +131,7 @@ bool PacketSetManager::Contains(PacketSetHandle packet_set,
   return Contains(node.default_branch, packet);
 }
 
-std::string PacketSetManager::ToDot(PacketSetHandle packet_set) const {
+std::string PacketSetManager::ToDotRaw(PacketSetHandle packet_set) const {
   std::string result = "digraph {\n";
   std::queue<PacketSetHandle> work_list;
   work_list.push(packet_set);
@@ -165,8 +165,66 @@ std::string PacketSetManager::ToDot(PacketSetHandle packet_set) const {
     bool new_branch = visited.insert(fallthrough).second;
     if (new_branch) work_list.push(fallthrough);
   }
-  absl::StrAppend(&result, "}\n");
+  absl::StrAppend(&result, "}");
   return result;
+}
+
+std::string PacketSetManager::ToDotUrl(PacketSetHandle packet_set) const {
+  // "digraph {\n"
+  std::string url =
+      "https://dreampuf.github.io/GraphvizOnline/?engine=dot#digraph%20%7B%0A";
+  std::queue<PacketSetHandle> work_list;
+  work_list.push(packet_set);
+  // "  4294967294 [label=\"T\" shape=box]\n"
+  absl::flat_hash_set<PacketSetHandle> visited = {packet_set};
+  absl::StrAppend(&url, "%20%20");
+  absl::StrAppendFormat(&url, "%d", SentinelNodeIndex::kFullSet);
+  absl::StrAppend(&url, "%20%5Blabel%3D%22T%22%20shape%3Dbox%5D%0A");
+  // "  4294967295 [label=\"F\" shape=box]\n"
+  absl::StrAppend(&url, "%20%20");
+  absl::StrAppendFormat(&url, "%d", SentinelNodeIndex::kEmptySet);
+  absl::StrAppend(&url, "%20%5Blabel%3D%22F%22%20shape%3Dbox%5D%0A");
+
+  while (!work_list.empty()) {
+    PacketSetHandle packet_set = work_list.front();
+    work_list.pop();
+    if (IsFullSet(packet_set) || IsEmptySet(packet_set)) continue;
+
+    const DecisionNode& node = GetNodeOrDie(packet_set);
+    // "  <node_index> [label=\"<field_name>\"]\n"
+    absl::StrAppend(&url, "%20%20");
+    absl::StrAppendFormat(&url, "%d", packet_set.node_index_);
+    absl::StrAppend(&url, "%20%5Blabel%3D%22");
+    absl::StrAppend(&url, field_manager_.GetFieldName(node.field));
+    absl::StrAppend(&url, "%22%5D%0A");
+
+    for (const auto& [value, branch] : node.branch_by_field_value) {
+      // "  <node_index> -> <node_index> [label=\"<value>\"]\n"
+      absl::StrAppend(&url, "%20%20");
+      absl::StrAppendFormat(&url, "%d", packet_set.node_index_);
+      absl::StrAppend(&url, "%20-%3E%20");
+      absl::StrAppendFormat(&url, "%d", branch.node_index_);
+      absl::StrAppend(&url, "%20%5Blabel%3D%22");
+      absl::StrAppend(&url, value);
+      absl::StrAppend(&url, "%22%5D%0A");
+      if (IsFullSet(branch) || IsEmptySet(branch)) continue;
+      bool new_branch = visited.insert(branch).second;
+      if (new_branch) work_list.push(branch);
+    }
+    PacketSetHandle fallthrough = node.default_branch;
+    // "  <node_index> -> <node_index> [style=dashed]\n"
+    absl::StrAppend(&url, "%20%20");
+    absl::StrAppendFormat(&url, "%d", packet_set.node_index_);
+    absl::StrAppend(&url, "%20-%3E%20");
+    absl::StrAppendFormat(&url, "%d", fallthrough.node_index_);
+    absl::StrAppend(&url, "%20%5Bstyle%3Ddashed%5D%0A");
+    if (IsFullSet(fallthrough) || IsEmptySet(fallthrough)) continue;
+    bool new_branch = visited.insert(fallthrough).second;
+    if (new_branch) work_list.push(fallthrough);
+  }
+  // "}"
+  absl::StrAppend(&url, "%7D");
+  return url;
 }
 
 PacketSetHandle PacketSetManager::Compile(const PredicateProto& pred) {
