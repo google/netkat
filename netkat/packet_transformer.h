@@ -217,12 +217,17 @@ class PacketTransformerManager {
   // Returns a dot string representation of the given `packet_set`.
   std::string ToDot(const PacketTransformerHandle& transformer) const;
 
-  // TODO(dilo): Describe Push and Pull functions.
-  // WARNING: Unimplemented and currently crashes.
+  // Returns the set of output packets obtained by applying the policy
+  // represented to the transformer to the packet_set represented by
+  // `transformer`.
   PacketSetHandle Push(PacketSetHandle packet_set,
-                       PacketTransformerHandle transformer) const = delete;
+                       PacketTransformerHandle transformer);
+
+  // Returns the set of input packets obtained by applying the effects of the
+  // policy represented by `transformer` in reverse ("pulling") on the given
+  // `packet_set`.
   PacketSetHandle Pull(PacketTransformerHandle transformer,
-                       PacketSetHandle packet_set) const = delete;
+                       PacketSetHandle packet_set);
 
   // TODO(b/398373935): There are many additional operations supported by this
   // data structure, but not currently implemented. Add them as needed. Examples
@@ -369,6 +374,14 @@ class PacketTransformerManager {
   // copies of the nodes?
   PacketTransformerHandle Union(DecisionNode left, DecisionNode right);
   PacketTransformerHandle Sequence(DecisionNode left, DecisionNode right);
+
+  // Computes the possible output `PacketSetHandle` from applying the
+  // `PacketTransformerHandle`.
+  PacketSetHandle Forward(PacketTransformerHandle transformer);
+
+  // Computes the `PacketSetHandle` that can be input to this
+  // `PacketTransformerHandle`.
+  PacketSetHandle Backward(PacketTransformerHandle transformer);
 
   // Internal helper function to get a map of possible modification values to
   // branches for a given input value at `node`.
