@@ -19,12 +19,14 @@
 #include <limits>
 #include <optional>
 #include <queue>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/algorithm/container.h"
 #include "absl/container/btree_map.h"
+#include "absl/container/fixed_array.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/functional/any_invocable.h"
@@ -635,17 +637,203 @@ PacketTransformerHandle PacketTransformerManager::Iterate(
   return current_approximation;
 }
 
-// PacketSetHandle PacketTransformerManager::Push(
-//     PacketSetHandle packet_set, PacketTransformerHandle transformer) const {
-//   LOG(DFATAL) << "Push is not implemented yet.";
-//   return PacketSetHandle();
-// }
+namespace {
 
-// PacketSetHandle PacketTransformerManager::Pull(
-//     PacketTransformerHandle transformer, PacketSetHandle packet_set) const {
-//   LOG(DFATAL) << "Pull is not implemented yet.";
-//   return PacketSetHandle();
-// }
+// Modifies the larger map to be a union of the two maps. When the two maps
+// share the same field match, the result is the union of the large and the
+// small map's PacketSetHandle.
+void UnionPacketSetMaps(
+    PacketSetManager& packet_set_manager,
+    absl::flat_hash_map<int, PacketSetHandle>& large_packet_set_map,
+    const absl::flat_hash_map<int, PacketSetHandle>& small_packet_set_map) {
+  for (const auto& [field_match, packet_set] : small_packet_set_map) {
+    auto it = large_packet_set_map.find(field_match);
+    large_packet_set_map[field_match] =
+        it == large_packet_set_map.end()
+            ? packet_set
+            : packet_set_manager.Or(it->second, packet_set);
+  }
+}
+
+}  // namespace
+
+PacketSetHandle PacketTransformerManager::Forward(
+    PacketTransformerHandle transformer) {
+  if (IsAccept(transformer)) return PacketSetManager().FullSet();
+  if (IsDeny(transformer)) return PacketSetManager().EmptySet();
+
+  const DecisionNode& node = GetNodeOrDie(transformer);
+
+  PacketSetHandle default_branch = Forward(node.default_branch);
+
+  // Maps field modifications --> fwd(branch). Also, creates a set of field
+  // modifications.
+  absl::flat_hash_map<int, PacketSetHandle>
+      forward_branch_by_field_modifications;
+  std::set<int> field_modifications_set;
+  for (const auto& [value, modify_map] :
+       node.default_branch_by_field_modification) {
+    PacketSetHandle packet_set_branch = Forward(modify_map);
+    if (packet_set_branch == default_branch) continue;
+    forward_branch_by_field_modifications[value] = packet_set_branch;
+    field_modifications_set.insert(value);
+  }
+
+  // Maps the union of modify values --> fwd(branch) for each field match.
+  // Also, creates a set of field matches and set of modify values.
+  absl::flat_hash_map<int, PacketSetHandle> union_forward_branch_by_match_value;
+  std::set<int> field_matches_set;
+  std::set<int> modify_values_set;
+  for (const auto& [match_value, branch_by_modify] :
+       node.modify_branch_by_field_match) {
+    // Maps modify values --> fwd(branch).
+    absl::flat_hash_map<int, PacketSetHandle> forward_branch_by_modify_value;
+    for (const auto& [modify_value, branch] : branch_by_modify) {
+      PacketSetHandle packet_set_branch = Forward(branch);
+      // Invariant: Each packet_set's branch added is != default_branch.
+      if (packet_set_branch == default_branch) continue;
+      forward_branch_by_modify_value[modify_value] = packet_set_branch;
+      modify_values_set.insert(modify_value);
+    }
+    UnionPacketSetMaps(packet_set_manager_, union_forward_branch_by_match_value,
+                       forward_branch_by_modify_value);
+    field_matches_set.insert(match_value);
+  }
+
+  // Maps (modify values / (field matches + field modifications)) --> default
+  // branch.
+  std::vector<int> set_union_field_matches_and_mods;
+  absl::c_set_union(field_matches_set, field_modifications_set,
+                    std::back_inserter(set_union_field_matches_and_mods));
+  std::vector<int> set_diff_modify_values_and_set_union_field_matches_and_mods;
+  absl::c_set_difference(
+      modify_values_set, set_union_field_matches_and_mods,
+      std::back_inserter(
+          set_diff_modify_values_and_set_union_field_matches_and_mods));
+  absl::flat_hash_map<int, PacketSetHandle> branch_by_default_branch;
+  for (int value :
+       set_diff_modify_values_and_set_union_field_matches_and_mods) {
+    branch_by_default_branch[value] = default_branch;
+  }
+
+  // Maps (field matches / modify values) --> empty set.
+  std::vector<int> set_diff_field_matches_and_mod_vals;
+  absl::c_set_difference(
+      field_matches_set, modify_values_set,
+      std::back_inserter(set_diff_field_matches_and_mod_vals));
+  absl::flat_hash_map<int, PacketSetHandle> branch_by_empty_set;
+  for (int value : set_diff_field_matches_and_mod_vals) {
+    branch_by_empty_set[value] = PacketSetManager().EmptySet();
+  }
+
+  absl::flat_hash_map<int, PacketSetHandle> branch_by_field_value;
+  UnionPacketSetMaps(packet_set_manager_, branch_by_field_value,
+                     forward_branch_by_field_modifications);
+  UnionPacketSetMaps(packet_set_manager_, branch_by_field_value,
+                     union_forward_branch_by_match_value);
+  UnionPacketSetMaps(packet_set_manager_, branch_by_field_value,
+                     branch_by_default_branch);
+  UnionPacketSetMaps(packet_set_manager_, branch_by_field_value,
+                     branch_by_empty_set);
+
+  absl::FixedArray<std::pair<int, PacketSetHandle>> branch_by_field_value_list(
+      branch_by_field_value.size());
+  int num_branches = 0;
+  for (const auto& [value, branch] : branch_by_field_value) {
+    // Invariant: Each packet_set's branch added is != default_branch.
+    if (branch == default_branch) continue;
+    branch_by_field_value_list[num_branches++] = std::make_pair(value, branch);
+  }
+
+  PacketSetManager::DecisionNode result_node{
+      .field = node.field,
+      .default_branch = default_branch,
+      .branch_by_field_value = {branch_by_field_value_list.begin(),
+                                branch_by_field_value_list.begin() +
+                                    num_branches},
+  };
+  return packet_set_manager_.NodeToPacket(std::move(result_node));
+}
+
+PacketSetHandle PacketTransformerManager::Push(
+    PacketSetHandle packet_set, PacketTransformerHandle transformer) {
+  return Forward(Sequence(FromPacketSetHandle(packet_set), transformer));
+}
+
+PacketSetHandle PacketTransformerManager::Backward(
+    PacketTransformerHandle transformer) {
+  if (IsAccept(transformer)) return PacketSetManager().FullSet();
+  if (IsDeny(transformer)) return PacketSetManager().EmptySet();
+
+  const DecisionNode& node = GetNodeOrDie(transformer);
+
+  // Maps field modifications --> bwd(branch). Also, creates a set of field
+  // modifications.
+  PacketSetHandle backwards_branch_by_field_mod;
+  std::set<int> field_modifications_set;
+  for (const auto& [value, modify_map] :
+       node.default_branch_by_field_modification) {
+    backwards_branch_by_field_mod = packet_set_manager_.Or(
+        backwards_branch_by_field_mod, Backward(modify_map));
+    field_modifications_set.insert(value);
+  }
+
+  PacketSetHandle default_branch = packet_set_manager_.Or(
+      backwards_branch_by_field_mod, Backward(node.default_branch));
+
+  // Maps field match values --> bwd(branch). Also, creates a set of field
+  // matches.
+  absl::flat_hash_map<int, PacketSetHandle> backwards_branch_by_match_value;
+  std::set<int> field_matches_set;
+  for (const auto& [match_value, branch_by_modify] :
+       node.modify_branch_by_field_match) {
+    PacketSetHandle union_of_branches;
+    for (const auto& [modify_value, branch] : branch_by_modify) {
+      union_of_branches =
+          packet_set_manager_.Or(union_of_branches, Backward(branch));
+    }
+    backwards_branch_by_match_value[match_value] = union_of_branches;
+    field_matches_set.insert(match_value);
+  }
+
+  std::vector<int> set_diff_field_mods_and_field_matches;
+  absl::c_set_difference(
+      field_modifications_set, field_matches_set,
+      std::back_inserter(set_diff_field_mods_and_field_matches));
+  absl::flat_hash_map<int, PacketSetHandle>
+      backwards_branch_by_diff_field_mod_and_match;
+  for (int value : set_diff_field_mods_and_field_matches) {
+    backwards_branch_by_diff_field_mod_and_match[value] =
+        backwards_branch_by_field_mod;
+  }
+
+  absl::flat_hash_map<int, PacketSetHandle> branch_by_field_value;
+  UnionPacketSetMaps(packet_set_manager_, branch_by_field_value,
+                     backwards_branch_by_match_value);
+  UnionPacketSetMaps(packet_set_manager_, branch_by_field_value,
+                     backwards_branch_by_diff_field_mod_and_match);
+  absl::FixedArray<std::pair<int, PacketSetHandle>> branch_by_field_value_list(
+      branch_by_field_value.size());
+  int num_branches = 0;
+  for (const auto& [value, branch] : branch_by_field_value) {
+    if (branch == default_branch) continue;
+    branch_by_field_value_list[num_branches++] = std::make_pair(value, branch);
+  }
+
+  PacketSetManager::DecisionNode result_node{
+      .field = node.field,
+      .default_branch = default_branch,
+      .branch_by_field_value = {branch_by_field_value_list.begin(),
+                                branch_by_field_value_list.begin() +
+                                    num_branches},
+  };
+  return packet_set_manager_.NodeToPacket(std::move(result_node));
+}
+
+PacketSetHandle PacketTransformerManager::Pull(
+    PacketTransformerHandle transformer, PacketSetHandle packet_set) {
+  return Backward(Sequence(transformer, FromPacketSetHandle(packet_set)));
+}
 
 std::string PacketTransformerManager::ToString(const DecisionNode& node) const {
   std::string result;

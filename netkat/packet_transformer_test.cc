@@ -30,6 +30,7 @@
 #include "gtest/gtest.h"
 #include "gutil/status_matchers.h"  // IWYU pragma: keep
 #include "netkat/evaluator.h"
+#include "netkat/gtest_utils.h"
 #include "netkat/netkat.pb.h"
 #include "netkat/netkat_proto_constructors.h"
 #include "netkat/packet_set.h"
@@ -57,7 +58,10 @@ void PrintTo(const PacketTransformerHandle& transformer, std::ostream* os) {
 
 namespace {
 
+using ::netkat::netkat_test::ArbitraryValidPolicyProto;
+using ::netkat::netkat_test::ArbitraryValidPredicateProto;
 using ::testing::ContainerEq;
+using ::testing::Eq;
 using ::testing::IsEmpty;
 using ::testing::Pair;
 using ::testing::StartsWith;
@@ -501,6 +505,163 @@ TEST(PacketTransformerManagerTest, SimpleSequenceAndUnionRunTest2) {
       << "sequenced_transformer4:\n"
       << Manager().ToString(sequenced_transformer4);
 }
+
+void SimplePushAndPullTest(std::string field_name, int field_value) {
+  // field_name := field_value
+  PacketTransformerHandle modify_field =
+      Manager().Compile(ModificationProto(field_name, field_value));
+
+  PacketSetHandle other_packet_set = Manager().GetPacketSetManager().Compile(
+      NotProto(MatchProto(field_name, field_value)));
+  PacketSetHandle packets_with_field_at_given_value =
+      Manager().GetPacketSetManager().Compile(
+          MatchProto(field_name, field_value));
+
+  EXPECT_THAT(Manager().Push(other_packet_set, modify_field),
+              Eq(packets_with_field_at_given_value));
+  EXPECT_THAT(Manager().Push(packets_with_field_at_given_value, modify_field),
+              Eq(packets_with_field_at_given_value));
+
+  EXPECT_THAT(Manager().Pull(modify_field, packets_with_field_at_given_value),
+              Eq(Manager().GetPacketSetManager().FullSet()));
+  EXPECT_THAT(Manager().Pull(modify_field, other_packet_set),
+              Eq(Manager().GetPacketSetManager().EmptySet()));
+}
+FUZZ_TEST(PacketTransformerManagerTest, SimplePushAndPullTest);
+
+TEST(PacketTransformerManagerTest,
+     AtLeastOneTransformedPacketBelongsToPushedPacketSet) {
+  // predicate := (a=5 && b=4) || (b!=5 && c=5)
+  PredicateProto predicate =
+      OrProto(AndProto(MatchProto("a", 5), MatchProto("b", 4)),
+              AndProto(NotProto(MatchProto("b", 5)), MatchProto("c", 6)));
+  PacketSetHandle packet_set =
+      Manager().GetPacketSetManager().Compile(predicate);
+
+  // policy := (a=5 + b=2);(b:=1 + c=5)
+  PolicyProto policy = SequenceProto(
+      UnionProto(FilterProto(MatchProto("a", 5)),
+                 FilterProto(MatchProto("b", 2))),
+      UnionProto(ModificationProto("b", 1), FilterProto(MatchProto("c", 5))));
+  PacketTransformerHandle transformer = Manager().Compile(policy);
+
+  // Get all concrete packets from the packet set and run them through the
+  // transformer.
+  absl::flat_hash_set<Packet> transformed_packets;
+  for (Packet& concrete_packet :
+       Manager().GetPacketSetManager().GetConcretePackets(packet_set)) {
+    transformed_packets.merge(Manager().Run(transformer, concrete_packet));
+  }
+
+  // At least one of the transformed packets should be in the set of packets
+  // from `Push` on a transformer and packet set.
+  PacketSetHandle pushed_packet_set = Manager().Push(packet_set, transformer);
+  bool packet_exist_in_push_packet_set = false;
+  for (const Packet& packet : transformed_packets) {
+    packet_exist_in_push_packet_set |=
+        Manager().GetPacketSetManager().Contains(pushed_packet_set, packet);
+  }
+  EXPECT_TRUE(packet_exist_in_push_packet_set);
+}
+
+TEST(PacketTransformerManagerTest,
+     ConcretePacketFromPullGetsRunThroughTransformerBelongsToInputPacketSet) {
+  // predicate := (a=3 && b=4) || (b!=5 && c=5)
+  PredicateProto predicate =
+      OrProto(AndProto(MatchProto("a", 3), MatchProto("b", 4)),
+              AndProto(NotProto(MatchProto("b", 5)), MatchProto("c", 5)));
+  PacketSetHandle packet_set =
+      Manager().GetPacketSetManager().Compile(predicate);
+
+  // policy := (a=5 + b=2);(b:=1 + c=5)
+  PolicyProto policy = SequenceProto(
+      UnionProto(FilterProto(MatchProto("a", 5)),
+                 FilterProto(MatchProto("b", 2))),
+      UnionProto(ModificationProto("b", 1), FilterProto(MatchProto("c", 5))));
+  PacketTransformerHandle transformer = Manager().Compile(policy);
+
+  // Get all concrete packets from Pull on a transformer and packet set.
+  std::vector<Packet> pulled_concrete_packets =
+      Manager().GetPacketSetManager().GetConcretePackets(
+          Manager().Pull(transformer, packet_set));
+
+  // Run the pulled concrete packets through the transformer.
+  absl::flat_hash_set<Packet> transformed_packets;
+  for (Packet& concrete_packet : pulled_concrete_packets) {
+    transformed_packets.merge(Manager().Run(transformer, concrete_packet));
+  }
+
+  // There exists a concrete packet from the transformed packets that belongs to
+  // the packet set.
+  bool packet_exist_in_pulled_packet_set = false;
+  for (const Packet& packet : transformed_packets) {
+    packet_exist_in_pulled_packet_set |=
+        Manager().GetPacketSetManager().Contains(packet_set, packet);
+  }
+  EXPECT_TRUE(packet_exist_in_pulled_packet_set);
+}
+
+void PushTest(PredicateProto predicate, PolicyProto policy) {
+  PacketSetHandle packet_set =
+      Manager().GetPacketSetManager().Compile(predicate);
+  PacketTransformerHandle transformer = Manager().Compile(policy);
+
+  // Get all concrete packets from the packet set and run them through the
+  // transformer.
+  absl::flat_hash_set<Packet> transformed_packets;
+  for (Packet& concrete_packet :
+       Manager().GetPacketSetManager().GetConcretePackets(packet_set)) {
+    transformed_packets.merge(Manager().Run(transformer, concrete_packet));
+  }
+  if (transformed_packets.empty()) {
+    LOG(INFO) << "SKIPPED: no concrete transformed packets were obtained";
+    return;
+  }
+
+  // At least one of the transformed packets should be in the set of packets
+  // from `Push` on a transformer and packet set.
+  PacketSetHandle pushed_packet_set = Manager().Push(packet_set, transformer);
+  bool packet_exist_in_push_packet_set = false;
+  for (const Packet& packet : transformed_packets) {
+    packet_exist_in_push_packet_set |=
+        Manager().GetPacketSetManager().Contains(pushed_packet_set, packet);
+  }
+  EXPECT_TRUE(packet_exist_in_push_packet_set);
+}
+FUZZ_TEST(PacketTransformerManagerTest, PushTest)
+    .WithDomains(ArbitraryValidPredicateProto(), ArbitraryValidPolicyProto());
+
+void PullTest(PredicateProto predicate, PolicyProto policy) {
+  PacketSetHandle packet_set =
+      Manager().GetPacketSetManager().Compile(predicate);
+  PacketTransformerHandle transformer = Manager().Compile(policy);
+
+  // Get all concrete packets from Pull on a transformer and packet set.
+  std::vector<Packet> pulled_concrete_packets =
+      Manager().GetPacketSetManager().GetConcretePackets(
+          Manager().Pull(transformer, packet_set));
+
+  // Run the pulled concrete packets through the transformer.
+  absl::flat_hash_set<Packet> transformed_packets;
+  for (Packet& concrete_packet : pulled_concrete_packets) {
+    transformed_packets.merge(Manager().Run(transformer, concrete_packet));
+  }
+  if (transformed_packets.empty()) {
+    LOG(INFO) << "SKIPPED: no concrete transformed packets were obtained";
+    return;
+  }
+
+  // There exists a concrete packet from the transformed packets that belongs to
+  // the packet set.
+  bool packet_exist_in_pulled_packet_set = false;
+  for (const Packet& packet : transformed_packets) {
+    packet_exist_in_pulled_packet_set |=
+        Manager().GetPacketSetManager().Contains(packet_set, packet);
+  }
+  EXPECT_TRUE(packet_exist_in_pulled_packet_set);
+}
+FUZZ_TEST(PacketTransformerManagerTest, PullTest)
+    .WithDomains(ArbitraryValidPredicateProto(), ArbitraryValidPolicyProto());
 
 }  // namespace
 }  // namespace netkat
