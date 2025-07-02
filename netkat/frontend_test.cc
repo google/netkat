@@ -1,5 +1,8 @@
 #include "netkat/frontend.h"
 
+#include <cstdint>
+#include <limits>
+
 #include "absl/status/status.h"
 #include "absl/status/status_matchers.h"
 #include "absl/strings/string_view.h"
@@ -23,6 +26,8 @@ using ::netkat::netkat_test::ArbitraryValidPolicyProto;
 using ::netkat::netkat_test::ArbitraryValidPredicateProto;
 using ::netkat::netkat_test::AtomicDupFreePolicyDomain;
 using ::netkat::netkat_test::AtomicPredicateDomain;
+using UlongTernaryField =
+    ::netkat::TernaryField<std::numeric_limits<uint32_t>::digits>;
 
 void MatchToProtoIsCorrect(absl::string_view field, int value) {
   EXPECT_THAT(Match(field, value).ToProto(),
@@ -309,6 +314,41 @@ FUZZ_TEST(FrontEndTest, MixedPolicyOperationsHasCorrectOrder)
         /*a=*/AtomicDupFreePolicyDomain(),
         /*b=*/AtomicDupFreePolicyDomain(),
         /*c=*/AtomicDupFreePolicyDomain());
+
+TEST(FrontEndTest, ZeroWidthTernaryReturnsTrueMatch) {
+  TernaryField<0> ternary;
+  EXPECT_THAT(Match("f", ternary).ToProto(), EqualsProto(TrueProto()));
+}
+
+TEST(FrontEndTest, ZeroWidthTernaryReturnsAcceptPolicy) {
+  TernaryField<0> ternary;
+  EXPECT_THAT(Modify("f", ternary).ToProto(), EqualsProto(AcceptProto()));
+}
+
+void NoTernaryMaskGeneratesTrueMatch(uint32_t value) {
+  UlongTernaryField nomask_ternary = {.value = {value}};
+  EXPECT_THAT(Match("f", nomask_ternary).ToProto(), EqualsProto(TrueProto()));
+}
+FUZZ_TEST(FrontEndTest, NoTernaryMaskGeneratesTrueMatch);
+
+void NoTernaryMaskGeneratesAcceptPolicy(uint32_t value) {
+  UlongTernaryField nomask_ternary = {.value = {value}};
+  EXPECT_THAT(Modify("f", nomask_ternary).ToProto(),
+              EqualsProto(AcceptProto()));
+}
+FUZZ_TEST(FrontEndTest, NoTernaryMaskGeneratesAcceptPolicy);
+
+TEST(FrontEndTest, ValueReflectedWhenMasked) {
+  UlongTernaryField ternary = {.value = {0b0010}, .mask = {0b0011}};
+  EXPECT_THAT(
+      Match("f", ternary).ToProto(),
+      EqualsProto((Predicate::True() && Match("f_b0", 0) && Match("f_b1", 1))
+                      .ToProto()));
+  EXPECT_THAT(Modify("f", ternary).ToProto(),
+              EqualsProto(SequenceProto(
+                  SequenceProto(AcceptProto(), ModificationProto("f_b0", 0)),
+                  ModificationProto("f_b1", 1))));
+}
 
 }  // namespace
 }  // namespace netkat

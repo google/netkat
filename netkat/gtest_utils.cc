@@ -51,12 +51,16 @@ fuzztest::Domain<PolicyProto> ArbitraryValidPolicyProto() {
 
 fuzztest::Domain<Predicate> AtomicPredicateDomain() {
   return OneOf(Just(Predicate::True()), Just(Predicate::False()),
-               Map(Match, Arbitrary<absl::string_view>(), Arbitrary<int>()));
+               Map([](absl::string_view field,
+                      int value) { return Match(field, value); },
+                   Arbitrary<absl::string_view>(), Arbitrary<int>()));
 }
 
 fuzztest::Domain<Policy> AtomicDupFreePolicyDomain() {
   return OneOf(Map(Filter, AtomicPredicateDomain()),
-               Map(Modify, Arbitrary<absl::string_view>(), Arbitrary<int>()));
+               Map([](absl::string_view field,
+                      int value) { return Modify(field, value); },
+                   Arbitrary<absl::string_view>(), Arbitrary<int>()));
 }
 
 }  // namespace netkat::netkat_test

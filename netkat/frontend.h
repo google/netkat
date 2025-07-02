@@ -26,10 +26,14 @@
 #ifndef GOOGLE_NETKAT_NETKAT_FRONTEND_H_
 #define GOOGLE_NETKAT_NETKAT_FRONTEND_H_
 
+#include <bitset>
+#include <cstdint>
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include "absl/status/statusor.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "netkat/netkat.pb.h"
 
@@ -319,6 +323,70 @@ Policy Iterate(Policy policy);
 //
 // TODO: b/377697348 - Enhance this comment with a simple example.
 Policy Record();
+
+////////////////////////////////////////////////////////////////////////////////
+// The following are a set of temporary helpers to utilize ternaries in NetKAT
+// programs.
+//
+// TODO: b/420948630 - Replace this with an efficient representation.
+//
+// Supporting ternaries this way is very inefficient, in both representation and
+// computation, but exists to allow further prototyping. The final API will be
+// more robust and efficient, involving a more catered representation in the IR
+// and backend.
+//
+// Note that it is the user's responsibility to ensure that each field has the
+// correct bit-width. If two programs assume differing bit-widths of the same
+// field, comparisons are likely to be wrong.
+////////////////////////////////////////////////////////////////////////////////
+
+// A representation of a ternary. A ternary is typically represented as some
+// N-bit value/mask structure. That is, for some N-bit width ternary the mask
+// represents what bits we need to care about in the value portion. E.g.
+//
+//   TernaryField<2>{.value = {0b11}, mask = {0b10}} means match 0b1*, ie only
+//   the left-most bit must be set to 1.
+//
+// Note that sometimes the above may be written as the shorthand 0x3/0x2.
+template <uint8_t BitWidth>
+struct TernaryField {
+  std::bitset<BitWidth> value;
+  std::bitset<BitWidth> mask;
+};
+
+// Matches a presumed ternary `field`. Only indices with `new_value.mask` set
+// to 1 will be matched. E.g. b0011/b0001 will only result in a `Predicate` that
+// matches the LSB.
+//
+// An empty mask will result in Predicate::True.
+template <uint8_t N>
+inline Predicate Match(absl::string_view field, TernaryField<N> value) {
+  Predicate predicate = Predicate::True();
+  for (int i = 0; i < N; ++i) {
+    if (!value.mask[i]) continue;
+    const int bit_val = value.value[i] ? 1 : 0;
+    predicate =
+        std::move(predicate) && Match(absl::StrCat(field, "_b", i), bit_val);
+  }
+  return predicate;
+}
+
+// Modifies a presumed ternary `field`. Only indices with `new_value.mask`set
+// to 1 will be modified. E.g. b0011/b0001 will only result in the LSB being
+// set, so a ternary like b1100 will only be set to b1101.
+//
+// An empty mask will result in Policy::Accept.
+template <uint8_t N>
+inline Policy Modify(absl::string_view field, TernaryField<N> new_value) {
+  Policy policy = Policy::Accept();
+  for (int i = 0; i < N; ++i) {
+    if (!new_value.mask[i]) continue;
+    const int value = new_value.value[i] ? 1 : 0;
+    policy = Sequence(
+        {std::move(policy), Modify(absl::StrCat(field, "_b", i), value)});
+  }
+  return policy;
+}
 
 }  // namespace netkat
 
