@@ -338,6 +338,7 @@ class PacketSetManager {
 
   // Allow `PacketTransformerManager` to access private methods.
   friend class PacketTransformerManager;
+  friend class PacketTransformerManagerTestPeer;
 };
 
 }  // namespace netkat

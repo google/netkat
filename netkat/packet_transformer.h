@@ -217,12 +217,15 @@ class PacketTransformerManager {
   // Returns a dot string representation of the given `packet_set`.
   std::string ToDot(const PacketTransformerHandle& transformer) const;
 
-  // TODO(dilo): Describe Push and Pull functions.
-  // WARNING: Unimplemented and currently crashes.
-  PacketSetHandle Push(PacketSetHandle packet_set,
-                       PacketTransformerHandle transformer) const = delete;
-  PacketSetHandle Pull(PacketTransformerHandle transformer,
-                       PacketSetHandle packet_set) const = delete;
+  // Computes the set of all possible outputs the given `transformer` can
+  // produce. Equivalent to `Push(manager::FullSet(), transformer)`.
+  PacketSetHandle GetAllPossibleOutputPackets(
+      PacketTransformerHandle transformer);
+
+  // Returns set of output packets obtained by applying the given `transformer`
+  // to the given `input_packets`.
+  PacketSetHandle Push(PacketSetHandle input_packets,
+                       PacketTransformerHandle transformer);
 
   // TODO(b/398373935): There are many additional operations supported by this
   // data structure, but not currently implemented. Add them as needed. Examples
@@ -393,6 +396,8 @@ class PacketTransformerManager {
   // INVARIANT: All `DecisionNode` fields are interned by this manager's
   // PacketFieldManager.
   PacketSetManager packet_set_manager_;
+
+  friend class PacketTransformerManagerTestPeer;
 };
 
 }  // namespace netkat

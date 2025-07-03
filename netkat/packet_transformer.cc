@@ -25,6 +25,7 @@
 
 #include "absl/algorithm/container.h"
 #include "absl/container/btree_map.h"
+#include "absl/container/fixed_array.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/functional/any_invocable.h"
@@ -635,17 +636,99 @@ PacketTransformerHandle PacketTransformerManager::Iterate(
   return current_approximation;
 }
 
-// PacketSetHandle PacketTransformerManager::Push(
-//     PacketSetHandle packet_set, PacketTransformerHandle transformer) const {
-//   LOG(DFATAL) << "Push is not implemented yet.";
-//   return PacketSetHandle();
-// }
+PacketSetHandle PacketTransformerManager::GetAllPossibleOutputPackets(
+    PacketTransformerHandle transformer) {
+  if (IsAccept(transformer)) return PacketSetManager().FullSet();
+  if (IsDeny(transformer)) return PacketSetManager().EmptySet();
 
-// PacketSetHandle PacketTransformerManager::Pull(
-//     PacketTransformerHandle transformer, PacketSetHandle packet_set) const {
-//   LOG(DFATAL) << "Pull is not implemented yet.";
-//   return PacketSetHandle();
-// }
+  const DecisionNode& node = GetNodeOrDie(transformer);
+  PacketSetHandle default_output =
+      GetAllPossibleOutputPackets(node.default_branch);
+  absl::flat_hash_map<int, PacketSetHandle> output_by_field_value;
+  auto add_to_output_by_field_value = [&](int value, PacketSetHandle output) {
+    PacketSetHandle& combined_output = output_by_field_value[value];
+    combined_output = packet_set_manager_.Or(combined_output, output);
+  };
+
+  // Case 1: Output packets that hit the default branch and got modified.
+  // Implements the `b_A` in the `fwd` function in section C.3 Push and Pull in
+  // KATch: A Fast Symbolic Verifier for NetKAT.
+  for (const auto& [modify_value, branch] :
+       node.default_branch_by_field_modification) {
+    add_to_output_by_field_value(modify_value,
+                                 GetAllPossibleOutputPackets(branch));
+  }
+
+  // Case 2: Output packets that hit an explicit branch and got modified.
+  // Implements the `b_B` in the `fwd` function in section C.3 Push and Pull in
+  // KATch: A Fast Symbolic Verifier for NetKAT.
+  // absl::flat_hash_set<int> branch_match_values;
+  absl::flat_hash_set<int> branch_modify_values;
+  for (const auto& [match_value, branch_by_modify] :
+       node.modify_branch_by_field_match) {
+    // branch_match_values.insert(match_value);
+    // Maps modify values --> fwd(branch).
+    for (const auto& [modify_value, branch] : branch_by_modify) {
+      branch_modify_values.insert(modify_value);
+      add_to_output_by_field_value(modify_value,
+                                   GetAllPossibleOutputPackets(branch));
+    }
+  }
+
+  // Case 3: Output packets that does not match on a branch and does not get
+  // modified.
+  //  Implements the `b_C` in the `fwd` function in section C.3 Push and Pull in
+  //  KATch: A Fast Symbolic Verifier for NetKAT.
+  for (int modify_value : branch_modify_values) {
+    if (!node.modify_branch_by_field_match.contains(modify_value) &&
+        !node.default_branch_by_field_modification.contains(modify_value)) {
+      add_to_output_by_field_value(modify_value, default_output);
+    }
+  }
+
+  // Case 4: Output packets that got matched on an explicit branch, but did not
+  // get modified.
+  // Implements the `b_D` in the `fwd` function in section C.3
+  // Push and Pull in KATch: A Fast Symbolic Verifier for NetKAT.
+  for (auto& [match_value, unused] : node.modify_branch_by_field_match) {
+    if (!branch_modify_values.contains(match_value)) {
+      add_to_output_by_field_value(match_value, PacketSetManager().EmptySet());
+    }
+  }
+
+  int num_branches = 0;
+  for (const auto& [value, branch] : output_by_field_value) {
+    if (branch != default_output) ++num_branches;
+  }
+  absl::FixedArray<std::pair<int, PacketSetHandle>, 0>
+      output_by_field_value_list(num_branches);
+  int i = 0;
+  for (const auto& [value, branch] : output_by_field_value) {
+    // Skips `default_branch` because an invariant of `DecisionNode` is that no
+    // branch in `branch_by_field_value` can be a duplicate of the default
+    // branch.
+    if (branch == default_output) continue;
+    output_by_field_value_list[i++] = std::make_pair(value, branch);
+  }
+
+  // Required to sort `output_by_field_value_list` to ensure that it meets the
+  // invariant of the `DecisionNode`'s `branch_by_field_value`.
+  absl::c_sort(output_by_field_value_list, [](auto& left, auto& right) {
+    return left.first < right.first;
+  });
+
+  return packet_set_manager_.NodeToPacket({
+      .field = node.field,
+      .default_branch = default_output,
+      .branch_by_field_value = std::move(output_by_field_value_list),
+  });
+}
+
+PacketSetHandle PacketTransformerManager::Push(
+    PacketSetHandle input_packets, PacketTransformerHandle transformer) {
+  return GetAllPossibleOutputPackets(
+      Sequence(FromPacketSetHandle(input_packets), transformer));
+}
 
 std::string PacketTransformerManager::ToString(const DecisionNode& node) const {
   std::string result;

@@ -57,6 +57,8 @@ void PrintTo(const PacketTransformerHandle& transformer, std::ostream* os) {
 
 namespace {
 
+using ::fuzztest::Arbitrary;
+using ::fuzztest::ElementOf;
 using ::testing::ContainerEq;
 using ::testing::IsEmpty;
 using ::testing::Pair;
@@ -502,5 +504,260 @@ TEST(PacketTransformerManagerTest, SimpleSequenceAndUnionRunTest2) {
       << Manager().ToString(sequenced_transformer4);
 }
 
+TEST(PacketTransformerManagerTest, PushIsCorrect) {
+  PacketSetManager& packet_set_manager = Manager().GetPacketSetManager();
+  PacketSetHandle f_24 = packet_set_manager.Match("f", 24);
+  PacketSetHandle f_42 = packet_set_manager.Match("f", 42);
+  PacketTransformerHandle modify_f_42 = Manager().Modification("f", 42);
+
+  EXPECT_THAT(Manager().Push(packet_set_manager.FullSet(), modify_f_42), f_42);
+  EXPECT_THAT(Manager().Push(f_24, modify_f_42), f_42);
+
+  PacketSetHandle g_24 = packet_set_manager.Match("g", 24);
+  EXPECT_THAT(Manager().Push(g_24, modify_f_42),
+              packet_set_manager.And(g_24, f_42));
+}
+
+TEST(PacketTransformerManagerTest,
+     PacketsPushedThroughSequenceAndUnionTransformersAreCorrect) {
+  PacketSetManager& packet_set_manager = Manager().GetPacketSetManager();
+
+  // a=1 ; a:=0
+  PacketTransformerHandle check_a = Manager().Compile(SequenceProto(
+      FilterProto(MatchProto("a", 1)), ModificationProto("a", 0)));
+
+  // Does `a:=1` exactly once.
+  // !(once=1) ; a:=1 ; once:=1
+  PacketTransformerHandle a_once = Manager().Compile(SequenceProto(
+      FilterProto(NotProto(MatchProto("once", 1))),
+      SequenceProto(ModificationProto("a", 1), ModificationProto("once", 1))));
+
+  PacketTransformerHandle check_a_and_a_once_transformer =
+      Manager().Union(check_a, a_once);
+
+  PacketSetHandle packet_with_once_0 =
+      packet_set_manager.Compile(MatchProto("once", 0));
+  PacketSetHandle packet_with_once_1 =
+      packet_set_manager.Compile(MatchProto("once", 1));
+  PacketSetHandle packet_with_a_0 =
+      packet_set_manager.Compile(MatchProto("a", 0));
+  PacketSetHandle packet_with_a_1 =
+      packet_set_manager.Compile(MatchProto("a", 1));
+  PacketSetHandle packet_with_a_0_or_1 =
+      packet_set_manager.Or(packet_with_a_0, packet_with_a_1);
+
+  PacketSetHandle packet_with_once_1_and_a_1 =
+      packet_set_manager.And(packet_with_once_1, packet_with_a_1);
+  PacketSetHandle packet_with_once_0_and_a_0 =
+      packet_set_manager.And(packet_with_once_0, packet_with_a_0);
+
+  // Test `check_a_and_a_once_transformer`.
+  EXPECT_THAT(Manager().Push(packet_with_a_0, check_a_and_a_once_transformer),
+              packet_with_once_1_and_a_1);
+
+  PacketSetHandle expected_packet_set1 =
+      packet_set_manager.Or(packet_with_once_1_and_a_1, packet_with_a_0);
+  EXPECT_THAT(Manager().Push(packet_with_a_1, check_a_and_a_once_transformer),
+              expected_packet_set1);
+  EXPECT_THAT(Manager().Push(packet_set_manager.FullSet(),
+                             check_a_and_a_once_transformer),
+              expected_packet_set1);
+
+  PacketSetHandle expected_packet_set2 = Manager().GetPacketSetManager().Or(
+      packet_with_once_1_and_a_1, packet_with_once_0_and_a_0);
+  EXPECT_THAT(
+      Manager().Push(packet_with_once_0, check_a_and_a_once_transformer),
+      expected_packet_set2);
+
+  PacketSetHandle expected_packet_set3 =
+      Manager().GetPacketSetManager().And(packet_with_once_1, packet_with_a_0);
+  EXPECT_THAT(
+      Manager().Push(packet_with_once_1, check_a_and_a_once_transformer),
+      expected_packet_set3);
+
+  // Push the results through again!
+  PacketSetHandle expected_packet_set4 = Manager().GetPacketSetManager().And(
+      packet_with_a_0_or_1, packet_with_once_1);
+  EXPECT_THAT(
+      Manager().Push(expected_packet_set1, check_a_and_a_once_transformer),
+      expected_packet_set4);
+  EXPECT_THAT(
+      Manager().Push(expected_packet_set2, check_a_and_a_once_transformer),
+      expected_packet_set4);
+  EXPECT_THAT(
+      Manager().Push(expected_packet_set4, check_a_and_a_once_transformer),
+      expected_packet_set3);
+  EXPECT_THAT(
+      Manager().Push(expected_packet_set3, check_a_and_a_once_transformer),
+      packet_set_manager.EmptySet());
+}
+
+TEST(PacketTransformerManagerTest,
+     AllTransformedPacketBelongsToPushedPacketSet) {
+  // predicate := (a=5 && b=2) || (b!=5 && c=5)
+  PredicateProto predicate =
+      OrProto(AndProto(MatchProto("a", 5), MatchProto("b", 4)),
+              AndProto(NotProto(MatchProto("b", 5)), MatchProto("c", 6)));
+  PacketSetHandle packet_set =
+      Manager().GetPacketSetManager().Compile(predicate);
+
+  // policy := (b=1 + c:=4 + a:=5; b:=1)^*
+  PolicyProto policy = IterateProto(
+      UnionProto(FilterProto(MatchProto("b", 1)),
+                 UnionProto(ModificationProto("c", 4),
+                            SequenceProto(ModificationProto("a", 1),
+                                          ModificationProto("b", 1)))));
+  PacketTransformerHandle transformer = Manager().Compile(policy);
+
+  PacketSetHandle pushed_packet_set = Manager().Push(packet_set, transformer);
+
+  // Get all concrete packets from the packet set and run them through the
+  // transformer.
+  for (Packet& concrete_packet :
+       Manager().GetPacketSetManager().GetConcretePackets(packet_set)) {
+    for (const Packet& transformed_packet :
+         Manager().Run(transformer, concrete_packet)) {
+      // All of the transformed packets should be in the set of packets from
+      // `Push` on a transformer and packet set.
+      EXPECT_TRUE(Manager().GetPacketSetManager().Contains(pushed_packet_set,
+                                                           transformed_packet));
+    }
+  }
+}
+
+void PacketsFromRunAreInPushPacketSet(PredicateProto predicate,
+                                      PolicyProto policy) {
+  PacketSetHandle packet_set =
+      Manager().GetPacketSetManager().Compile(predicate);
+  PacketTransformerHandle transformer = Manager().Compile(policy);
+  PacketSetHandle pushed_packet_set = Manager().Push(packet_set, transformer);
+
+  for (Packet& concrete_packet :
+       Manager().GetPacketSetManager().GetConcretePackets(packet_set)) {
+    for (const Packet& transformed_packet :
+         Manager().Run(transformer, concrete_packet)) {
+      // All of the transformed packets should be in the set of packets from
+      // `Push` on a transformer and packet set.
+      EXPECT_TRUE(Manager().GetPacketSetManager().Contains(pushed_packet_set,
+                                                           transformed_packet));
+    }
+  }
+}
+FUZZ_TEST(PacketTransformerManagerTest, PacketsFromRunAreInPushPacketSet)
+    // We restrict to two field names and three field value  to increases the
+    // likelihood for coverage for predicates/policies that match/modify the
+    // same field several times.
+    .WithDomains(Arbitrary<PredicateProto>()
+                     .WithFieldsAlwaysSet()
+                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
+                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})),
+                 Arbitrary<PolicyProto>()
+                     .WithFieldsAlwaysSet()
+                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
+                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})));
+}  // namespace
+
+// Test peer class to access private methods.
+class PacketTransformerManagerTestPeer {
+ public:
+  explicit PacketTransformerManagerTestPeer(
+      PacketTransformerManager* packet_transformer_manager)
+      : packet_transformer_manager_(packet_transformer_manager) {}
+
+  PacketSetHandle GetAllPossibleOutputPacketsReferenceImplementation(
+      PacketTransformerHandle transformer) {
+    if (packet_transformer_manager_->IsAccept(transformer))
+      return PacketSetManager().FullSet();
+    if (packet_transformer_manager_->IsDeny(transformer))
+      return PacketSetManager().EmptySet();
+    const PacketTransformerManager::DecisionNode& node =
+        packet_transformer_manager_->GetNodeOrDie(transformer);
+    const std::string field = packet_transformer_manager_->GetPacketSetManager()
+                                  .field_manager_.GetFieldName(node.field);
+    PacketSetHandle output;
+
+    // Syntax sugar for readability.
+    auto add_to_output = [&](PacketSetHandle more_output) {
+      output = packet_transformer_manager_->GetPacketSetManager().Or(
+          output, more_output);
+    };
+    auto and_fn = [&](PacketSetHandle left, PacketSetHandle right) {
+      return packet_transformer_manager_->GetPacketSetManager().And(left,
+                                                                    right);
+    };
+    auto not_fn = [&](PacketSetHandle packet_set) {
+      return packet_transformer_manager_->GetPacketSetManager().Not(packet_set);
+    };
+    auto match_fn = [&](std::string field, int value) {
+      return packet_transformer_manager_->GetPacketSetManager().Match(field,
+                                                                      value);
+    };
+    // Case 1: Output from explicit match+modify branches.
+    for (const auto& [match_value, branch_by_modify_value] :
+         node.modify_branch_by_field_match) {
+      for (const auto& [modify_value, branch] : branch_by_modify_value) {
+        add_to_output(
+            and_fn(match_fn(field, modify_value),
+                   GetAllPossibleOutputPacketsReferenceImplementation(branch)));
+      }
+    }
+
+    // Case 2: Output from default-modify branches.
+    for (const auto& [modify_value, branch] :
+         node.default_branch_by_field_modification) {
+      add_to_output(
+          and_fn(match_fn(field, modify_value),
+                 GetAllPossibleOutputPacketsReferenceImplementation(branch)));
+    }
+
+    // Case 3: Output from the default-no-modify branch.
+    //
+    // Output of this fallthrough case cannot have field values that are already
+    // handled by case 1 or 2, but the definition of "already handled" is
+    // subtle: Each (input, output)-pair of packets produced by this case
+    // satisfies: 0. output.field == input.field
+    // 1. input.field != match_value for all explicit match branches, thus
+    //    output.field != match_value for all explicit match branches by (0)
+    // 2. output.field != modify_value for all default-modify branches
+    PacketSetHandle fallthrough_output = PacketSetManager().FullSet();
+    for (const auto& [match_value, unused] :
+         node.modify_branch_by_field_match) {
+      fallthrough_output =
+          and_fn(fallthrough_output, not_fn(match_fn(field, match_value)));
+    }
+    for (const auto& [modify_value, unused] :
+         node.default_branch_by_field_modification) {
+      fallthrough_output =
+          and_fn(fallthrough_output, not_fn(match_fn(field, modify_value)));
+    }
+    add_to_output(and_fn(fallthrough_output,
+                         GetAllPossibleOutputPacketsReferenceImplementation(
+                             node.default_branch)));
+    return output;
+  }
+
+ private:
+  PacketTransformerManager* packet_transformer_manager_;  // Not owned.
+};
+
+namespace {
+
+void GetAllPossibleOutputPacketsIsSameAsReferenceImplementation(
+    PolicyProto policy) {
+  PacketTransformerHandle transformer = Manager().Compile(policy);
+  PacketTransformerManagerTestPeer peer(&Manager());
+  EXPECT_EQ(
+      Manager().GetAllPossibleOutputPackets(transformer),
+      peer.GetAllPossibleOutputPacketsReferenceImplementation(transformer));
+}
+FUZZ_TEST(PacketTransformerManagerTest,
+          GetAllPossibleOutputPacketsIsSameAsReferenceImplementation)
+    // We restrict to two field names and three field value  to increases the
+    // likelihood for coverage for policies that modify the same field several
+    // times.
+    .WithDomains(Arbitrary<PolicyProto>()
+                     .WithFieldsAlwaysSet()
+                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
+                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})));
 }  // namespace
 }  // namespace netkat

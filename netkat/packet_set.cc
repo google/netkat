@@ -21,6 +21,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/container/fixed_array.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/check.h"
@@ -92,6 +93,9 @@ PacketSetHandle PacketSetManager::NodeToPacket(DecisionNode&& node) {
 // `CheckInternalInvariants`, but that would be redundant and asymptotically
 // expensive.
 #ifndef NDEBUG
+  CHECK(absl::c_is_sorted(node.branch_by_field_value))
+      << "Internal invariant violated: branch_by_field_value must be sorted. "
+      << ToString(node);
   for (const auto& [value, branch] : node.branch_by_field_value) {
     CHECK(branch != node.default_branch) << ToString(node);
     if (!IsEmptySet(branch) && !IsFullSet(branch)) {
