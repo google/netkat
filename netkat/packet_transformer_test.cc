@@ -504,7 +504,7 @@ TEST(PacketTransformerManagerTest, SimpleSequenceAndUnionRunTest2) {
       << Manager().ToString(sequenced_transformer4);
 }
 
-TEST(PacketTransformerManagerTest, PushIsCorrect) {
+TEST(PacketTransformerManagerTest, PushThroughModifyIsCorrect) {
   PacketSetManager& packet_set_manager = Manager().GetPacketSetManager();
   PacketSetHandle f_24 = packet_set_manager.Match("f", 24);
   PacketSetHandle f_42 = packet_set_manager.Match("f", 42);
@@ -655,6 +655,26 @@ FUZZ_TEST(PacketTransformerManagerTest, PacketsFromRunAreInPushPacketSet)
                      .WithFieldsAlwaysSet()
                      .WithStringFields(ElementOf<std::string>({"f", "g"}))
                      .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})));
+
+void PushOnFilterIsSameAsAnd(PredicateProto left, PredicateProto right) {
+  PacketSetHandle left_set = Manager().GetPacketSetManager().Compile(left);
+  PacketSetHandle right_set = Manager().GetPacketSetManager().Compile(right);
+  EXPECT_EQ(Manager().Push(left_set, Manager().Filter(right)),
+            Manager().GetPacketSetManager().And(left_set, right_set));
+}
+FUZZ_TEST(PacketTransformerManagerTest, PushOnFilterIsSameAsAnd)
+    // We restrict to two field names and three field value  to increases the
+    // likelihood for coverage for policies that modify the same field several
+    // times.
+    .WithDomains(Arbitrary<PredicateProto>()
+                     .WithFieldsAlwaysSet()
+                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
+                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})),
+                 Arbitrary<PredicateProto>()
+                     .WithFieldsAlwaysSet()
+                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
+                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})));
+
 }  // namespace
 
 // Test peer class to access private methods.
