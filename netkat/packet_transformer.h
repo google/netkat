@@ -222,10 +222,23 @@ class PacketTransformerManager {
   PacketSetHandle GetAllPossibleOutputPackets(
       PacketTransformerHandle transformer);
 
+  // Computes the set of possible input packets that when run through the given
+  // transformer produce a non-empty set of outputs. Equivalent to
+  // `Pull(transformer, manager::FullSet())`.
+  PacketSetHandle GetAllInputPacketsThatProduceAnyOutput(
+      PacketTransformerHandle transformer);
+
   // Returns set of output packets obtained by applying the given `transformer`
   // to the given `input_packets`.
   PacketSetHandle Push(PacketSetHandle input_packets,
                        PacketTransformerHandle transformer);
+
+  // Returns the set of input packets obtained by applying the given
+  // `transformer` in reverse on the given `output_packets`. More formally,
+  // returns the set of input packets that produce one or more output packets
+  // contained in `output_packets`.
+  PacketSetHandle Pull(PacketTransformerHandle transformer,
+                       PacketSetHandle output_packets);
 
   // TODO(b/398373935): There are many additional operations supported by this
   // data structure, but not currently implemented. Add them as needed. Examples

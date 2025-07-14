@@ -63,6 +63,7 @@ using ::testing::ContainerEq;
 using ::testing::IsEmpty;
 using ::testing::Pair;
 using ::testing::StartsWith;
+using ::testing::Truly;
 using ::testing::UnorderedElementsAre;
 
 // After executing all tests, we check once that no invariants are violated, for
@@ -518,6 +519,16 @@ TEST(PacketTransformerManagerTest, PushThroughModifyIsCorrect) {
               packet_set_manager.And(g_24, f_42));
 }
 
+TEST(PacketTransformerManagerTest, PullThroughModifyIsCorrect) {
+  PacketSetManager& packet_set_manager = Manager().GetPacketSetManager();
+  PacketSetHandle f_24 = packet_set_manager.Match("f", 24);
+  PacketSetHandle f_42 = packet_set_manager.Match("f", 42);
+  PacketTransformerHandle modify_f_42 = Manager().Modification("f", 42);
+
+  EXPECT_THAT(Manager().Pull(modify_f_42, f_42), packet_set_manager.FullSet());
+  EXPECT_THAT(Manager().Pull(modify_f_42, f_24), packet_set_manager.EmptySet());
+}
+
 TEST(PacketTransformerManagerTest,
      PacketsPushedThroughSequenceAndUnionTransformersAreCorrect) {
   PacketSetManager& packet_set_manager = Manager().GetPacketSetManager();
@@ -593,6 +604,83 @@ TEST(PacketTransformerManagerTest,
 }
 
 TEST(PacketTransformerManagerTest,
+     PacketsPulledThroughSequenceAndUnionTransformersAreCorrect) {
+  PacketSetManager& packet_set_manager = Manager().GetPacketSetManager();
+
+  // a=1 ; a:=0
+  PacketTransformerHandle check_a = Manager().Compile(SequenceProto(
+      FilterProto(MatchProto("a", 1)), ModificationProto("a", 0)));
+
+  // Does `a:=1` exactly once.
+  // !(once=1) ; a:=1 ; once:=1
+  PacketTransformerHandle a_once = Manager().Compile(SequenceProto(
+      FilterProto(NotProto(MatchProto("once", 1))),
+      SequenceProto(ModificationProto("a", 1), ModificationProto("once", 1))));
+
+  PacketTransformerHandle check_a_and_a_once_transformer =
+      Manager().Union(check_a, a_once);
+
+  PacketSetHandle packet_with_once_0 =
+      packet_set_manager.Compile(MatchProto("once", 0));
+  PacketSetHandle packet_with_once_1 =
+      packet_set_manager.Compile(MatchProto("once", 1));
+  PacketSetHandle packet_with_a_0 =
+      packet_set_manager.Compile(MatchProto("a", 0));
+  PacketSetHandle packet_with_a_1 =
+      packet_set_manager.Compile(MatchProto("a", 1));
+  PacketSetHandle packet_with_a_0_or_1 =
+      packet_set_manager.Or(packet_with_a_0, packet_with_a_1);
+
+  PacketSetHandle packet_with_once_1_and_a_1 =
+      packet_set_manager.And(packet_with_once_1, packet_with_a_1);
+  PacketSetHandle packet_with_once_0_and_a_0 =
+      packet_set_manager.And(packet_with_once_0, packet_with_a_0);
+
+  // Test `check_a_and_a_once_transformer`.
+  EXPECT_THAT(Manager().Pull(check_a_and_a_once_transformer, packet_with_a_0),
+              packet_with_a_1);
+
+  PacketSetHandle expected_packet_set1 =
+      packet_set_manager.Not(packet_with_once_1);
+  EXPECT_THAT(Manager().Pull(check_a_and_a_once_transformer, packet_with_a_1),
+              expected_packet_set1);
+  EXPECT_THAT(Manager().Pull(check_a_and_a_once_transformer,
+                             packet_with_once_1_and_a_1),
+              expected_packet_set1);
+
+  PacketSetHandle expected_packet_set2 =
+      packet_set_manager.And(packet_with_once_0, packet_with_a_1);
+  EXPECT_THAT(
+      Manager().Pull(check_a_and_a_once_transformer, packet_with_once_0),
+      expected_packet_set2);
+  EXPECT_THAT(Manager().Pull(check_a_and_a_once_transformer,
+                             packet_with_once_0_and_a_0),
+              expected_packet_set2);
+
+  PacketSetHandle expected_packet_set3 =
+      packet_set_manager.Or(expected_packet_set1, packet_with_a_1);
+  EXPECT_THAT(
+      Manager().Pull(check_a_and_a_once_transformer, packet_with_once_1),
+      expected_packet_set3);
+  EXPECT_THAT(
+      Manager().Pull(check_a_and_a_once_transformer, packet_with_a_0_or_1),
+      expected_packet_set3);
+
+  // Pull the results through again!
+  PacketSetHandle expected_packet_set4 =
+      packet_set_manager.And(expected_packet_set1, packet_with_a_1);
+  EXPECT_THAT(
+      Manager().Pull(check_a_and_a_once_transformer, expected_packet_set1),
+      expected_packet_set4);
+  EXPECT_THAT(
+      Manager().Pull(check_a_and_a_once_transformer, expected_packet_set2),
+      Manager().GetPacketSetManager().EmptySet());
+  EXPECT_THAT(
+      Manager().Pull(check_a_and_a_once_transformer, expected_packet_set3),
+      expected_packet_set1);
+}
+
+TEST(PacketTransformerManagerTest,
      AllTransformedPacketBelongsToPushedPacketSet) {
   // predicate := (a=5 && b=2) || (b!=5 && c=5)
   PredicateProto predicate =
@@ -622,6 +710,47 @@ TEST(PacketTransformerManagerTest,
       EXPECT_TRUE(Manager().GetPacketSetManager().Contains(pushed_packet_set,
                                                            transformed_packet));
     }
+  }
+}
+
+TEST(PacketTransformerManagerTest,
+     ConcretePacketFromPullGetsRunThroughTransformerBelongsToInputPacketSet) {
+  // predicate := (a=3 && b=4) || (b!=5 && c=5)
+  PredicateProto predicate =
+      OrProto(AndProto(MatchProto("a", 3), MatchProto("b", 4)),
+              AndProto(NotProto(MatchProto("b", 5)), MatchProto("c", 5)));
+  PacketSetHandle packet_set =
+      Manager().GetPacketSetManager().Compile(predicate);
+
+  // policy := (a=5 + b=2);(b:=1 + c=5)
+  PolicyProto policy = SequenceProto(
+      UnionProto(FilterProto(MatchProto("a", 5)),
+                 FilterProto(MatchProto("b", 2))),
+      UnionProto(ModificationProto("b", 1), FilterProto(MatchProto("c", 5))));
+  PacketTransformerHandle transformer = Manager().Compile(policy);
+
+  // Get all concrete packets from Pull on a transformer and packet set.
+  std::vector<Packet> pulled_concrete_packets =
+      Manager().GetPacketSetManager().GetConcretePackets(
+          Manager().Pull(transformer, packet_set));
+
+  if (pulled_concrete_packets.empty()) {
+    LOG(INFO) << "SKIPPED: no concrete pulled packets were obtained";
+    return;
+  }
+
+  for (Packet& concrete_packet : pulled_concrete_packets) {
+    // Run the pulled concrete packets through the transformer. There exists at
+    // least one transformed concrete packet from the transformed packets that
+    // belongs to the packet set.
+    bool packet_exist_in_pulled_packet_set = false;
+    for (const Packet& transformed_packet :
+         Manager().Run(transformer, concrete_packet)) {
+      packet_exist_in_pulled_packet_set |=
+          Manager().GetPacketSetManager().Contains(packet_set,
+                                                   transformed_packet);
+    }
+    EXPECT_TRUE(packet_exist_in_pulled_packet_set);
   }
 }
 
@@ -656,6 +785,45 @@ FUZZ_TEST(PacketTransformerManagerTest, PacketsFromRunAreInPushPacketSet)
                      .WithStringFields(ElementOf<std::string>({"f", "g"}))
                      .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})));
 
+void PulledPacketGetsRunThroughTransformerBelongsToInputPacketSet(
+    PredicateProto predicate, PolicyProto policy) {
+  PacketSetHandle packet_set =
+      Manager().GetPacketSetManager().Compile(predicate);
+  PacketTransformerHandle transformer = Manager().Compile(policy);
+  std::vector<Packet> pulled_concrete_packets =
+      Manager().GetPacketSetManager().GetConcretePackets(
+          Manager().Pull(transformer, packet_set));
+
+  if (pulled_concrete_packets.empty()) {
+    LOG(INFO) << "SKIPPED: no concrete pulled packets were obtained";
+    return;
+  }
+
+  for (Packet& concrete_packet : pulled_concrete_packets) {
+    // Run the pulled concrete packets through the transformer. There exists at
+    // least one transformed concrete packet from the transformed packets that
+    // belongs to the packet set.
+    EXPECT_THAT(Manager().Run(transformer, concrete_packet),
+                Contains(Truly([&](const Packet& output_packet) {
+                  return Manager().GetPacketSetManager().Contains(
+                      packet_set, output_packet);
+                })));
+  }
+}
+FUZZ_TEST(PacketTransformerManagerTest,
+          PulledPacketGetsRunThroughTransformerBelongsToInputPacketSet)
+    // We restrict to two field names and three field value  to increases the
+    // likelihood for coverage for policies that modify the same field several
+    // times.
+    .WithDomains(Arbitrary<PredicateProto>()
+                     .WithFieldsAlwaysSet()
+                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
+                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})),
+                 Arbitrary<PolicyProto>()
+                     .WithFieldsAlwaysSet()
+                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
+                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})));
+
 void PushOnFilterIsSameAsAnd(PredicateProto left, PredicateProto right) {
   PacketSetHandle left_set = Manager().GetPacketSetManager().Compile(left);
   PacketSetHandle right_set = Manager().GetPacketSetManager().Compile(right);
@@ -671,6 +839,23 @@ FUZZ_TEST(PacketTransformerManagerTest, PushOnFilterIsSameAsAnd)
                      .WithStringFields(ElementOf<std::string>({"f", "g"}))
                      .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})),
                  Arbitrary<PredicateProto>()
+                     .WithFieldsAlwaysSet()
+                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
+                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})));
+
+void PushAndPullRoundTrippingHoldsForFullSet(PolicyProto policy) {
+  PacketTransformerHandle transformer = Manager().Compile(policy);
+  PacketSetHandle full_set = Manager().GetPacketSetManager().FullSet();
+  EXPECT_EQ(Manager().Push(full_set, transformer),
+            Manager().Push(Manager().Pull(transformer, full_set), transformer));
+  EXPECT_EQ(Manager().Pull(transformer, full_set),
+            Manager().Pull(transformer, Manager().Push(full_set, transformer)));
+}
+FUZZ_TEST(PacketTransformerManagerTest, PushAndPullRoundTrippingHoldsForFullSet)
+    // We restrict to two field names and three field value  to increases the
+    // likelihood for coverage for policies that modify the same field several
+    // times.
+    .WithDomains(Arbitrary<PolicyProto>()
                      .WithFieldsAlwaysSet()
                      .WithStringFields(ElementOf<std::string>({"f", "g"}))
                      .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})));
