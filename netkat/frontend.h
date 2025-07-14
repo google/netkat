@@ -241,7 +241,7 @@ Policy Modify(absl::string_view field, int new_value);
 //   Sequence({Sequence({Sequence({p0, p1}), p2}), p3})
 //
 // Semantically this behaves like a function composition in which, for some
-// list p0...pn, we feed the preceeding program inputs into p0 and forward each
+// list p0...pn, we feed the preceding program inputs into p0 and forward each
 // of p0's outputs into p1, we then forward each of p1's outputs into p2, etc.
 //
 // Note that this means Sequence(p0, p1) and Sequence(p1, p0) may be
@@ -281,7 +281,7 @@ Policy Sequence(T&&... policies) {
 Policy Union(std::vector<Policy> policies);
 
 // Allows callers to Union policies without wrapping them in a list. Prefer
-// this overload when reasonble. For example, instead of
+// this overload when reasonable. For example, instead of
 //
 //   Union({p0, p1, p2, p3})
 //
@@ -365,8 +365,8 @@ inline Predicate Match(absl::string_view field, TernaryField<N> value) {
   for (int i = 0; i < N; ++i) {
     if (!value.mask[i]) continue;
     const int bit_val = value.value[i] ? 1 : 0;
-    predicate =
-        std::move(predicate) && Match(absl::StrCat(field, "_b", i), bit_val);
+    predicate = std::move(predicate) &&
+                Match(absl::StrCat(field, "{", i, "}"), bit_val);
   }
   return predicate;
 }
@@ -383,7 +383,7 @@ inline Policy Modify(absl::string_view field, TernaryField<N> new_value) {
     if (!new_value.mask[i]) continue;
     const int value = new_value.value[i] ? 1 : 0;
     policy = Sequence(
-        {std::move(policy), Modify(absl::StrCat(field, "_b", i), value)});
+        {std::move(policy), Modify(absl::StrCat(field, "{", i, "}"), value)});
   }
   return policy;
 }

@@ -828,12 +828,15 @@ std::string PacketTransformerManager::ToDot(
   absl::flat_hash_set<PacketTransformerHandle> visited = {transformer};
 
   auto dotify_map =
-      [&](absl::string_view field, absl::string_view old_value, int node_index,
+      [&](absl::string_view field, std::optional<int> old_value, int node_index,
           const absl::btree_map<int, PacketTransformerHandle>& map) {
         for (const auto& [new_value, branch] : map) {
-          absl::StrAppendFormat(
-              &result, "  %d -> %d [label=\"%s==%s; %s:=%d\"]\n", node_index,
-              branch.node_index_, field, old_value, field, new_value);
+          absl::StrAppendFormat(&result, "  %d -> %d [label=\"", node_index,
+                                branch.node_index_);
+          if (old_value.has_value()) {
+            absl::StrAppendFormat(&result, "%s==%d; ", field, *old_value);
+          }
+          absl::StrAppendFormat(&result, "%s:=%d\"]\n", field, new_value);
           if (IsAccept(branch) || IsDeny(branch)) continue;
           bool new_branch = visited.insert(branch).second;
           if (new_branch) work_list.push(branch);
@@ -852,10 +855,9 @@ std::string PacketTransformerManager::ToDot(
     absl::StrAppendFormat(&result, "  %d [label=\"%s\"]\n",
                           transformer.node_index_, field);
     for (const auto& [value, modify_map] : node.modify_branch_by_field_match) {
-      dotify_map(field, absl::StrCat(value), transformer.node_index_,
-                 modify_map);
+      dotify_map(field, value, transformer.node_index_, modify_map);
     }
-    dotify_map(field, "*", transformer.node_index_,
+    dotify_map(field, /*old_value=*/std::nullopt, transformer.node_index_,
                node.default_branch_by_field_modification);
     PacketTransformerHandle fallthrough = node.default_branch;
     absl::StrAppendFormat(&result, "  %d -> %d [style=dashed]\n",
