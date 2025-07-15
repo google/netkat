@@ -269,6 +269,15 @@ void SequenceSequences(Packet packet, PolicyProto left, PolicyProto right) {
 }
 FUZZ_TEST(EvaluatePolicyProtoTest, SequenceSequences);
 
+void PushPushes(Packet packet, PredicateProto predicate, PolicyProto policy) {
+  absl::flat_hash_set<Packet> expected_packets =
+      Evaluate(policy, Evaluate(predicate, packet) ? packet : Packet());
+
+  EXPECT_THAT(Evaluate(PushProto(predicate, policy), packet),
+              ContainerEq(expected_packets));
+}
+FUZZ_TEST(EvaluatePolicyProtoTest, PushPushes);
+
 PolicyProto UnionUpToNthPower(PolicyProto iterable, int n) {
   PolicyProto union_policy = AcceptProto();
   PolicyProto next_sequence = iterable;

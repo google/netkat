@@ -104,6 +104,11 @@ TEST(NetkatProtoTest, PolicyOneOfFieldNamesDontRequireUnderscores) {
       LOG(INFO) << "iterate: " << iter;
       break;
     }
+    case PolicyProto::kPushOp: {
+      const PolicyProto::Push& push = policy.push_op();
+      LOG(INFO) << "push: " << push;
+      break;
+    }
     case PolicyProto::POLICY_NOT_SET:
       break;
   }

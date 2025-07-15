@@ -170,6 +170,9 @@ void ExpectFromProtoToFailWithInvalidPolicyProto(PolicyProto policy_proto) {
     case PolicyProto::kIterateOp:
       policy_proto.mutable_iterate_op()->clear_iterable();
       break;
+    case PolicyProto::kPushOp:
+      policy_proto.mutable_push_op()->clear_policy();
+      break;
       // Unset policy is invalid.
     case PolicyProto::POLICY_NOT_SET:
       break;
@@ -208,6 +211,14 @@ void IterateToProtoIsCorrect(Policy policy) {
 }
 FUZZ_TEST(FrontEndTest, IterateToProtoIsCorrect)
     .WithDomains(/*policy=*/AtomicDupFreePolicyDomain());
+
+void PushToProtoIsCorrect(Predicate predicate, Policy policy) {
+  EXPECT_THAT(Push(predicate, policy).ToProto(),
+              EqualsProto(PushProto(predicate.ToProto(), policy.ToProto())));
+}
+FUZZ_TEST(FrontEndTest, PushToProtoIsCorrect)
+    .WithDomains(/*predicate=*/AtomicPredicateDomain(),
+                 /*policy=*/AtomicDupFreePolicyDomain());
 
 TEST(FrontEndTest, SequenceWithNoElementsIsAccept) {
   EXPECT_THAT(Sequence().ToProto(), EqualsProto(AcceptProto()));
