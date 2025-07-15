@@ -113,6 +113,13 @@ PolicyProto IterateProto(PolicyProto iterable) {
   return policy;
 }
 
+PolicyProto PushProto(PredicateProto predicate, PolicyProto pushable) {
+  PolicyProto policy;
+  *policy.mutable_push_op()->mutable_predicate() = std::move(predicate);
+  *policy.mutable_push_op()->mutable_policy() = std::move(pushable);
+  return policy;
+}
+
 // -- Derived Policy constructors ----------------------------------------------
 
 PolicyProto DenyProto() { return FilterProto(FalseProto()); }
@@ -165,6 +172,10 @@ std::string AsShorthandString(PolicyProto policy) {
     case PolicyProto::kIterateOp:
       return absl::StrFormat("(%s)*",
                              AsShorthandString(policy.iterate_op().iterable()));
+    case PolicyProto::kPushOp:
+      return absl::StrFormat("push(%s, %s)",
+                             AsShorthandString(policy.push_op().predicate()),
+                             AsShorthandString(policy.push_op().policy()));
     case PolicyProto::POLICY_NOT_SET:
       return "deny";
   }

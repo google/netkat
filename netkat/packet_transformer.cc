@@ -288,6 +288,10 @@ PacketTransformerHandle PacketTransformerManager::Compile(
                    Compile(policy.union_op().right()));
     case PolicyProto::kIterateOp:
       return Iterate(Compile(policy.iterate_op().iterable()));
+    case PolicyProto::kPushOp:
+      return FromPacketSetHandle(
+          Push(packet_set_manager_.Compile(policy.push_op().predicate()),
+               Compile(policy.push_op().policy())));
     case PolicyProto::POLICY_NOT_SET:
       // By convention, uninitialized policies must be treated like the Deny
       // policy.

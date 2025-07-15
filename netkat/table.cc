@@ -62,6 +62,7 @@ absl::Status VerifyActionHasNoPredicate(const Policy& action) {
         }
         return absl::InvalidArgumentError(
             absl::StrCat("Action contains predicate: ", *policy));
+      case PolicyProto::PolicyCase::kPushOp:
       case PolicyProto::PolicyCase::kModification:
       case PolicyProto::PolicyCase::kRecord:
         break;

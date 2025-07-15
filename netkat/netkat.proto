@@ -116,6 +116,7 @@ message PolicyProto {
     Sequence sequence_op = 4;
     Union union_op = 5;
     Iterate iterate_op = 6;
+    Push push_op = 7;
   }
 
   // Sets the field to the given value.
@@ -146,6 +147,13 @@ message PolicyProto {
   // I.e. Iterate(p) == Union(Accept, p, Sequence(p,p), Sequence(p,p,p), ...)
   message Iterate {
     PolicyProto iterable = 1;
+  }
+
+  // Represents computing the effect of a policy on a packet.
+  // E.g. push(pred, policy).
+  message Push {
+    PredicateProto predicate = 1;
+    PolicyProto policy = 2;
   }
 
   // Records the packet, at the given point, into the history. Referred to as
