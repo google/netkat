@@ -908,6 +908,15 @@ std::string PacketTransformerManager::ToDot(
   auto dotify_map =
       [&](absl::string_view field, absl::string_view old_value, int node_index,
           const absl::btree_map<int, PacketTransformerHandle>& map) {
+        // If the map is empty and the old value is not '*' (excludes the
+        // default branch) because this is represnted by the "default default"
+        // branch, then create a path from the node to the
+        // `SentinelNodeIndex::kDeny`.
+        if (map.empty() && old_value != "*") {
+          absl::StrAppendFormat(&result, "  %d -> %d [label=\"%s==%s\"]\n",
+                                node_index, SentinelNodeIndex::kDeny, field,
+                                old_value);
+        }
         for (const auto& [new_value, branch] : map) {
           absl::StrAppendFormat(
               &result, "  %d -> %d [label=\"%s==%s; %s:=%d\"]\n", node_index,
