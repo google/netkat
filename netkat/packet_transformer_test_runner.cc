@@ -71,6 +71,11 @@ std::vector<TestCase> TestCases() {
       .policy = SequenceProto(p, q),
   });
 
+  test_cases.push_back({
+      .description = "(a!=5)",
+      .policy = FilterProto(NotProto(MatchProto("a", 5))),
+  });
+
   return test_cases;
 }
 
