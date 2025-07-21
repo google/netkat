@@ -867,12 +867,11 @@ std::string PacketTransformerManager::ToString(
   while (!work_list.empty()) {
     PacketTransformerHandle transformer = work_list.front();
     work_list.pop();
-    absl::StrAppend(&result, transformer);
+    absl::StrAppend(&result, transformer, ":\n");
 
     if (IsAccept(transformer) || IsDeny(transformer)) continue;
 
     const DecisionNode& node = GetNodeOrDie(transformer);
-    absl::StrAppend(&result, ":\n");
     std::string field = absl::StrFormat(
         "%v:'%s'", node.field,
         absl::CEscape(
@@ -897,6 +896,22 @@ std::string PacketTransformerManager::ToString(
 std::string PacketTransformerManager::ToDot(
     const PacketTransformerHandle& transformer) const {
   std::string result = "digraph {\n";
+  // Applies the default font sizes for GraphViz.
+  absl::StrAppend(&result, "  node [fontsize = 14]\n");
+  absl::StrAppend(&result, "  edge [fontsize = 12]\n");
+
+  if (IsAccept(transformer)) {
+    absl::StrAppendFormat(&result, "  %d [label=\"T\" shape=box]\n",
+                          SentinelNodeIndex::kAccept);
+    absl::StrAppend(&result, "}\n");
+    return result;
+  }
+  if (IsDeny(transformer)) {
+    absl::StrAppendFormat(&result, "  %d [label=\"F\" shape=box]\n",
+                          SentinelNodeIndex::kDeny);
+    absl::StrAppend(&result, "}\n");
+    return result;
+  }
   absl::StrAppendFormat(&result, "  %d [label=\"T\" shape=box]\n",
                         SentinelNodeIndex::kAccept);
   absl::StrAppendFormat(&result, "  %d [label=\"F\" shape=box]\n",
@@ -904,19 +919,6 @@ std::string PacketTransformerManager::ToDot(
   std::queue<PacketTransformerHandle> work_list;
   work_list.push(transformer);
   absl::flat_hash_set<PacketTransformerHandle> visited = {transformer};
-
-  auto dotify_map =
-      [&](absl::string_view field, absl::string_view old_value, int node_index,
-          const absl::btree_map<int, PacketTransformerHandle>& map) {
-        for (const auto& [new_value, branch] : map) {
-          absl::StrAppendFormat(
-              &result, "  %d -> %d [label=\"%s==%s; %s:=%d\"]\n", node_index,
-              branch.node_index_, field, old_value, field, new_value);
-          if (IsAccept(branch) || IsDeny(branch)) continue;
-          bool new_branch = visited.insert(branch).second;
-          if (new_branch) work_list.push(branch);
-        }
-      };
 
   while (!work_list.empty()) {
     PacketTransformerHandle transformer = work_list.front();
@@ -930,11 +932,31 @@ std::string PacketTransformerManager::ToDot(
     absl::StrAppendFormat(&result, "  %d [label=\"%s\"]\n",
                           transformer.node_index_, field);
     for (const auto& [value, modify_map] : node.modify_branch_by_field_match) {
-      dotify_map(field, absl::StrCat(value), transformer.node_index_,
-                 modify_map);
+      if (modify_map.empty()) {
+        absl::StrAppendFormat(&result, "  %d -> %d [label=\"%s==%s\"]\n",
+                              transformer.node_index_, SentinelNodeIndex::kDeny,
+                              field, absl::StrCat(value));
+      }
+      for (const auto& [new_value, branch] : modify_map) {
+        absl::StrAppendFormat(&result,
+                              "  %d -> %d [label=\"%s==%s; %s:=%d\"]\n",
+                              transformer.node_index_, branch.node_index_,
+                              field, absl::StrCat(value), field, new_value);
+        if (IsAccept(branch) || IsDeny(branch)) continue;
+        bool new_branch = visited.insert(branch).second;
+        if (new_branch) work_list.push(branch);
+      }
     }
-    dotify_map(field, "*", transformer.node_index_,
-               node.default_branch_by_field_modification);
+
+    for (const auto& [new_value, branch] :
+         node.default_branch_by_field_modification) {
+      absl::StrAppendFormat(
+          &result, "  %d -> %d [label=\"%s:=%d\" style=dashed]\n",
+          transformer.node_index_, branch.node_index_, field, new_value);
+      if (IsAccept(branch) || IsDeny(branch)) continue;
+      bool new_branch = visited.insert(branch).second;
+      if (new_branch) work_list.push(branch);
+    }
     PacketTransformerHandle fallthrough = node.default_branch;
     absl::StrAppendFormat(&result, "  %d -> %d [style=dashed]\n",
                           transformer.node_index_, fallthrough.node_index_);

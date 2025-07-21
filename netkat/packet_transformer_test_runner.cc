@@ -43,6 +43,19 @@ struct TestCase {
 
 std::vector<TestCase> TestCases() {
   std::vector<TestCase> test_cases;
+  test_cases.push_back({
+      .description = "p := F. Deny policy.",
+      .policy = DenyProto(),
+  });
+  test_cases.push_back({
+      .description = "p := T. Accept policy.",
+      .policy = AcceptProto(),
+  });
+  test_cases.push_back({
+      .description = "p := (a!=5). Empty modify branch creates a deny path.",
+      .policy = FilterProto(NotProto(MatchProto("a", 5))),
+  });
+
   PolicyProto p = SequenceProto(
       UnionProto(FilterProto(MatchProto("a", 5)),
                  FilterProto(MatchProto("b", 2))),
