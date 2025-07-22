@@ -311,6 +311,14 @@ PacketTransformerHandle PacketTransformerManager::Compile(
       return transformer_by_hash_[key] =
                  Difference(key.lhs_child, key.rhs_child);
     }
+    case PolicyProto::kSymmetricDifferenceOp: {
+      key.lhs_child = Compile(policy.symmetric_difference_op().left());
+      key.rhs_child = Compile(policy.symmetric_difference_op().right());
+      auto it = transformer_by_hash_.find(key);
+      if (it != transformer_by_hash_.end()) return it->second;
+      return transformer_by_hash_[key] =
+                 SymmetricDifference(key.lhs_child, key.rhs_child);
+    }
     // By convention, uninitialized policies must be treated like the Deny
     // policy.
     case PolicyProto::POLICY_NOT_SET: {
@@ -754,6 +762,11 @@ PacketTransformerHandle PacketTransformerManager::Difference(
 
   // If neither node is accept or deny, then difference the nodes directly.
   return Difference(GetNodeOrDie(left), GetNodeOrDie(right));
+}
+
+PacketTransformerHandle PacketTransformerManager::SymmetricDifference(
+    PacketTransformerHandle left, PacketTransformerHandle right) {
+  return Union(Difference(left, right), Difference(right, left));
 }
 
 PacketTransformerHandle PacketTransformerManager::Iterate(
