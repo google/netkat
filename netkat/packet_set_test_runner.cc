@@ -44,6 +44,15 @@ struct TestCase {
 std::vector<TestCase> TestCases() {
   std::vector<TestCase> test_cases;
 
+  test_cases.push_back({
+      .description = "p := F. Predicate is empty set.",
+      .predicate = FalseProto(),
+  });
+  test_cases.push_back({
+      .description = "p := T. Predicate is fullset.",
+      .predicate = TrueProto(),
+  });
+
   PredicateProto p =
       OrProto(AndProto(MatchProto("a", 3), MatchProto("b", 4)),
               AndProto(NotProto(MatchProto("b", 5)), MatchProto("c", 5)));

@@ -137,8 +137,24 @@ bool PacketSetManager::Contains(PacketSetHandle packet_set,
 
 std::string PacketSetManager::ToDot(PacketSetHandle packet_set) const {
   std::string result = "digraph {\n";
+  // Applies the default font sizes for GraphViz.
+  absl::StrAppend(&result, "  node [fontsize = 14]\n");
+  absl::StrAppend(&result, "  edge [fontsize = 12]\n");
+
   std::queue<PacketSetHandle> work_list;
   work_list.push(packet_set);
+  if (IsFullSet(packet_set)) {
+    absl::StrAppendFormat(&result, "  %d [label=\"T\" shape=box]\n",
+                          SentinelNodeIndex::kFullSet);
+    absl::StrAppend(&result, "}\n");
+    return result;
+  }
+  if (IsEmptySet(packet_set)) {
+    absl::StrAppendFormat(&result, "  %d [label=\"F\" shape=box]\n",
+                          SentinelNodeIndex::kEmptySet);
+    absl::StrAppend(&result, "}\n");
+    return result;
+  }
   absl::flat_hash_set<PacketSetHandle> visited = {packet_set};
   absl::StrAppendFormat(&result, "  %d [label=\"T\" shape=box]\n",
                         SentinelNodeIndex::kFullSet);
@@ -346,12 +362,11 @@ std::string PacketSetManager::ToString(PacketSetHandle packet_set) const {
   while (!work_list.empty()) {
     PacketSetHandle packet_set = work_list.front();
     work_list.pop();
-    absl::StrAppend(&result, packet_set);
+    absl::StrAppend(&result, packet_set, ":\n");
 
     if (IsFullSet(packet_set) || IsEmptySet(packet_set)) continue;
 
     const DecisionNode& node = GetNodeOrDie(packet_set);
-    absl::StrAppend(&result, ":\n");
     std::string field =
         absl::StrFormat("%v:'%s'", node.field,
                         absl::CEscape(field_manager_.GetFieldName(node.field)));
