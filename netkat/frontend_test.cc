@@ -170,6 +170,9 @@ void ExpectFromProtoToFailWithInvalidPolicyProto(PolicyProto policy_proto) {
     case PolicyProto::kIterateOp:
       policy_proto.mutable_iterate_op()->clear_iterable();
       break;
+    case PolicyProto::kDifferenceOp:
+      policy_proto.mutable_difference_op()->clear_left();
+      break;
       // Unset policy is invalid.
     case PolicyProto::POLICY_NOT_SET:
       break;
@@ -208,6 +211,14 @@ void IterateToProtoIsCorrect(Policy policy) {
 }
 FUZZ_TEST(FrontEndTest, IterateToProtoIsCorrect)
     .WithDomains(/*policy=*/AtomicDupFreePolicyDomain());
+
+void DifferenceToProtoIsCorrect(Policy left, Policy right) {
+  EXPECT_THAT(Difference(left, right).ToProto(),
+              EqualsProto(DifferenceProto(left.ToProto(), right.ToProto())));
+}
+FUZZ_TEST(FrontEndTest, DifferenceToProtoIsCorrect)
+    .WithDomains(/*policy=*/AtomicDupFreePolicyDomain(),
+                 /*policy=*/AtomicDupFreePolicyDomain());
 
 TEST(FrontEndTest, SequenceWithNoElementsIsAccept) {
   EXPECT_THAT(Sequence().ToProto(), EqualsProto(AcceptProto()));

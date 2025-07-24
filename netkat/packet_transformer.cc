@@ -288,6 +288,9 @@ PacketTransformerHandle PacketTransformerManager::Compile(
                    Compile(policy.union_op().right()));
     case PolicyProto::kIterateOp:
       return Iterate(Compile(policy.iterate_op().iterable()));
+    case PolicyProto::kDifferenceOp:
+      return Difference(Compile(policy.difference_op().left()),
+                        Compile(policy.difference_op().right()));
     case PolicyProto::POLICY_NOT_SET:
       // By convention, uninitialized policies must be treated like the Deny
       // policy.
@@ -621,6 +624,119 @@ PacketTransformerHandle PacketTransformerManager::Union(
 
   // If neither node is accept or deny, then union the nodes directly.
   return Union(GetNodeOrDie(left), GetNodeOrDie(right));
+}
+
+PacketTransformerHandle PacketTransformerManager::Difference(
+    DecisionNode left, DecisionNode right) {
+  // left.field > right.field: Expand the left node, reducing to the inductive
+  // case.
+  if (left.field > right.field) {
+    PacketFieldHandle first_field = right.field;
+    return Difference(
+        DecisionNode{
+            .field = first_field,
+            .default_branch = NodeToTransformer(std::move(left)),
+        },
+        std::move(right));
+  }
+
+  // left.field < right.field: Expand the right node, reducing to the inductive
+  // case.
+  if (left.field < right.field) {
+    PacketFieldHandle first_field = left.field;
+    return Difference(std::move(left),
+                      DecisionNode{
+                          .field = first_field,
+                          .default_branch = NodeToTransformer(std::move(right)),
+                      });
+  }
+
+  // left.field == right.field: branch on shared field.
+  DCHECK(left.field == right.field);
+  DecisionNode result_node{
+      .field = left.field,
+      .default_branch_by_field_modification = CombineModifyBranches(
+          left.default_branch_by_field_modification,
+          right.default_branch_by_field_modification,
+          /*combiner=*/
+          [this](PacketTransformerHandle left, PacketTransformerHandle right) {
+            return Difference(left, right);
+          },
+          /*default_value=*/Deny()),
+      .default_branch = Difference(left.default_branch, right.default_branch),
+  };
+
+  // Collect every value in mapped in each node.
+  absl::flat_hash_set<int> all_possible_values;
+  all_possible_values.reserve(
+      left.modify_branch_by_field_match.size() +
+      right.modify_branch_by_field_match.size() +
+      left.default_branch_by_field_modification.size() +
+      right.default_branch_by_field_modification.size());
+
+  absl::c_transform(
+      left.modify_branch_by_field_match,
+      std::inserter(all_possible_values, all_possible_values.end()),
+      [](auto pair) { return pair.first; });
+  absl::c_transform(
+      right.modify_branch_by_field_match,
+      std::inserter(all_possible_values, all_possible_values.end()),
+      [](auto pair) { return pair.first; });
+  absl::c_transform(
+      left.default_branch_by_field_modification,
+      std::inserter(all_possible_values, all_possible_values.end()),
+      [](auto pair) { return pair.first; });
+  absl::c_transform(
+      right.default_branch_by_field_modification,
+      std::inserter(all_possible_values, all_possible_values.end()),
+      [](auto pair) { return pair.first; });
+
+  // For every value in mapped in each node, construct the proper new branch.
+  // TODO(dilo): Would like to use absl::bind_front here instead of a lambda:
+  //   absl::bind_front<PacketTransformerHandle(PacketTransformerHandle,
+  //     PacketTransformerHandle)>(
+  // &PacketTransformerManager::Difference, this),
+  for (int value : all_possible_values) {
+    result_node.modify_branch_by_field_match[value] = CombineModifyBranches(
+        GetMapAtValue(left, value), GetMapAtValue(right, value),
+        /*combiner=*/
+        [this](PacketTransformerHandle left, PacketTransformerHandle right) {
+          return Difference(left, right);
+        },
+        /*default_value=*/Deny());
+  }
+
+  return NodeToTransformer(std::move(result_node));
+}
+
+PacketTransformerHandle PacketTransformerManager::Difference(
+    PacketTransformerHandle left, PacketTransformerHandle right) {
+  // Base cases.
+  if (left == right) return Deny();
+  if (IsDeny(left)) return Deny();
+  if (IsDeny(right)) return left;
+
+  // If either node is accept, then expand it before merging.
+  if (IsAccept(left)) {
+    const DecisionNode& right_node = GetNodeOrDie(right);
+    return Difference(
+        DecisionNode{
+            .field = right_node.field,
+            .default_branch = Accept(),
+        },
+        right_node);
+  }
+
+  if (IsAccept(right)) {
+    const DecisionNode& left_node = GetNodeOrDie(left);
+    return Difference(left_node, DecisionNode{
+                                     .field = left_node.field,
+                                     .default_branch = Accept(),
+                                 });
+  }
+
+  // If neither node is accept or deny, then difference the nodes directly.
+  return Difference(GetNodeOrDie(left), GetNodeOrDie(right));
 }
 
 PacketTransformerHandle PacketTransformerManager::Iterate(
