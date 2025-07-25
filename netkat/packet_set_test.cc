@@ -327,5 +327,92 @@ void XorIsAssociative(const PredicateProto& a, const PredicateProto& b,
 }
 FUZZ_TEST(PacketSetManagerTest, XorIsAssociative);
 
+TEST(PacketSetManagerTest, ExistsOnPacketSetWithSingleFieldReturnsFullSet) {
+  const std::string field = "a";
+  EXPECT_EQ(Manager().Exists(field, Manager().Compile(MatchProto(field, 3))),
+            Manager().FullSet());
+}
+
+TEST(PacketSetManagerTest, ExistsOnPacketSetWithNonMatchingFieldReturnsSelf) {
+  const std::string field_a = "a";
+  const std::string field_b = "b";
+  PacketSetHandle packet_set = Manager().Compile(MatchProto(field_b, 3));
+  EXPECT_EQ(Manager().Exists(field_a, packet_set), packet_set);
+}
+
+TEST(PacketSetManagerTest, ExistOnFieldRemovesPacketFieldProperty) {
+  const std::string field = "a";
+  constexpr int value = 3;
+  // p = (a=3 && b=4) || (b!=5 && c=5)
+  PacketSetHandle packet_set = Manager().Compile(
+      OrProto(AndProto(MatchProto(field, value), MatchProto("b", 4)),
+              AndProto(NotProto(MatchProto("b", 5)), MatchProto("c", 5))));
+  PacketSetHandle packet_set_without_field =
+      Manager().Exists(field, packet_set);
+  Packet packet_with_b4 = Packet{{"b", 4}};
+  EXPECT_TRUE(Manager().Contains(packet_set_without_field, packet_with_b4));
+  EXPECT_FALSE(Manager().Contains(packet_set, packet_with_b4));
+
+  Packet packet_with_a3_and_b4 = {{field, value}, {"b", 4}};
+  EXPECT_TRUE(
+      Manager().Contains(packet_set_without_field, packet_with_a3_and_b4));
+  EXPECT_TRUE(Manager().Contains(packet_set, packet_with_a3_and_b4));
+}
+
+TEST(PacketSetManagerTest, ExistsOnFieldNotInPacketIsIdentity) {
+  // p = (a=3 && b=4) || (b!=5 && c=5)
+  PacketSetHandle packet_set = Manager().Compile(
+      OrProto(AndProto(MatchProto("a", 3), MatchProto("b", 4)),
+              AndProto(NotProto(MatchProto("b", 5)), MatchProto("c", 5))));
+  EXPECT_EQ(packet_set, Manager().Exists("d", packet_set));
+}
+
+void ExistIsIdentityForNonExistentField(const PredicateProto& pred) {
+  PacketSetHandle packet_set = Manager().Compile(pred);
+  EXPECT_EQ(Manager().Exists("non-existent-field", packet_set), packet_set);
+}
+FUZZ_TEST(PacketSetManagerTest, ExistIsIdentityForNonExistentField)
+    // We restrict to four field value to exclude the non-existent field and
+    // increases the likelihood for coverage for predicates/policies that
+    // match/modify the same field several times.
+    .WithDomains(fuzztest::Arbitrary<PredicateProto>()
+                     .WithFieldsAlwaysSet()
+                     .WithStringFields(fuzztest::ElementOf<std::string>(
+                         {"f", "g", "h", "i"})));
+
+void ExistOnFieldRemovesPacketFieldProperty(const PredicateProto& pred,
+                                            int new_value) {
+  PacketSetHandle packet_set = Manager().Compile(pred);
+  for (const Packet& packet : Manager().GetConcretePackets(packet_set)) {
+    // Skip empty packets.
+    if (packet.empty()) continue;
+
+    std::string field = packet.begin()->first;
+
+    PacketSetHandle packet_set_without_field =
+        Manager().Exists(field, packet_set);
+    ASSERT_NE(packet_set_without_field, packet_set);
+
+    Packet packet_without_field = packet;
+    packet_without_field.erase(field);
+
+    // Skip packets with the field removed that are empty.
+    if (packet_without_field.empty()) continue;
+
+    EXPECT_TRUE(
+        Manager().Contains(packet_set_without_field, packet_without_field));
+    EXPECT_FALSE(Manager().Contains(packet_set, packet_without_field));
+
+    // Modify the packet to have the field with a different value.
+    if (new_value == packet.at(field)) continue;
+    Packet packet_with_new_value = packet;
+    packet_with_new_value[field] = new_value;
+    EXPECT_TRUE(
+        Manager().Contains(packet_set_without_field, packet_with_new_value));
+    EXPECT_FALSE(Manager().Contains(packet_set, packet_with_new_value));
+  }
+}
+FUZZ_TEST(PacketSetManagerTest, ExistOnFieldRemovesPacketFieldProperty);
+
 }  // namespace
 }  // namespace netkat

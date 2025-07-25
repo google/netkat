@@ -186,6 +186,10 @@ class PacketSetManager {
   // set, but not in both. Also known as symmetric set difference.
   PacketSetHandle Xor(PacketSetHandle left, PacketSetHandle right);
 
+  // A concrete packet is in `Exists(field, packet_set)` iff setting `field` to
+  // any other value will make it a member of the input `set`.
+  PacketSetHandle Exists(absl::string_view field, PacketSetHandle packet);
+
   // Returns a human-readable string representation of the given `packet`,
   // intended for debugging.
   [[nodiscard]] std::string ToString(PacketSetHandle packet_set) const;

@@ -81,7 +81,9 @@ bool PacketSetManager::IsFullSet(PacketSetHandle packet_set) const {
 
 const PacketSetManager::DecisionNode& PacketSetManager::GetNodeOrDie(
     PacketSetHandle packet_set) const {
-  CHECK_LT(packet_set.node_index_, nodes_.size());  // Crash ok
+  CHECK_LT(packet_set.node_index_, nodes_.size())
+      << "Did you call this function on a leaf node (i.e. FullSet() or "
+         "EmptySet())? ";  // Crash ok
   return nodes_[packet_set.node_index_];
 }
 
@@ -353,6 +355,51 @@ PacketSetHandle PacketSetManager::Xor(PacketSetHandle left,
                                       PacketSetHandle right) {
   // a (+) b == (!a && b) || (a && !b).
   return Or(And(Not(left), right), And(left, Not(right)));
+}
+
+PacketSetHandle PacketSetManager::Exists(absl::string_view field,
+                                         PacketSetHandle packet) {
+  if (IsFullSet(packet) || IsEmptySet(packet)) return packet;
+
+  // Compute result the hard way.
+  const DecisionNode& node = GetNodeOrDie(packet);
+
+  // Case 1: This node's field is the one we are removing through an
+  // existential: remove the current node and return the OR-ing of all branches.
+  if (node.field == field_manager_.GetOrCreatePacketFieldHandle(field)) {
+    PacketSetHandle result = node.default_branch;
+    for (const auto& [field_value, branch] : node.branch_by_field_value) {
+      result = Or(result, branch);
+    }
+    return result;
+  }
+
+  // Case 2: This node does not branch on the relevant field: keep current
+  // node and call `Exists` on all branches and exclude a branch if it is the
+  // same as the default branch.
+  PacketSetHandle default_branch = Exists(field, node.default_branch);
+  int num_branches = 0;
+  for (const auto& [value, branch] : node.branch_by_field_value) {
+    if (Exists(field, branch) != default_branch) ++num_branches;
+  }
+  absl::FixedArray<std::pair<int, PacketSetHandle>, 0>
+      non_default_branches_by_field_value(num_branches);
+  int i = 0;
+  for (const auto& [value, branch] : node.branch_by_field_value) {
+    // Skips `default_branch` because an invariant of `DecisionNode` is that no
+    // branch in `branch_by_field_value` can be a duplicate of the default
+    // branch.
+    PacketSetHandle non_default_branch = Exists(field, branch);
+    if (non_default_branch == default_branch) continue;
+    non_default_branches_by_field_value[i++] =
+        std::make_pair(value, non_default_branch);
+  }
+
+  return NodeToPacket(DecisionNode{
+      .field = node.field,
+      .default_branch = default_branch,
+      .branch_by_field_value = std::move(non_default_branches_by_field_value),
+  });
 }
 
 std::string PacketSetManager::ToString(PacketSetHandle packet_set) const {
