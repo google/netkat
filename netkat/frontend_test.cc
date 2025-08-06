@@ -342,12 +342,12 @@ TEST(FrontEndTest, ValueReflectedWhenMasked) {
   UlongTernaryField ternary = {.value = {0b0010}, .mask = {0b0011}};
   EXPECT_THAT(
       Match("f", ternary).ToProto(),
-      EqualsProto((Predicate::True() && Match("f_b0", 0) && Match("f_b1", 1))
+      EqualsProto((Predicate::True() && Match("f[0]", 0) && Match("f[1]", 1))
                       .ToProto()));
   EXPECT_THAT(Modify("f", ternary).ToProto(),
               EqualsProto(SequenceProto(
-                  SequenceProto(AcceptProto(), ModificationProto("f_b0", 0)),
-                  ModificationProto("f_b1", 1))));
+                  SequenceProto(AcceptProto(), ModificationProto("f[0]", 0)),
+                  ModificationProto("f[1]", 1))));
 }
 
 }  // namespace
