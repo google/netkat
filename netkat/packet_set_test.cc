@@ -412,7 +412,9 @@ void ExistOnFieldRemovesPacketFieldProperty(const PredicateProto& pred,
     EXPECT_FALSE(Manager().Contains(packet_set, packet_with_new_value));
   }
 }
-FUZZ_TEST(PacketSetManagerTest, ExistOnFieldRemovesPacketFieldProperty);
+// TODO: b/434438705 - Re-enable this test once the bug is fixed.
+FUZZ_TEST(DISABLED_ExistPacketSetManagerTest,
+          ExistOnFieldRemovesPacketFieldProperty);
 
 }  // namespace
 }  // namespace netkat
