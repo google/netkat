@@ -201,6 +201,7 @@ class Policy {
   friend Policy Sequence(std::vector<Policy>);
   friend Policy Union(std::vector<Policy>);
   friend Policy Iterate(Policy);
+  friend Policy Difference(Policy, Policy);
   friend Policy Record();
 
   // Policies that conceptually represent a program that should accept or
@@ -254,7 +255,7 @@ Policy Modify(absl::string_view field, int new_value);
 Policy Sequence(std::vector<Policy> policies);
 
 // Allows callers to Sequence policies without wrapping them in a list. Prefer
-// this overload when reasonble. For example, instead of
+// this overload when reasonable. For example, instead of
 //
 //   Sequence({p0, p1, p2, p3})
 //
