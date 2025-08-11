@@ -6,7 +6,10 @@ load("@com_google_gutil//gutil:diff_test.bzl", "cmd_diff_test")
 
 package(
     default_applicable_licenses = ["//:license"],
-    default_visibility = [":__subpackages__"],
+    default_visibility = [
+        ":__subpackages__",
+        "//platforms/networking/orion/routing/netkat:__subpackages__",
+    ],
 )
 
 proto_library(
