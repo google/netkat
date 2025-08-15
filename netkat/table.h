@@ -29,6 +29,7 @@
 
 #include "absl/container/btree_map.h"
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "netkat/frontend.h"
 #include "netkat/packet_transformer.h"
 
@@ -84,6 +85,16 @@ class NetkatTable {
   // i.e. either Accept or Deny. See `GetPolicy` for more information.
   explicit NetkatTable(std::vector<TableConstraint> constraints = {},
                        bool accept_default = false);
+
+  // Copyable and movable. Note that `PacketTransformerManager` is not copyable
+  // so we simply create a new one.
+  //
+  // TODO(anthonyroy): Consider a way to better deal with copy-ability of
+  // `PacketTransformerManager`.
+  NetkatTable(const NetkatTable&);
+  NetkatTable& operator=(const NetkatTable&);
+  NetkatTable(NetkatTable&&) = default;
+  NetkatTable& operator=(NetkatTable&&) = default;
 
   // Adds a match-action rule into the table, at the given priority. For
   // example, if this were to represent a VRF table then a possible rule would
@@ -142,9 +153,23 @@ class NetkatTable {
   Policy GetPolicy() const&;
   Policy GetPolicy() &&;
 
+  // Attempts to merge `rhs` into `lhs`. Returns an error if any rule in
+  // `rhs` conflicts with any rule in `lhs`.
+  //
+  // This may be used to build independent tables and merge them later.
+  //
+  // Note that only the properties of `lhs` will be used. For example, if
+  // merging rules from `lhs` into `rhs` would cause an error but the reverse is
+  // OK, this will return OK. Therefore it is recommended to only merge tables
+  // with similar constraints.
+  //
+  // TODO(anthonyroy): Reconsider how to exactly merge. It may be better to
+  // require that `lhs` and `rhs` have the same constraints.
+  static absl::StatusOr<NetkatTable> Merge(NetkatTable lhs, NetkatTable rhs);
+
  private:
   // Whether the default action should be Accept or Deny.
-  const bool accept_default_;
+  bool accept_default_;
 
   // The list of constraints/policies each to-be-added rule must conform to.
   std::vector<TableConstraint> constraints_;
@@ -165,7 +190,11 @@ class NetkatTable {
   // table policy.
   absl::btree_map<int, std::pair<Predicate, Policy>> rules_;
 
-  // Manager for evaluating policy against contraints. E.g. rule determinism.
+  // The raw rules, in order of priority, as added by `AddRule`.
+  // TODO(anthonyroy): Replace/create a MatchAction struct for Predicate+Policy.
+  absl::btree_map<int, std::vector<std::pair<Predicate, Policy>>> raw_rules_;
+
+  // Manager for evaluating policy against constraints. E.g. rule determinism.
   PacketTransformerManager policy_manager_;
 };
 

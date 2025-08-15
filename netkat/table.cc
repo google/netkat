@@ -23,7 +23,9 @@
 #include "absl/container/btree_map.h"
 #include "absl/log/check.h"
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
+#include "gutil/status.h"
 #include "netkat/frontend.h"
 #include "netkat/netkat.pb.h"
 #include "netkat/packet_set.h"
@@ -151,6 +153,21 @@ NetkatTable::NetkatTable(std::vector<TableConstraint> constraints,
   });
 }
 
+NetkatTable::NetkatTable(const NetkatTable& other)
+    : accept_default_(other.accept_default_),
+      constraints_(other.constraints_),
+      rules_(other.rules_),
+      raw_rules_(other.raw_rules_) {}
+
+NetkatTable& NetkatTable::operator=(const NetkatTable& other) {
+  if (this == &other) return *this;
+  accept_default_ = other.accept_default_;
+  constraints_ = other.constraints_;
+  rules_ = other.rules_;
+  raw_rules_ = other.raw_rules_;
+  return *this;
+}
+
 absl::Status NetkatTable::AddRule(int priority, Predicate match,
                                   Policy action) {
   auto [it, inserted] =
@@ -174,10 +191,12 @@ absl::Status NetkatTable::AddRule(int priority, Predicate match,
   // If this is the first rule in the priority band, the action does not yet
   // include the match.
   if (inserted) {
+    raw_rules_[priority].push_back({current_match, current_action});
     current_action = Sequence(Filter(current_match), std::move(current_action));
     return absl::OkStatus();
   }
 
+  raw_rules_[priority].push_back({match, action});
   current_match = std::move(current_match) || match;
   current_action = Union(std::move(current_action),
                          Sequence(Filter(std::move(match)), std::move(action)));
@@ -191,6 +210,16 @@ Policy NetkatTable::GetPolicy() const& {
 Policy NetkatTable::GetPolicy() && {
   return GetPolicyInternal(std::move(rules_),
                            accept_default_ ? Policy::Accept() : Policy::Deny());
+}
+
+absl::StatusOr<NetkatTable> NetkatTable::Merge(NetkatTable lhs,
+                                               NetkatTable rhs) {
+  for (const auto& [priority, rules] : rhs.raw_rules_) {
+    for (const auto& [match, action] : rules) {
+      RETURN_IF_ERROR(lhs.AddRule(priority, match, action));
+    }
+  }
+  return lhs;
 }
 
 }  // namespace netkat

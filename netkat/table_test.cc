@@ -19,11 +19,13 @@
 #include "netkat/table.h"
 
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "fuzztest/fuzztest.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "gutil/proto_matchers.h"
 #include "gutil/status_matchers.h"  // IWYU pragma: keep
+#include "netkat/analysis_engine.h"
 #include "netkat/frontend.h"
 #include "netkat/gtest_utils.h"
 #include "netkat/netkat.pb.h"
@@ -35,6 +37,7 @@ namespace {
 using ::gutil::EqualsProto;
 using ::gutil::IsOk;
 using ::gutil::StatusIs;
+using ::testing::HasSubstr;
 
 // TODO: b/416297041 - It would be quite nice to not look at the protos these
 // all generate. Instead, we could use the AnalysisEngine to verify correctness.
@@ -175,6 +178,114 @@ TEST(NetkatTable, NonDeterministicRuleWithSameActionIsOk) {
   NetkatTable table;
   ASSERT_OK(table.AddRule(/*priority=*/10, Match("port", 0), Modify("vrf", 1)));
   EXPECT_OK(table.AddRule(/*priority=*/10, Match("vlan", 0), Modify("vrf", 1)));
+}
+
+TEST(NetkatTable, MergeEmptyTablesIsEmpty) {
+  NetkatTable table1, table2;
+  ASSERT_OK_AND_ASSIGN(absl::StatusOr<NetkatTable> merged_table,
+                       NetkatTable::Merge(table1, table2));
+  EXPECT_THAT(merged_table->GetPolicy().ToProto(), EqualsProto(DenyProto()));
+
+  merged_table = NetkatTable::Merge(table2, table1);
+  ASSERT_THAT(merged_table, IsOk());
+  EXPECT_THAT(merged_table->GetPolicy().ToProto(), EqualsProto(DenyProto()));
+}
+
+TEST(NetkatTable, MergeWithEmptyTableIsNoop) {
+  NetkatTable table;
+  ASSERT_OK(table.AddRule(/*priority=*/10, Match("port", 0), Modify("vrf", 1)));
+
+  NetkatTable empty_table;
+  ASSERT_OK_AND_ASSIGN(absl::StatusOr<NetkatTable> merged_table,
+                       NetkatTable::Merge(table, empty_table));
+  EXPECT_THAT(merged_table->GetPolicy().ToProto(),
+              EqualsProto(table.GetPolicy().ToProto()));
+
+  ASSERT_OK_AND_ASSIGN(merged_table, NetkatTable::Merge(empty_table, table));
+  ASSERT_THAT(merged_table, IsOk());
+  EXPECT_THAT(merged_table->GetPolicy().ToProto(),
+              EqualsProto(table.GetPolicy().ToProto()));
+}
+
+TEST(NetkatTable, MergeWithSameTableIsSemanticNoop) {
+  NetkatTable table;
+  ASSERT_OK(table.AddRule(/*priority=*/10, Match("port", 0), Modify("vrf", 1)));
+
+  ASSERT_OK_AND_ASSIGN(absl::StatusOr<NetkatTable> merged_table,
+                       NetkatTable::Merge(table, table));
+
+  AnalysisEngine engine;
+  EXPECT_TRUE(
+      engine.CheckEquivalent(merged_table->GetPolicy(), table.GetPolicy()));
+}
+
+TEST(NetkatTable, MergeWithCopiedTableIsEquivalentToMergeWithSameTable) {
+  NetkatTable table;
+  ASSERT_OK(table.AddRule(/*priority=*/10, Match("port", 0), Modify("vrf", 1)));
+  ASSERT_OK(table.AddRule(/*priority=*/11, Match("vlan", 0), Modify("vrf", 2)));
+  ASSERT_OK_AND_ASSIGN(absl::StatusOr<NetkatTable> merged_table,
+                       NetkatTable::Merge(table, table));
+
+  NetkatTable copy_assign_table = table;
+  ASSERT_OK_AND_ASSIGN(
+      absl::StatusOr<NetkatTable> copy_assign_merged_table,
+      NetkatTable::Merge(copy_assign_table, copy_assign_table));
+
+  NetkatTable copy_ctor_table(table);
+  ASSERT_OK_AND_ASSIGN(absl::StatusOr<NetkatTable> copy_ctor_merged_table,
+                       NetkatTable::Merge(copy_ctor_table, copy_ctor_table));
+
+  AnalysisEngine engine;
+  EXPECT_TRUE(engine.CheckEquivalent(merged_table->GetPolicy(),
+                                     copy_assign_merged_table->GetPolicy()));
+  EXPECT_TRUE(engine.CheckEquivalent(merged_table->GetPolicy(),
+                                     copy_ctor_merged_table->GetPolicy()));
+}
+
+TEST(NetkatTable, MergeWithDifferentTablesIsCorrect) {
+  NetkatTable table1;
+  ASSERT_OK(
+      table1.AddRule(/*priority=*/10, Match("port", 0), Modify("vrf", 1)));
+  ASSERT_OK(
+      table1.AddRule(/*priority=*/10, Match("port", 1), Modify("vrf", 2)));
+
+  NetkatTable table2;
+  ASSERT_OK(
+      table2.AddRule(/*priority=*/10, Match("port", 2), Modify("vrf", 3)));
+  ASSERT_OK(
+      table2.AddRule(/*priority=*/10, Match("port", 3), Modify("vrf", 4)));
+
+  ASSERT_OK_AND_ASSIGN(absl::StatusOr<NetkatTable> merged_table,
+                       NetkatTable::Merge(table1, table2));
+
+  netkat::Policy expected_policy =
+      Union(Sequence(Filter(Match("port", 0)), Modify("vrf", 1)),
+            Sequence(Filter(Match("port", 1)), Modify("vrf", 2)),
+            Sequence(Filter(Match("port", 2)), Modify("vrf", 3)),
+            Sequence(Filter(Match("port", 3)), Modify("vrf", 4)));
+  AnalysisEngine engine;
+  EXPECT_TRUE(
+      engine.CheckEquivalent(merged_table->GetPolicy(), expected_policy));
+
+  ASSERT_OK_AND_ASSIGN(merged_table, NetkatTable::Merge(table2, table1));
+  EXPECT_TRUE(
+      engine.CheckEquivalent(merged_table->GetPolicy(), expected_policy));
+}
+
+TEST(NetkatTable, MergeWithNonDeterminismIsError) {
+  NetkatTable table1;
+  ASSERT_OK(
+      table1.AddRule(/*priority=*/10, Match("port", 0), Modify("vrf", 1)));
+  NetkatTable table2;
+  ASSERT_OK(
+      table2.AddRule(/*priority=*/10, Match("vlan", 0), Modify("vrf", 2)));
+
+  EXPECT_THAT(NetkatTable::Merge(table1, table2),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("collides with existing rule")));
+  EXPECT_THAT(NetkatTable::Merge(table2, table1),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("collides with existing rule")));
 }
 
 }  // namespace
