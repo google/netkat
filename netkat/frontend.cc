@@ -126,6 +126,15 @@ absl::Status RecursivelyCheckIsValid(const PolicyProto& policy_proto) {
           RecursivelyCheckIsValid(policy_proto.iterate_op().iterable()))
           << "PolicyProto::Iterate::policy is invalid: ";
       return absl::OkStatus();
+    case PolicyProto::kPushOp:
+      RETURN_IF_ERROR(
+          RecursivelyCheckIsValid(policy_proto.push_op().predicate()))
+              .SetPrepend()
+          << "PolicyProto::PushOp::predicate is invalid: ";
+      RETURN_IF_ERROR(RecursivelyCheckIsValid(policy_proto.push_op().policy()))
+              .SetPrepend()
+          << "PolicyProto::PushOp::policy is invalid: ";
+      return absl::OkStatus();
     case PolicyProto::POLICY_NOT_SET:
       return absl::InvalidArgumentError("Unset Policy case is invalid");
   }
@@ -171,6 +180,11 @@ Policy Union(std::vector<Policy> policies) {
 
 Policy Iterate(Policy policy) {
   return Policy(IterateProto(std::move(policy).ToProto()));
+}
+
+Policy Push(Predicate predicate, Policy policy) {
+  return Policy(
+      PushProto(std::move(predicate).ToProto(), std::move(policy).ToProto()));
 }
 
 Policy Record() { return Policy(RecordProto()); }

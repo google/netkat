@@ -201,6 +201,7 @@ class Policy {
   friend Policy Sequence(std::vector<Policy>);
   friend Policy Union(std::vector<Policy>);
   friend Policy Iterate(Policy);
+  friend Policy Push(Predicate, Policy);
   friend Policy Record();
 
   // Policies that conceptually represent a program that should accept or
@@ -254,7 +255,7 @@ Policy Modify(absl::string_view field, int new_value);
 Policy Sequence(std::vector<Policy> policies);
 
 // Allows callers to Sequence policies without wrapping them in a list. Prefer
-// this overload when reasonble. For example, instead of
+// this overload when reasonable. For example, instead of
 //
 //   Sequence({p0, p1, p2, p3})
 //
@@ -314,6 +315,10 @@ Policy Union(T&&... policies) {
 //   Policy walk_topology_from_x =
 //        Sequence(Filter(Match("switch", X)), set_any_port, Iterate(topology));
 Policy Iterate(Policy policy);
+
+// Performs a push on some `field` in the NetKAT packet. This is not
+// required to be a label that yet exists and may even be an arbitrary label.
+Policy Push(Predicate predicate, Policy policy);
 
 // Records the packet into the packet history. Referred to as 'dup' in the
 // literature.

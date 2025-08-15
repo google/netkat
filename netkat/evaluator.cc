@@ -98,6 +98,11 @@ absl::flat_hash_set<Packet> Evaluate(const PolicyProto& policy,
       } while (last_size != result.size());
       return result;
     }
+    case PolicyProto::kPushOp: {
+      return Evaluate(
+          policy.push_op().policy(),
+          Evaluate(policy.push_op().predicate(), packet) ? packet : Packet());
+    }
     case PolicyProto::POLICY_NOT_SET:
       // Unset policy is treated as Deny.
       return {};
