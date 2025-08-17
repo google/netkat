@@ -22,11 +22,11 @@ namespace netkat {
 namespace {
 
 // Sanity fuzz test to show that the FuzzTest library works.
-void DummmyFuzzTest(PredicateProto pred, PolicyProto pol) {
+void DummyFuzzTest(PredicateProto pred, PolicyProto pol) {
   LOG_EVERY_N_SEC(INFO, 1) << "pred = " << pred;
   LOG_EVERY_N_SEC(INFO, 1) << "pol = " << pol;
 }
-FUZZ_TEST(NetkatProtoTest, DummmyFuzzTest);
+FUZZ_TEST(NetkatProtoTest, DummyFuzzTest);
 
 // Ensures that the protobuf C++ compiler does not add underscores to the
 // generated code for sub messages and oneof fields of `PredicateProto`.
@@ -102,6 +102,11 @@ TEST(NetkatProtoTest, PolicyOneOfFieldNamesDontRequireUnderscores) {
     case PolicyProto::kIterateOp: {
       const PolicyProto::Iterate& iter = policy.iterate_op();
       LOG(INFO) << "iterate: " << iter;
+      break;
+    }
+    case PolicyProto::kDifferenceOp: {
+      const PolicyProto::Difference& difference_op = policy.difference_op();
+      LOG(INFO) << "difference: " << difference_op;
       break;
     }
     case PolicyProto::POLICY_NOT_SET:

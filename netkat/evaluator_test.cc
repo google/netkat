@@ -260,6 +260,19 @@ void UnionCombines(Packet packet, PolicyProto left, PolicyProto right) {
 }
 FUZZ_TEST(EvaluatePolicyProtoTest, UnionCombines);
 
+void DifferenceRemoves(Packet packet, PolicyProto left, PolicyProto right) {
+  absl::flat_hash_set<Packet> expected_packets = Evaluate(left, packet);
+  for (const Packet& packet : Evaluate(right, packet)) {
+    if (expected_packets.contains(packet)) {
+      expected_packets.erase(packet);
+    }
+  }
+
+  EXPECT_THAT(Evaluate(DifferenceProto(left, right), packet),
+              ContainerEq(expected_packets));
+}
+FUZZ_TEST(EvaluatePolicyProtoTest, DifferenceRemoves);
+
 void SequenceSequences(Packet packet, PolicyProto left, PolicyProto right) {
   absl::flat_hash_set<Packet> expected_packets =
       Evaluate(right, Evaluate(left, packet));
