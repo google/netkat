@@ -127,6 +127,15 @@ void IterateProtoReturnsIterate(PolicyProto iterable) {
 }
 FUZZ_TEST(PolicyProtoTest, IterateProtoReturnsIterate);
 
+void PushProtoReturnsPush(PredicateProto predicate, PolicyProto pushable) {
+  PolicyProto expected_policy;
+  *expected_policy.mutable_push_op()->mutable_predicate() = predicate;
+  *expected_policy.mutable_push_op()->mutable_policy() = pushable;
+
+  EXPECT_THAT(PushProto(predicate, pushable), EqualsProto(expected_policy));
+}
+FUZZ_TEST(PolicyProtoTest, PushProtoReturnsPush);
+
 // -- Derived Policy tests -----------------------------------------------------
 
 TEST(PolicyProtoTest, DenyProtoFiltersOnFalse) {
