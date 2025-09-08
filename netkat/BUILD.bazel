@@ -359,3 +359,29 @@ cmd_diff_test(
     expected = ":packet_transformer_test.expected",
     tools = [":packet_transformer_test_runner"],
 )
+
+cc_library(
+    name = "switch",
+    srcs = ["switch.cc"],
+    hdrs = ["switch.h"],
+    deps = [
+        ":frontend",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+    ],
+)
+
+cc_test(
+    name = "switch_test",
+    srcs = ["switch_test.cc"],
+    deps = [
+        ":analysis_engine",
+        ":frontend",
+        ":switch",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_gutil//gutil:status_matchers",
+    ],
+)
