@@ -352,6 +352,9 @@ template <uint8_t BitWidth>
 struct TernaryField {
   std::bitset<BitWidth> value;
   std::bitset<BitWidth> mask;
+
+  friend auto operator<=>(TernaryField<BitWidth> lhs,
+                          TernaryField<BitWidth> rhs) = default;
 };
 
 // Matches a presumed ternary `field`. Only indices with `new_value.mask` set
