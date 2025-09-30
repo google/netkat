@@ -14,8 +14,14 @@
 
 #include "netkat/analysis_engine.h"
 
+#include <utility>
+
+#include "fuzztest/fuzztest.h"
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "gutil/status_matchers.h"  // IWYU pragma: keep
 #include "netkat/frontend.h"
+#include "netkat/gtest_utils.h"
 
 namespace netkat {
 namespace {
@@ -120,6 +126,68 @@ TEST(AnalysisEngineTest, TopologyTraversalIsAccepted) {
       Modify("switch", 42), Iterate(topology), Filter(Match("switch", 3)));
   EXPECT_TRUE(analyzer.CheckEquivalent(traverse_from_non_existing_switch,
                                        Policy::Deny()));
+}
+
+// TODO(anthonyroy): Consider fuzzing some of these tests. Doing so requires a
+// custom proto generator that will not generate predicates or policies with
+// "false" or "deny."
+TEST(AnalysisEngineTest, AcceptProgramForwardsAllNonDenyPackets) {
+  AnalysisEngine analyzer;
+  Predicate predicate = Match("foo", 1) && Match("bar", 1) || Match("baz", 2) ||
+                        Predicate::False();
+  EXPECT_TRUE(analyzer.ProgramForwardsAnyPacket(Policy::Accept(), predicate));
+  EXPECT_TRUE(analyzer.ProgramForwardsAllPackets(Policy::Accept(), predicate));
+  EXPECT_FALSE(analyzer.ProgramDropsAllPackets(Policy::Accept(), predicate));
+}
+
+void DenyPacketsAreAlwaysDropped(PredicateProto predicate_proto) {
+  AnalysisEngine analyzer;
+  ASSERT_OK_AND_ASSIGN(Predicate predicate,
+                       Predicate::FromProto(predicate_proto));
+  predicate = predicate && Predicate::False();
+  EXPECT_FALSE(analyzer.ProgramForwardsAnyPacket(Policy::Accept(), predicate));
+  EXPECT_FALSE(analyzer.ProgramForwardsAllPackets(Policy::Accept(), predicate));
+  EXPECT_TRUE(analyzer.ProgramDropsAllPackets(Policy::Accept(), predicate));
+}
+FUZZ_TEST(AnalysisEngineTest, DenyPacketsAreAlwaysDropped)
+    .WithDomains(netkat_test::ArbitraryValidPredicateProto());
+
+void DenyProgramProgramDropsAllPackets(PredicateProto predicate_proto) {
+  AnalysisEngine analyzer;
+  ASSERT_OK_AND_ASSIGN(Predicate predicate,
+                       Predicate::FromProto(std::move(predicate_proto)));
+  EXPECT_FALSE(analyzer.ProgramForwardsAnyPacket(Policy::Deny(), predicate));
+  EXPECT_FALSE(analyzer.ProgramForwardsAllPackets(Policy::Deny(), predicate));
+  EXPECT_TRUE(analyzer.ProgramDropsAllPackets(Policy::Deny(), predicate));
+}
+FUZZ_TEST(AnalysisEngineTest, DenyProgramProgramDropsAllPackets)
+    .WithDomains(netkat_test::ArbitraryValidPredicateProto());
+
+TEST(AnalysisEngineTest, PartialMatchingProgramForwardsSomePackets) {
+  AnalysisEngine analyzer;
+  Policy program = Filter(Match("foo", 1));
+  Predicate packet = Match("foo", 1) || Match("bar", 1);
+  EXPECT_TRUE(analyzer.ProgramForwardsAnyPacket(program, packet));
+  EXPECT_FALSE(analyzer.ProgramForwardsAllPackets(program, packet));
+  EXPECT_FALSE(analyzer.ProgramDropsAllPackets(program, packet));
+}
+
+TEST(AnalysisEngineTest, StrictSubsetOfProgramIsForwaded) {
+  AnalysisEngine analyzer;
+  Policy program = Filter(Match("foo", 1) || Match("foo", 2));
+  Predicate packet = Match("foo", 2);
+  EXPECT_TRUE(analyzer.ProgramForwardsAnyPacket(program, packet));
+  EXPECT_TRUE(analyzer.ProgramForwardsAllPackets(program, packet));
+  EXPECT_FALSE(analyzer.ProgramDropsAllPackets(program, packet));
+}
+
+TEST(AnalysisEngineTest, NonMatchingPacketIsNotForwarded) {
+  AnalysisEngine analyzer;
+  Policy program = Filter(Match("foo", 1) || Match("foo", 2));
+  Predicate packet = Match("foo", 3);
+  EXPECT_FALSE(analyzer.ProgramForwardsAnyPacket(program, packet));
+  EXPECT_FALSE(analyzer.ProgramForwardsAllPackets(program, packet));
+  EXPECT_TRUE(analyzer.ProgramDropsAllPackets(program, packet));
 }
 
 }  // namespace

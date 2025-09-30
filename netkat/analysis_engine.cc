@@ -15,6 +15,8 @@
 #include "netkat/analysis_engine.h"
 
 #include "netkat/frontend.h"
+#include "netkat/packet_set.h"
+#include "netkat/packet_transformer.h"
 
 namespace netkat {
 
@@ -27,6 +29,42 @@ bool AnalysisEngine::CheckEquivalent(const Predicate& left,
 bool AnalysisEngine::CheckEquivalent(const Policy& left, const Policy& right) {
   return packet_transformer_manager_.Compile(left.ToProto()) ==
          packet_transformer_manager_.Compile(right.ToProto());
+}
+
+bool AnalysisEngine::ProgramForwardsAnyPacket(const Policy& program,
+                                              const Predicate& packets) {
+  PacketTransformerHandle user_packet_handle =
+      packet_transformer_manager_.Filter(packets.ToProto());
+  PacketTransformerHandle program_handle =
+      packet_transformer_manager_.Compile(program.ToProto());
+  return packet_transformer_manager_.Sequence(user_packet_handle,
+                                              program_handle) !=
+         packet_transformer_manager_.Deny();
+}
+
+bool AnalysisEngine::ProgramForwardsAllPackets(const Policy& program,
+                                               const Predicate& packets) {
+  PacketSetManager& packet_set_manager =
+      packet_transformer_manager_.GetPacketSetManager();
+  PacketSetHandle user_packet_handle =
+      packet_set_manager.Compile(packets.ToProto());
+
+  // We exclude the empty set because it would always be a valid subset of any
+  // program. E.g. the empty set would be accepted by the Deny program.
+  if (user_packet_handle == packet_set_manager.EmptySet()) return false;
+
+  // TODO: b/446892191 - Consider adding and benchmarking an optimization for
+  // packet == True.
+
+  // To ensure all packets are accepted, we must ensure that the set of packets
+  // is under (or equal) to the set of packets that generate a non-zero output
+  // from `program`.
+  PacketTransformerHandle program_handle =
+      packet_transformer_manager_.Compile(program.ToProto());
+  PacketSetHandle program_inputs_handle = packet_transformer_manager_.Pull(
+      program_handle, packet_set_manager.FullSet());
+  return packet_set_manager.Or(program_inputs_handle, user_packet_handle) ==
+         program_inputs_handle;
 }
 
 }  // namespace netkat
