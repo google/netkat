@@ -78,6 +78,14 @@ class AnalysisEngine {
     return !ProgramForwardsAnyPacket(program, packets);
   }
 
+  // Returns whether the given `input_packets`, after being pushed through
+  // `program`, will produce an output equal to `output_packets`.
+  //
+  // Equivalent to: push(input_packet, program) == output_packet.
+  bool CheckInputProducesOutput(const Predicate& input_packets,
+                                const Policy& program,
+                                const Predicate& output_packets);
+
  private:
   PacketTransformerManager packet_transformer_manager_;
 };

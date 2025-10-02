@@ -56,15 +56,30 @@ bool AnalysisEngine::ProgramForwardsAllPackets(const Policy& program,
   // TODO: b/446892191 - Consider adding and benchmarking an optimization for
   // packet == True.
 
-  // To ensure all packets are accepted, we must ensure that the set of packets
-  // is under (or equal) to the set of packets that generate a non-zero output
-  // from `program`.
+  // To ensure all packets are accepted, we must ensure that the set of input
+  // packets are under (or equal to) the set of packets that generate a non-zero
+  // output from `program`.
   PacketTransformerHandle program_handle =
       packet_transformer_manager_.Compile(program.ToProto());
   PacketSetHandle program_inputs_handle = packet_transformer_manager_.Pull(
       program_handle, packet_set_manager.FullSet());
   return packet_set_manager.Or(program_inputs_handle, user_packet_handle) ==
          program_inputs_handle;
+}
+
+bool AnalysisEngine::CheckInputProducesOutput(const Predicate& input_packets,
+                                              const Policy& program,
+                                              const Predicate& output_packets) {
+  PacketSetManager& set_manager =
+      packet_transformer_manager_.GetPacketSetManager();
+  PacketSetHandle compiled_input = set_manager.Compile(input_packets.ToProto());
+  PacketSetHandle compiled_output =
+      set_manager.Compile(output_packets.ToProto());
+  PacketTransformerHandle compiled_program =
+      packet_transformer_manager_.Compile(program.ToProto());
+  PacketSetHandle program_output =
+      packet_transformer_manager_.Push(compiled_input, compiled_program);
+  return program_output == compiled_output;
 }
 
 }  // namespace netkat

@@ -190,5 +190,49 @@ TEST(AnalysisEngineTest, NonMatchingPacketIsNotForwarded) {
   EXPECT_TRUE(analyzer.ProgramDropsAllPackets(program, packet));
 }
 
+void DenyProgramAlwaysProducesNoOutput(PredicateProto predicate_proto) {
+  AnalysisEngine analyzer;
+  ASSERT_OK_AND_ASSIGN(Predicate input_packet,
+                       Predicate::FromProto(std::move(predicate_proto)));
+  EXPECT_TRUE(analyzer.CheckInputProducesOutput(
+      input_packet, /*program=*/Policy::Deny(),
+      /*output_packets=*/Predicate::False()));
+}
+FUZZ_TEST(AnalysisEngineTest, DenyProgramAlwaysProducesNoOutput)
+    .WithDomains(netkat_test::ArbitraryValidPredicateProto());
+
+TEST(AnalysisEngineTest, AcceptProgramReflectsInputPacket) {
+  AnalysisEngine analyzer;
+  EXPECT_TRUE(analyzer.CheckInputProducesOutput(
+      Match("foo", 1), Policy::Accept(), Match("foo", 1)));
+}
+
+TEST(AnalysisEngineTest, InputPacketNotAcceptedReturnsEmptySet) {
+  AnalysisEngine analyzer;
+  EXPECT_TRUE(analyzer.CheckInputProducesOutput(
+      Match("foo", 1), Filter(Match("foo", 2)), Predicate::False()));
+}
+
+TEST(AnalysisEngineTest, InputProducingLargerOutputReturnsFalse) {
+  AnalysisEngine analyzer;
+  EXPECT_FALSE(analyzer.CheckInputProducesOutput(
+      Match("foo", 1), Union(Modify("tag", 1), Modify("tag2", 1)),
+      Match("foo", 1) && Match("tag", 1)));
+}
+
+TEST(AnalysisEngineTest, InputProducingExactOutputReturnsTrue) {
+  AnalysisEngine analyzer;
+  EXPECT_TRUE(analyzer.CheckInputProducesOutput(
+      Match("foo", 1), Union(Modify("tag", 1), Modify("tag2", 1)),
+      Match("foo", 1) && (Match("tag", 1) || Match("tag2", 1))));
+}
+
+TEST(AnalysisEngineTest, InputProducingSmallerOutputReturnsFalse) {
+  AnalysisEngine analyzer;
+  EXPECT_FALSE(analyzer.CheckInputProducesOutput(
+      Match("foo", 1), Modify("tag", 1),
+      Match("foo", 1) && (Match("tag", 1) || Match("tag2", 1))));
+}
+
 }  // namespace
 }  // namespace netkat
