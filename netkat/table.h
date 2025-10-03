@@ -118,10 +118,10 @@ class NetkatTable {
   // be eventually merged such that higher priority rules are ordered first. See
   // `GetPolicy` for more information.
   //
-  // With the exception of the `Deny` policy, `action` must also not restrict
-  // packets further than `match` and should be used exclusively for
-  // modifications. I.e., `action` must have no `Predicate`s, except `False`,
-  // present in its policy.
+  // With the exception of the `Deny` or `Accept` policies, `action` must also
+  // not restrict packets further than `match` and should be used exclusively
+  // for modifications. I.e., `action` must have no `Predicate`s, except
+  // `False` or `True`, present in its policy.
   //
   // Finally, each rule must meet any and all configured `TableConstraint`s. If
   // a rule fails to meet any of the requirements above it will not be added and

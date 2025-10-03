@@ -141,10 +141,9 @@ INSTANTIATE_TEST_SUITE_P(DefaultTablePolicy, NetkatTableTest,
                          ::testing::Bool());
 
 void RuleWithFilterIsInvalid(PredicateProto predicate) {
-  if (predicate.has_bool_constant() &&
-      predicate.bool_constant().value() == false) {
-    // A False predicate is equivalent to drop, which is the only allowed
-    // filter in a rules policy.
+  if (predicate.has_bool_constant()) {
+    // False & True are allowed as False is equivalent to drop and True does not
+    // further filter the packet, since it is the identity.
     GTEST_SKIP();
   }
   ASSERT_OK_AND_ASSIGN(Predicate pred, Predicate::FromProto(predicate));

@@ -57,9 +57,8 @@ absl::Status VerifyActionHasNoPredicate(const Policy& action) {
         stack.push_back(&policy->sequence_op().right());
         break;
       case PolicyProto::PolicyCase::kFilter:
-        // Allow the Deny policy.
-        if (policy->filter().has_bool_constant() &&
-            policy->filter().bool_constant().value() == false) {
+        // Allow the Accept or Deny policy.
+        if (policy->filter().has_bool_constant()) {
           continue;
         }
         return absl::InvalidArgumentError(
