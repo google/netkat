@@ -153,6 +153,16 @@ class NetkatTable {
   Policy GetPolicy() const&;
   Policy GetPolicy() &&;
 
+  // Returns a predicate representing the union of all matches in the table.
+  // Note that this does not explicitly preserve the priority of the rules.
+  //
+  // For example, if the tables contains rule r1, r2, r3 at any arbitrary
+  // priority, then this will return: match(r1) || match(r2) || match(r3)
+  //
+  // Any predicate that does not fall under this would then be subject to the
+  // default policy of this table, e.g. Accept or Deny.
+  Predicate GetMatch() const;
+
   // Attempts to merge `rhs` into `lhs`. Returns an error if any rule in
   // `rhs` conflicts with any rule in `lhs`.
   //

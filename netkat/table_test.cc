@@ -288,5 +288,69 @@ TEST(NetkatTable, MergeWithNonDeterminismIsError) {
                        HasSubstr("collides with existing rule")));
 }
 
+TEST(NetkatTable, GetMatchOnEmptyTableIsFalse) {
+  NetkatTable table;
+  AnalysisEngine engine;
+  EXPECT_TRUE(engine.CheckEquivalent(table.GetMatch(), Predicate::False()));
+}
+
+// The match reflects the match given by the rules added, the "default" match is
+// explicitly outside of the set of matches added by the rules, therefore the
+// default match is not included in the match returned by GetMatch.
+TEST(NetkatTable, GetMatchOnEmptyTableWithDefaultAcceptIsFalse) {
+  NetkatTable table(/*constraints=*/{}, /*accept_default=*/true);
+  AnalysisEngine engine;
+  EXPECT_TRUE(engine.CheckEquivalent(table.GetMatch(), Predicate::False()));
+}
+
+TEST(NetkatTable, GetMatchReturnsRuleMatch) {
+  NetkatTable table;
+  ASSERT_OK(table.AddRule(/*priority=*/10, Match("port", 0), Modify("vrf", 1)));
+
+  AnalysisEngine engine;
+  EXPECT_TRUE(engine.CheckEquivalent(table.GetMatch(), Match("port", 0)));
+}
+
+TEST(NetkatTable, GetMatchOnTableThatMatchesAllReturnsTrue) {
+  NetkatTable table;
+  ASSERT_OK(
+      table.AddRule(/*priority=*/10, Predicate::True(), Modify("vrf", 0)));
+
+  AnalysisEngine engine;
+  EXPECT_TRUE(engine.CheckEquivalent(table.GetMatch(), Predicate::True()));
+}
+
+TEST(NetkatTable, GetMatchUnionsWithFalseMatchesCorrectly) {
+  NetkatTable table;
+  ASSERT_OK(table.AddRule(/*priority=*/10, Match("port", 0), Modify("vrf", 1)));
+  ASSERT_OK(
+      table.AddRule(/*priority=*/10, Predicate::False(), Modify("vrf", 2)));
+
+  AnalysisEngine engine;
+  EXPECT_TRUE(engine.CheckEquivalent(table.GetMatch(), Match("port", 0)));
+}
+
+TEST(NetkatTable, GetMatchReturnsAllMatchesAcrossAllPriorities) {
+  NetkatTable table;
+  ASSERT_OK(table.AddRule(/*priority=*/10, Match("port", 0), Modify("vrf", 1)));
+  ASSERT_OK(table.AddRule(/*priority=*/10, Match("port", 1), Modify("vrf", 2)));
+  ASSERT_OK(table.AddRule(/*priority=*/20, Match("smac", 1), Modify("vrf", 3)));
+  ASSERT_OK(table.AddRule(/*priority=*/30, Match("dmac", 1), Modify("vrf", 4)));
+
+  AnalysisEngine engine;
+  EXPECT_TRUE(engine.CheckEquivalent(table.GetMatch(),
+                                     Match("port", 0) || Match("port", 1) ||
+                                         Match("smac", 1) || Match("dmac", 1)));
+}
+
+// Even if an action of Deny is specified, the match should still reflect that
+// that predicate was expected to hit it.
+TEST(NetkatTable, GetMatchStillReturnsRegardlessOfAction) {
+  NetkatTable table;
+  ASSERT_OK(table.AddRule(/*priority=*/10, Match("port", 0), Policy::Deny()));
+  AnalysisEngine engine;
+  EXPECT_TRUE(engine.CheckEquivalent(table.GetMatch(), Match("port", 0)));
+}
+
 }  // namespace
 }  // namespace netkat

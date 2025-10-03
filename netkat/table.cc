@@ -212,6 +212,14 @@ Policy NetkatTable::GetPolicy() && {
                            accept_default_ ? Policy::Accept() : Policy::Deny());
 }
 
+Predicate NetkatTable::GetMatch() const {
+  Predicate total_match = Predicate::False();
+  for (const auto& [priority, match_action] : rules_) {
+    total_match = std::move(total_match) || match_action.first;
+  }
+  return total_match;
+}
+
 absl::StatusOr<NetkatTable> NetkatTable::Merge(NetkatTable lhs,
                                                NetkatTable rhs) {
   for (const auto& [priority, rules] : rhs.raw_rules_) {
