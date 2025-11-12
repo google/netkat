@@ -39,6 +39,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -363,6 +364,30 @@ class PacketTransformerManager {
   static_assert(sizeof(DecisionNode) == 64);
   static_assert(alignof(DecisionNode) == 8);
 
+  // A key for efficiently hashing a `PolicyProto` to a
+  // `PacketTransformerHandle`. This works as a recursive hash, such that we
+  // only internally compile unique messages exactly once.
+  struct ProtoHashKey {
+    // The `PolicyProto` oneof case.
+    int policy_case;
+
+    // The left child, if `policy_case` is a operation. In the case
+    // `policy_case` is unary, e.g. Iterate, this will be the child.
+    PacketTransformerHandle lhs_child;
+
+    // The right child, if `policy_case` is a operation. In the case
+    // `policy_case` is unary, e.g. Iterate, this will be defaulted.
+    PacketTransformerHandle rhs_child;
+
+    friend auto operator<=>(const ProtoHashKey& a,
+                            const ProtoHashKey& b) = default;
+
+    template <typename H>
+    friend H AbslHashValue(H h, const ProtoHashKey& key) {
+      return H::combine(std::move(h), key.lhs_child, key.rhs_child);
+    }
+  };
+
   PacketTransformerHandle NodeToTransformer(DecisionNode&& node);
 
   // Returns the `DecisionNode` corresponding to the given
@@ -405,6 +430,14 @@ class PacketTransformerManager {
   // INVARIANT: `transformer_by_node_[n] = s` iff `nodes_[s.node_index_] == n`.
   absl::flat_hash_map<DecisionNode, PacketTransformerHandle>
       transformer_by_node_;
+
+  // A map of a given `PolicyProto` to a `PacketTransformerHandle`.
+  //
+  // This reflects a hash-consing of the proto to the already hash-consed
+  // handle. This allows `Compile` to quickly deduce if a policy is new or
+  // already exists.
+  absl::flat_hash_map<ProtoHashKey, PacketTransformerHandle>
+      transformer_by_hash_;
 
   // INVARIANT: All `DecisionNode` fields are interned by this manager's
   // PacketFieldManager.

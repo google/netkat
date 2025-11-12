@@ -297,6 +297,31 @@ class PacketSetManager {
     }
   };
 
+  // A key for efficiently hashing a `PredicateProto` to a `PacketSetHandle`.
+  // This works as a recursive hash, such that we only internally compile unique
+  // messages exactly once.
+  struct ProtoHashKey {
+    // The `PredicateProto` oneof case.
+    int predicate_case;
+
+    // The left child, if `predicate_case` is an operation. In the case
+    // `predicate_case` is unary, e.g. Not, this will be the child.
+    PacketSetHandle lhs_child;
+
+    // The right child, if `predicate_case` is an operation. In the case
+    // `predicate_case` is unary, e.g. Not, this will be defaulted.
+    PacketSetHandle rhs_child;
+
+    friend auto operator<=>(const ProtoHashKey& a,
+                            const ProtoHashKey& b) = default;
+
+    template <typename H>
+    friend H AbslHashValue(H h, const ProtoHashKey& key) {
+      return H::combine(std::move(h), key.predicate_case, key.lhs_child,
+                        key.rhs_child);
+    }
+  };
+
   // Protect against regressions in memory layout, as it affects performance.
   static_assert(sizeof(DecisionNode) == 24);
   static_assert(alignof(DecisionNode) == 8);
@@ -336,6 +361,13 @@ class PacketSetManager {
   //
   // INVARIANT: `packet_by_node_[n] = s` iff `nodes_[s.node_index_] == n`.
   absl::flat_hash_map<DecisionNode, PacketSetHandle> packet_by_node_;
+
+  // A map of a given `PredicateProto` to a `PacketSetHandle`.
+  //
+  // This reflects a hash-consing of the proto to the already hash-consed
+  // handle. This allows `Compile` to quickly deduce if a policy is new or
+  // already exists.
+  absl::flat_hash_map<ProtoHashKey, PacketSetHandle> packet_set_by_hash_;
 
   // INVARIANT: All `DecisionNode` fields are interned by this manager.
   PacketFieldManager field_manager_;

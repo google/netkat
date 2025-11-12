@@ -272,26 +272,42 @@ absl::flat_hash_set<Packet> PacketTransformerManager::Run(
 
 PacketTransformerHandle PacketTransformerManager::Compile(
     const PolicyProto& policy) {
+  ProtoHashKey key = {.policy_case = policy.policy_case()};
   switch (policy.policy_case()) {
     case PolicyProto::kFilter:
       return Filter(policy.filter());
-    case PolicyProto::kModification:
+    case PolicyProto::kModification: {
       return Modification(policy.modification().field(),
                           policy.modification().value());
-    case PolicyProto::kRecord:
+    }
+    case PolicyProto::kRecord: {
       return Accept();
-    case PolicyProto::kSequenceOp:
-      return Sequence(Compile(policy.sequence_op().left()),
-                      Compile(policy.sequence_op().right()));
-    case PolicyProto::kUnionOp:
-      return Union(Compile(policy.union_op().left()),
-                   Compile(policy.union_op().right()));
-    case PolicyProto::kIterateOp:
-      return Iterate(Compile(policy.iterate_op().iterable()));
-    case PolicyProto::POLICY_NOT_SET:
-      // By convention, uninitialized policies must be treated like the Deny
-      // policy.
+    }
+    case PolicyProto::kSequenceOp: {
+      key.lhs_child = Compile(policy.sequence_op().left());
+      key.rhs_child = Compile(policy.sequence_op().right());
+      auto it = transformer_by_hash_.find(key);
+      if (it != transformer_by_hash_.end()) return it->second;
+      return transformer_by_hash_[key] = Sequence(key.lhs_child, key.rhs_child);
+    }
+    case PolicyProto::kUnionOp: {
+      key.lhs_child = Compile(policy.union_op().left());
+      key.rhs_child = Compile(policy.union_op().right());
+      auto it = transformer_by_hash_.find(key);
+      if (it != transformer_by_hash_.end()) return it->second;
+      return transformer_by_hash_[key] = Union(key.lhs_child, key.rhs_child);
+    }
+    case PolicyProto::kIterateOp: {
+      key.lhs_child = Compile(policy.iterate_op().iterable());
+      auto it = transformer_by_hash_.find(key);
+      if (it != transformer_by_hash_.end()) return it->second;
+      return transformer_by_hash_[key] = Iterate(key.lhs_child);
+    }
+    // By convention, uninitialized policies must be treated like the Deny
+    // policy.
+    case PolicyProto::POLICY_NOT_SET: {
       return Deny();
+    }
   }
   LOG(DFATAL) << "Unhandled policy kind: " << policy.policy_case();
   return Deny();

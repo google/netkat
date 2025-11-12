@@ -192,22 +192,45 @@ std::string PacketSetManager::ToDot(PacketSetHandle packet_set) const {
 }
 
 PacketSetHandle PacketSetManager::Compile(const PredicateProto& pred) {
+  ProtoHashKey key = {.predicate_case = pred.predicate_case()};
   switch (pred.predicate_case()) {
-    case PredicateProto::kBoolConstant:
+    case PredicateProto::kBoolConstant: {
       return pred.bool_constant().value() ? FullSet() : EmptySet();
-    case PredicateProto::kMatch:
+    }
+    case PredicateProto::kMatch: {
       return Match(pred.match().field(), pred.match().value());
-    case PredicateProto::kAndOp:
-      return And(Compile(pred.and_op().left()), Compile(pred.and_op().right()));
-    case PredicateProto::kOrOp:
-      return Or(Compile(pred.or_op().left()), Compile(pred.or_op().right()));
-    case PredicateProto::kNotOp:
-      return Not(Compile(pred.not_op().negand()));
-    case PredicateProto::kXorOp:
-      return Xor(Compile(pred.xor_op().left()), Compile(pred.xor_op().right()));
+    }
+    case PredicateProto::kAndOp: {
+      key.lhs_child = Compile(pred.and_op().left());
+      key.rhs_child = Compile(pred.and_op().right());
+      auto it = packet_set_by_hash_.find(key);
+      if (it != packet_set_by_hash_.end()) return it->second;
+      return packet_set_by_hash_[key] = And(key.lhs_child, key.rhs_child);
+    }
+    case PredicateProto::kOrOp: {
+      key.lhs_child = Compile(pred.or_op().left());
+      key.rhs_child = Compile(pred.or_op().right());
+      auto it = packet_set_by_hash_.find(key);
+      if (it != packet_set_by_hash_.end()) return it->second;
+      return packet_set_by_hash_[key] = Or(key.lhs_child, key.rhs_child);
+    }
+    case PredicateProto::kNotOp: {
+      key.lhs_child = Compile(pred.not_op().negand());
+      auto it = packet_set_by_hash_.find(key);
+      if (it != packet_set_by_hash_.end()) return it->second;
+      return packet_set_by_hash_[key] = Not(key.lhs_child);
+    }
+    case PredicateProto::kXorOp: {
+      key.lhs_child = Compile(pred.xor_op().left());
+      key.rhs_child = Compile(pred.xor_op().right());
+      auto it = packet_set_by_hash_.find(key);
+      if (it != packet_set_by_hash_.end()) return it->second;
+      return packet_set_by_hash_[key] = Xor(key.lhs_child, key.rhs_child);
+    }
     // By convention, uninitialized predicates must be treated like `false`.
-    case PredicateProto::PREDICATE_NOT_SET:
+    case PredicateProto::PREDICATE_NOT_SET: {
       return EmptySet();
+    }
   }
   LOG(FATAL) << "Unhandled predicate kind: " << pred.predicate_case();
 }
