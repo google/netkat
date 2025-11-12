@@ -1,5 +1,6 @@
 
 
+
 load("@com_google_gutil//gutil:diff_test.bzl", "cmd_diff_test")
 
 
@@ -156,6 +157,19 @@ cc_test(
         "@com_google_googletest//:gtest_main",
         "@com_google_gutil//gutil:status_matchers",
         "@com_googlesource_code_re2//:re2",
+    ],
+)
+
+cc_binary(
+    name = "packet_set_benchmark",
+    testonly = True,
+    srcs = ["packet_set_benchmark.cc"],
+    deps = [
+        ":netkat_cc_proto",
+        ":netkat_proto_constructors",
+        ":packet_set",
+        "@com_google_absl//absl/strings",
+        "@com_google_benchmark//:benchmark_main",
     ],
 )
 
@@ -343,6 +357,19 @@ cc_test(
         "@com_google_googletest//:gtest_main",
         "@com_google_gutil//gutil:status_matchers",
         "@com_googlesource_code_re2//:re2",
+    ],
+)
+
+cc_binary(
+    name = "packet_transformer_benchmark",
+    testonly = True,
+    srcs = ["packet_transformer_benchmark.cc"],
+    deps = [
+        ":netkat_cc_proto",
+        ":netkat_proto_constructors",
+        ":packet_transformer",
+        "@com_google_absl//absl/strings",
+        "@com_google_benchmark//:benchmark_main",
     ],
 )
 

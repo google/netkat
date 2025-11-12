@@ -30,3 +30,4 @@ bazel_dep(name = "re2", version = "2024-07-02.bcr.1", repo_name = "com_googlesou
 bazel_dep(name = "rules_license", version = "1.0.0", dev_dependency = True)
 bazel_dep(name = "googletest", version = "1.15.2", dev_dependency = True, repo_name = "com_google_googletest")
 bazel_dep(name = "fuzztest", version = "20241028.0", dev_dependency = True, repo_name = "com_google_fuzztest")
+bazel_dep(name = "google_benchmark", version = "1.9.4", dev_dependency = True, repo_name = "com_google_benchmark")
