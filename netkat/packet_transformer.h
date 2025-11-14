@@ -253,7 +253,7 @@ class PacketTransformerManager {
   // Returns the transformer that describes the packets produced by the `left`
   // transformer, but not the `right` transformer.
   PacketTransformerHandle Difference(PacketTransformerHandle left,
-                                     PacketTransformerHandle right) = delete;
+                                     PacketTransformerHandle right);
 
   // Returns the transformer that describes the packets produced by the `left`
   // transformer or the `right` transformer, but not both.
@@ -410,6 +410,7 @@ class PacketTransformerManager {
   // copies of the nodes?
   PacketTransformerHandle Union(DecisionNode left, DecisionNode right);
   PacketTransformerHandle Sequence(DecisionNode left, DecisionNode right);
+  PacketTransformerHandle Difference(DecisionNode left, DecisionNode right);
 
   // Internal helper function to get a map of possible modification values to
   // branches for a given input value at `node`.

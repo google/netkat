@@ -52,6 +52,10 @@ absl::Status VerifyActionHasNoPredicate(const Policy& action) {
         stack.push_back(&policy->union_op().left());
         stack.push_back(&policy->union_op().right());
         break;
+      case PolicyProto::PolicyCase::kDifferenceOp:
+        stack.push_back(&policy->difference_op().left());
+        stack.push_back(&policy->difference_op().right());
+        break;
       case PolicyProto::PolicyCase::kSequenceOp:
         stack.push_back(&policy->sequence_op().left());
         stack.push_back(&policy->sequence_op().right());

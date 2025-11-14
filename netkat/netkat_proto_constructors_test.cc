@@ -127,6 +127,15 @@ void IterateProtoReturnsIterate(PolicyProto iterable) {
 }
 FUZZ_TEST(PolicyProtoTest, IterateProtoReturnsIterate);
 
+void DifferenceProtoReturnsDifference(PolicyProto left, PolicyProto right) {
+  PolicyProto expected_policy;
+  *expected_policy.mutable_difference_op()->mutable_left() = left;
+  *expected_policy.mutable_difference_op()->mutable_right() = right;
+
+  EXPECT_THAT(DifferenceProto(left, right), EqualsProto(expected_policy));
+}
+FUZZ_TEST(PolicyProtoTest, DifferenceProtoReturnsDifference);
+
 // -- Derived Policy tests -----------------------------------------------------
 
 TEST(PolicyProtoTest, DenyProtoFiltersOnFalse) {

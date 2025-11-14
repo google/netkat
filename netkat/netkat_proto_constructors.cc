@@ -113,6 +113,13 @@ PolicyProto IterateProto(PolicyProto iterable) {
   return policy;
 }
 
+PolicyProto DifferenceProto(PolicyProto left, PolicyProto right) {
+  PolicyProto policy;
+  *policy.mutable_difference_op()->mutable_left() = std::move(left);
+  *policy.mutable_difference_op()->mutable_right() = std::move(right);
+  return policy;
+}
+
 // -- Derived Policy constructors ----------------------------------------------
 
 PolicyProto DenyProto() { return FilterProto(FalseProto()); }
@@ -165,6 +172,10 @@ std::string AsShorthandString(PolicyProto policy) {
     case PolicyProto::kIterateOp:
       return absl::StrFormat("(%s)*",
                              AsShorthandString(policy.iterate_op().iterable()));
+    case PolicyProto::kDifferenceOp:
+      return absl::StrFormat("(%s - %s)",
+                             AsShorthandString(policy.difference_op().left()),
+                             AsShorthandString(policy.difference_op().right()));
     case PolicyProto::POLICY_NOT_SET:
       return "deny";
   }

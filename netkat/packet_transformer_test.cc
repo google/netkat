@@ -179,6 +179,13 @@ void IterateCompilesToIterate(PolicyProto iterable) {
 }
 FUZZ_TEST(PacketTransformerManagerTest, IterateCompilesToIterate);
 
+void DifferenceCompilesToDifference(PolicyProto left, PolicyProto right) {
+  EXPECT_EQ(
+      Manager().Compile(DifferenceProto(left, right)),
+      Manager().Difference(Manager().Compile(left), Manager().Compile(right)));
+}
+FUZZ_TEST(PacketTransformerManagerTest, DifferenceCompilesToDifference);
+
 /*--- Kleene algebra axioms and equivalences ---------------------------------*/
 
 void UnionIsAssociative(PolicyProto a, PolicyProto b, PolicyProto c) {
@@ -272,6 +279,39 @@ void IterateIsLeastFixedPoint(PolicyProto p, PolicyProto q, PolicyProto r) {
   }
 }
 FUZZ_TEST(PacketTransformerManagerTest, IterateIsLeastFixedPoint);
+
+void DifferenceOfPolicyAndDenyIsIdentity(PolicyProto policy) {
+  EXPECT_EQ(Manager().Compile(DifferenceProto(policy, DenyProto())),
+            Manager().Compile(policy));
+}
+FUZZ_TEST(PacketTransformerManagerTest, DifferenceOfPolicyAndDenyIsIdentity);
+
+void DifferenceOfDenyAndPolicyIsAlwaysDeny(PolicyProto policy) {
+  EXPECT_EQ(Manager().Compile(DifferenceProto(DenyProto(), policy)),
+            Manager().Compile(DenyProto()));
+}
+FUZZ_TEST(PacketTransformerManagerTest, DifferenceOfDenyAndPolicyIsAlwaysDeny);
+
+void DifferenceOfPolicyAndSelfIsAlwaysDeny(PolicyProto policy) {
+  EXPECT_EQ(Manager().Compile(DifferenceProto(policy, policy)),
+            Manager().Deny());
+}
+FUZZ_TEST(PacketTransformerManagerTest, DifferenceOfPolicyAndSelfIsAlwaysDeny);
+
+void DifferenceIsRightDistributiveForUnion(PolicyProto a, PolicyProto b,
+                                           PolicyProto c) {
+  EXPECT_EQ(Manager().Compile(DifferenceProto(UnionProto(a, b), c)),
+            Manager().Compile(
+                UnionProto(DifferenceProto(a, c), DifferenceProto(b, c))));
+}
+FUZZ_TEST(PacketTransformerManagerTest, DifferenceIsRightDistributiveForUnion);
+
+void DifferenceOfPolicyIsSubsetOfSelf(PolicyProto a, PolicyProto b) {
+  // (A - B is a subset of A) <==> A + (A - B) == A).
+  EXPECT_EQ(Manager().Compile(UnionProto(a, DifferenceProto(a, b))),
+            Manager().Compile(a));
+}
+FUZZ_TEST(PacketTransformerManagerTest, DifferenceOfPolicyIsSubsetOfSelf);
 
 /*--- Tests with concrete protos ---------------------------------------------*/
 
@@ -503,6 +543,35 @@ TEST(PacketTransformerManagerTest, SimpleSequenceAndUnionRunTest2) {
   EXPECT_TRUE(Manager().IsDeny(sequenced_transformer4))
       << "sequenced_transformer4:\n"
       << Manager().ToString(sequenced_transformer4);
+}
+
+TEST(PacketTransformerManagerTest,
+     DifferenceBetweenTwoOrthogonalModifiesIsCorrect) {
+  PacketTransformerHandle modify_f_42 = Manager().Modification("f", 42);
+  PacketTransformerHandle modify_g_26 = Manager().Modification("g", 26);
+  PacketTransformerHandle diff_transformer =
+      Manager().Difference(modify_f_42, modify_g_26);
+
+  Packet packet_without_fields;
+  Packet packet_f42 = {{"f", 42}};
+  EXPECT_THAT(Manager().Run(diff_transformer, packet_without_fields),
+              UnorderedElementsAre(packet_f42));
+  EXPECT_THAT(Manager().Run(diff_transformer, packet_f42),
+              UnorderedElementsAre(packet_f42));
+
+  Packet packet_g26 = {{"g", 26}};
+  Packet packet_f42_g26 = {{"f", 42}, {"g", 26}};
+  EXPECT_THAT(Manager().Run(diff_transformer, packet_g26),
+              UnorderedElementsAre(packet_f42_g26));
+  EXPECT_THAT(Manager().Run(diff_transformer, packet_f42_g26), IsEmpty());
+
+  Packet packet_f24_g26 = {{"f", 24}, {"g", 26}};
+  EXPECT_THAT(Manager().Run(diff_transformer, packet_f24_g26),
+              UnorderedElementsAre(packet_f42_g26));
+
+  Packet packet_f42_g62 = {{"f", 42}, {"g", 62}};
+  EXPECT_THAT(Manager().Run(diff_transformer, packet_f42_g62),
+              UnorderedElementsAre(packet_f42_g62));
 }
 
 TEST(PacketTransformerManagerTest, PushThroughModifyIsCorrect) {

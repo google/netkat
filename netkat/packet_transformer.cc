@@ -303,6 +303,14 @@ PacketTransformerHandle PacketTransformerManager::Compile(
       if (it != transformer_by_hash_.end()) return it->second;
       return transformer_by_hash_[key] = Iterate(key.lhs_child);
     }
+    case PolicyProto::kDifferenceOp: {
+      key.lhs_child = Compile(policy.difference_op().left());
+      key.rhs_child = Compile(policy.difference_op().right());
+      auto it = transformer_by_hash_.find(key);
+      if (it != transformer_by_hash_.end()) return it->second;
+      return transformer_by_hash_[key] =
+                 Difference(key.lhs_child, key.rhs_child);
+    }
     // By convention, uninitialized policies must be treated like the Deny
     // policy.
     case PolicyProto::POLICY_NOT_SET: {
@@ -406,8 +414,8 @@ PacketTransformerHandle PacketTransformerManager::Sequence(DecisionNode left,
         std::move(right));
   }
 
-  // left.field < right.field: Expand the right node, reducing to the inductive
-  // case.
+  // left.field < right.field: Expand the right node, reducing to the
+  // inductive case.
   if (left.field < right.field) {
     PacketFieldHandle first_field = left.field;
     return Sequence(std::move(left),
@@ -424,8 +432,8 @@ PacketTransformerHandle PacketTransformerManager::Sequence(DecisionNode left,
       .default_branch = Sequence(left.default_branch, right.default_branch),
   };
 
-  // Construct the possible results of applying the right node to packets gotten
-  // by taken default modification branches in the left node.
+  // Construct the possible results of applying the right node to packets
+  // gotten by taken default modification branches in the left node.
   absl::btree_map<int, PacketTransformerHandle>
       right_applied_to_left_modifications;
   for (const auto& [value, branch] :
@@ -495,9 +503,9 @@ PacketTransformerHandle PacketTransformerManager::Sequence(DecisionNode left,
   for (int value : all_possible_values) {
     auto left_map_at_value = GetMapAtValue(left, value);
     // An empty map is equivalent to a map with a single entry of
-    // <value, Deny>, but the latter is not always canonical. However, an empty
-    // map won't work correctly for the merges below (an in fact, the whole
-    // for-loop would be skipped), so we expand it here if necessary.
+    // <value, Deny>, but the latter is not always canonical. However, an
+    // empty map won't work correctly for the merges below (an in fact, the
+    // whole for-loop would be skipped), so we expand it here if necessary.
     if (left_map_at_value.empty()) left_map_at_value[value] = Deny();
 
     for (const auto& [left_value, left_spp] : left_map_at_value) {
@@ -547,8 +555,8 @@ PacketTransformerHandle PacketTransformerManager::Union(DecisionNode left,
         std::move(right));
   }
 
-  // left.field < right.field: Expand the right node, reducing to the inductive
-  // case.
+  // left.field < right.field: Expand the right node, reducing to the
+  // inductive case.
   if (left.field < right.field) {
     PacketFieldHandle first_field = left.field;
     return Union(std::move(left),
@@ -639,6 +647,115 @@ PacketTransformerHandle PacketTransformerManager::Union(
   return Union(GetNodeOrDie(left), GetNodeOrDie(right));
 }
 
+PacketTransformerHandle PacketTransformerManager::Difference(
+    DecisionNode left, DecisionNode right) {
+  // left.field > right.field: Expand the left node, reducing to the inductive
+  // case.
+  if (left.field > right.field) {
+    PacketFieldHandle first_field = right.field;
+    return Difference(
+        DecisionNode{
+            .field = first_field,
+            .default_branch = NodeToTransformer(std::move(left)),
+        },
+        std::move(right));
+  }
+
+  // left.field < right.field: Expand the right node, reducing to the
+  // inductive case.
+  if (left.field < right.field) {
+    PacketFieldHandle first_field = left.field;
+    return Difference(std::move(left),
+                      DecisionNode{
+                          .field = first_field,
+                          .default_branch = NodeToTransformer(std::move(right)),
+                      });
+  }
+
+  // left.field == right.field: branch on shared field.
+  DCHECK(left.field == right.field);
+  DecisionNode result_node{
+      .field = left.field,
+      .default_branch_by_field_modification = CombineModifyBranches(
+          left.default_branch_by_field_modification,
+          right.default_branch_by_field_modification,
+          /*combiner=*/
+          [this](PacketTransformerHandle left, PacketTransformerHandle right) {
+            return Difference(left, right);
+          },
+          /*default_value=*/Deny()),
+      .default_branch = Difference(left.default_branch, right.default_branch),
+  };
+
+  // Collect every value in mapped in each node.
+  absl::flat_hash_set<int> all_possible_values;
+  all_possible_values.reserve(
+      left.modify_branch_by_field_match.size() +
+      right.modify_branch_by_field_match.size() +
+      left.default_branch_by_field_modification.size() +
+      right.default_branch_by_field_modification.size());
+
+  absl::c_transform(
+      left.modify_branch_by_field_match,
+      std::inserter(all_possible_values, all_possible_values.end()),
+      [](auto pair) { return pair.first; });
+  absl::c_transform(
+      right.modify_branch_by_field_match,
+      std::inserter(all_possible_values, all_possible_values.end()),
+      [](auto pair) { return pair.first; });
+  absl::c_transform(
+      left.default_branch_by_field_modification,
+      std::inserter(all_possible_values, all_possible_values.end()),
+      [](auto pair) { return pair.first; });
+  absl::c_transform(
+      right.default_branch_by_field_modification,
+      std::inserter(all_possible_values, all_possible_values.end()),
+      [](auto pair) { return pair.first; });
+
+  // For every value in mapped in each node, construct the proper new branch.
+  for (int value : all_possible_values) {
+    result_node.modify_branch_by_field_match[value] = CombineModifyBranches(
+        GetMapAtValue(left, value), GetMapAtValue(right, value),
+        /*combiner=*/
+        [this](PacketTransformerHandle left, PacketTransformerHandle right) {
+          return Difference(left, right);
+        },
+        /*default_value=*/Deny());
+  }
+
+  return NodeToTransformer(std::move(result_node));
+}
+
+PacketTransformerHandle PacketTransformerManager::Difference(
+    PacketTransformerHandle left, PacketTransformerHandle right) {
+  // Base cases.
+  if (left == right) return Deny();
+  if (IsDeny(left)) return Deny();
+  if (IsDeny(right)) return left;
+
+  // If either node is accept, then expand it before merging.
+  if (IsAccept(left)) {
+    const DecisionNode& right_node = GetNodeOrDie(right);
+    return Difference(
+        DecisionNode{
+            .field = right_node.field,
+            .default_branch = Accept(),
+        },
+        right_node);
+  }
+
+  if (IsAccept(right)) {
+    const DecisionNode& left_node = GetNodeOrDie(left);
+    return Difference(left_node, DecisionNode{
+                                     .field = left_node.field,
+                                     .default_branch = Accept(),
+                                 });
+  }
+
+  // If neither node is accept or deny, then difference the nodes directly.
+  return Difference(GetNodeOrDie(left), GetNodeOrDie(right));
+}
+
 PacketTransformerHandle PacketTransformerManager::Iterate(
     PacketTransformerHandle iterable) {
   PacketTransformerHandle previous_approximation = Accept();
@@ -667,8 +784,8 @@ PacketSetHandle PacketTransformerManager::GetAllPossibleOutputPackets(
   };
 
   // Case 1: Output packets that hit the default branch and got modified.
-  // Implements the `b_A` in the `fwd` function in section C.3 Push and Pull in
-  // KATch: A Fast Symbolic Verifier for NetKAT.
+  // Implements the `b_A` in the `fwd` function in section C.3 Push and Pull
+  // in KATch: A Fast Symbolic Verifier for NetKAT.
   for (const auto& [modify_value, branch] :
        node.default_branch_by_field_modification) {
     add_to_output_by_field_value(modify_value,
@@ -676,8 +793,8 @@ PacketSetHandle PacketTransformerManager::GetAllPossibleOutputPackets(
   }
 
   // Case 2: Output packets that hit an explicit branch and got modified.
-  // Implements the `b_B` in the `fwd` function in section C.3 Push and Pull in
-  // KATch: A Fast Symbolic Verifier for NetKAT.
+  // Implements the `b_B` in the `fwd` function in section C.3 Push and Pull
+  // in KATch: A Fast Symbolic Verifier for NetKAT.
   absl::flat_hash_set<int> branch_modify_values;
   for (const auto& [match_value, branch_by_modify] :
        node.modify_branch_by_field_match) {
@@ -690,8 +807,8 @@ PacketSetHandle PacketTransformerManager::GetAllPossibleOutputPackets(
 
   // Case 3: Output packets that does not match on a branch and does not get
   // modified.
-  //  Implements the `b_C` in the `fwd` function in section C.3 Push and Pull in
-  //  KATch: A Fast Symbolic Verifier for NetKAT.
+  //  Implements the `b_C` in the `fwd` function in section C.3 Push and Pull
+  //  in KATch: A Fast Symbolic Verifier for NetKAT.
   for (int modify_value : branch_modify_values) {
     if (!node.modify_branch_by_field_match.contains(modify_value) &&
         !node.default_branch_by_field_modification.contains(modify_value)) {
@@ -699,10 +816,9 @@ PacketSetHandle PacketTransformerManager::GetAllPossibleOutputPackets(
     }
   }
 
-  // Case 4: Output packets that got matched on an explicit branch, but did not
-  // get modified.
-  // Implements the `b_D` in the `fwd` function in section C.3
-  // Push and Pull in KATch: A Fast Symbolic Verifier for NetKAT.
+  // Case 4: Output packets that got matched on an explicit branch, but did
+  // not get modified. Implements the `b_D` in the `fwd` function in section
+  // C.3 Push and Pull in KATch: A Fast Symbolic Verifier for NetKAT.
   for (auto& [match_value, unused] : node.modify_branch_by_field_match) {
     if (!branch_modify_values.contains(match_value)) {
       add_to_output_by_field_value(match_value, PacketSetManager().EmptySet());
@@ -717,8 +833,8 @@ PacketSetHandle PacketTransformerManager::GetAllPossibleOutputPackets(
       output_by_field_value_list(num_branches);
   int i = 0;
   for (const auto& [value, branch] : output_by_field_value) {
-    // Skips `default_branch` because an invariant of `DecisionNode` is that no
-    // branch in `branch_by_field_value` can be a duplicate of the default
+    // Skips `default_branch` because an invariant of `DecisionNode` is that
+    // no branch in `branch_by_field_value` can be a duplicate of the default
     // branch.
     if (branch == default_output) continue;
     output_by_field_value_list[i++] = std::make_pair(value, branch);
@@ -763,8 +879,8 @@ PacketTransformerManager::GetAllInputPacketsThatProduceAnyOutput(
   }
 
   // Case 2: Input packets that hit an explicit branch and got modified.
-  // Implements the `b_A` in the `bwd` function in section C.3 Push and Pull in
-  // KATch: A Fast Symbolic Verifier for NetKAT.
+  // Implements the `b_A` in the `bwd` function in section C.3 Push and Pull
+  // in KATch: A Fast Symbolic Verifier for NetKAT.
   absl::flat_hash_map<int, PacketSetHandle> branch_by_field_value_map;
   for (const auto& [match_value, branch_by_modify] :
        node.modify_branch_by_field_match) {
@@ -778,8 +894,8 @@ PacketTransformerManager::GetAllInputPacketsThatProduceAnyOutput(
 
   // Case 3: Input packets that do not get matched on an explicit branch, but
   // do get modified.
-  //  Implements the `b_B` in the `bwd` function in section C.3 Push and Pull in
-  //  KATch: A Fast Symbolic Verifier for NetKAT.
+  //  Implements the `b_B` in the `bwd` function in section C.3 Push and Pull
+  //  in KATch: A Fast Symbolic Verifier for NetKAT.
   for (const auto& [modify_value, unused] :
        node.default_branch_by_field_modification) {
     if (!node.modify_branch_by_field_match.contains(modify_value)) {
@@ -798,8 +914,8 @@ PacketTransformerManager::GetAllInputPacketsThatProduceAnyOutput(
       branch_by_field_value_list(num_branches);
   int i = 0;
   for (const auto& [value, branch] : branch_by_field_value_map) {
-    // Skips `default_branch` because an invariant of `DecisionNode` is that no
-    // branch in `branch_by_field_value` can be a duplicate of the default
+    // Skips `default_branch` because an invariant of `DecisionNode` is that
+    // no branch in `branch_by_field_value` can be a duplicate of the default
     // branch.
     if (branch == default_branch) continue;
     branch_by_field_value_list[i++] = std::make_pair(value, branch);

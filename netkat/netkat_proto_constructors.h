@@ -47,6 +47,7 @@ PolicyProto RecordProto();
 PolicyProto SequenceProto(PolicyProto left, PolicyProto right);
 PolicyProto UnionProto(PolicyProto left, PolicyProto right);
 PolicyProto IterateProto(PolicyProto iterable);
+PolicyProto DifferenceProto(PolicyProto left, PolicyProto right);
 
 // -- Derived Policy constructors ----------------------------------------------
 
@@ -63,6 +64,7 @@ PolicyProto AcceptProto();
 //   Policy Sequence -> ';'
 //   Policy Or -> '+'
 //   Iterate -> '*'
+//   Difference -> '-'
 //   Record -> 'record'
 //   Match -> '@field==value'
 //   Modify -> '@field:=value'

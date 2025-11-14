@@ -126,6 +126,16 @@ absl::Status RecursivelyCheckIsValid(const PolicyProto& policy_proto) {
           RecursivelyCheckIsValid(policy_proto.iterate_op().iterable()))
           << "PolicyProto::Iterate::policy is invalid: ";
       return absl::OkStatus();
+    case PolicyProto::kDifferenceOp:
+      RETURN_IF_ERROR(
+          RecursivelyCheckIsValid(policy_proto.difference_op().left()))
+              .SetPrepend()
+          << "PolicyProto::DifferenceOp::left is invalid: ";
+      RETURN_IF_ERROR(
+          RecursivelyCheckIsValid(policy_proto.difference_op().right()))
+              .SetPrepend()
+          << "PolicyProto::DifferenceOp::right is invalid: ";
+      return absl::OkStatus();
     case PolicyProto::POLICY_NOT_SET:
       return absl::InvalidArgumentError("Unset Policy case is invalid");
   }
@@ -177,6 +187,11 @@ Policy Record() { return Policy(RecordProto()); }
 
 Policy Filter(Predicate predicate) {
   return Policy(FilterProto(std::move(predicate).ToProto()));
+}
+
+Policy Difference(Policy left, Policy right) {
+  return Policy(
+      DifferenceProto(std::move(left).ToProto(), std::move(right).ToProto()));
 }
 
 Policy Policy::Accept() { return Filter(Predicate::True()); }
