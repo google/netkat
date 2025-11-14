@@ -257,8 +257,8 @@ class PacketTransformerManager {
 
   // Returns the transformer that describes the packets produced by the `left`
   // transformer or the `right` transformer, but not both.
-  PacketTransformerHandle SymmetricDifference(
-      PacketTransformerHandle left, PacketTransformerHandle right) = delete;
+  PacketTransformerHandle SymmetricDifference(PacketTransformerHandle left,
+                                              PacketTransformerHandle right);
 
   // Dynamically checks all class invariants. Exposed for testing only.
   absl::Status CheckInternalInvariants() const;

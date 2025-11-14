@@ -117,6 +117,7 @@ message PolicyProto {
     Union union_op = 5;
     Iterate iterate_op = 6;
     Difference difference_op = 7;
+    SymmetricDifference symmetric_difference_op = 8;
   }
 
   // Sets the field to the given value.
@@ -151,6 +152,12 @@ message PolicyProto {
 
   // Represents the difference of two policies, i.e. a - b.
   message Difference {
+    PolicyProto left = 1;
+    PolicyProto right = 2;
+  }
+
+  // Represents the symmetric difference of two policies, i.e. a Δ b.
+  message SymmetricDifference {
     PolicyProto left = 1;
     PolicyProto right = 2;
   }
