@@ -115,8 +115,10 @@ message PolicyProto {
     // Combinators.
     Sequence sequence_op = 4;
     Union union_op = 5;
+    Intersection intersection_op = 9;
     Iterate iterate_op = 6;
     Difference difference_op = 7;
+    SymmetricDifference symmetric_difference_op = 8;
   }
 
   // Sets the field to the given value.
@@ -149,8 +151,20 @@ message PolicyProto {
     PolicyProto iterable = 1;
   }
 
+  // Represents the intersection of two policies, i.e. a ∩ b.
+  message Intersection {
+    PolicyProto left = 1;
+    PolicyProto right = 2;
+  }
+
   // Represents the difference of two policies, i.e. a - b.
   message Difference {
+    PolicyProto left = 1;
+    PolicyProto right = 2;
+  }
+
+  // Represents the symmetric difference of two policies, i.e. a Δ b.
+  message SymmetricDifference {
     PolicyProto left = 1;
     PolicyProto right = 2;
   }
