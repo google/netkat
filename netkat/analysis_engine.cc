@@ -14,6 +14,9 @@
 
 #include "netkat/analysis_engine.h"
 
+#include "absl/log/check.h"
+#include "absl/status/statusor.h"
+#include "netkat/counter_example.h"
 #include "netkat/frontend.h"
 #include "netkat/packet_set.h"
 #include "netkat/packet_transformer.h"
@@ -26,9 +29,24 @@ bool AnalysisEngine::CheckEquivalent(const Predicate& left,
          packet_transformer_manager_.Compile(Filter(right).ToProto());
 }
 
-bool AnalysisEngine::CheckEquivalent(const Policy& left, const Policy& right) {
-  return packet_transformer_manager_.Compile(left.ToProto()) ==
-         packet_transformer_manager_.Compile(right.ToProto());
+SuccessOrCounterExample AnalysisEngine::CheckEquivalent(const Policy& left,
+                                                        const Policy& right) {
+  PacketTransformerHandle left_packet_transformer =
+      packet_transformer_manager_.Compile(left.ToProto());
+  PacketTransformerHandle right_packet_transformer =
+      packet_transformer_manager_.Compile(right.ToProto());
+  if (left_packet_transformer == right_packet_transformer) {
+    return SuccessOrCounterExample();
+  }
+  absl::StatusOr<CounterExample> counter_example =
+      CounterExample::CreateEquivalenceCounterExample(
+          left_packet_transformer, right_packet_transformer,
+          &packet_transformer_manager_);
+  // This is expected to succeed since we already checked that the policies are
+  // not the same and the Analysis Engine owns the PacketTransformerManager, so
+  // this cannot be out of scope when creating the CounterExample.
+  CHECK_OK(counter_example.status());  // Crash OK
+  return SuccessOrCounterExample(*counter_example);
 }
 
 bool AnalysisEngine::ProgramForwardsAnyPacket(const Policy& program,

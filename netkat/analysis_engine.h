@@ -21,6 +21,7 @@
 #ifndef GOOGLE_NETKAT_NETKAT_ANALYSIS_ENGINE_H_
 #define GOOGLE_NETKAT_NETKAT_ANALYSIS_ENGINE_H_
 
+#include "netkat/counter_example.h"
 #include "netkat/frontend.h"
 #include "netkat/packet_transformer.h"
 
@@ -49,7 +50,22 @@ class AnalysisEngine {
   // Checks whether two policies are "equivalent", meaning they have the same
   // packets transformations, meaning Evaluate(left, packet) == Evaluate(right,
   // packet) for all packets.
-  bool CheckEquivalent(const Policy& left, const Policy& right);
+  //
+  // Returns a counter example (i.e. an object demonstrating the difference
+  // between the two policies) for the given `left` and `right` policies if the
+  // policies are not equivalent, or `Success` if the policies are equivalent.
+  //
+  // Example:
+  //   SuccessOrCounterExample result = CheckEquivalent(l,r);
+  //   if(!result.IsSuccess()) {
+  //     CounterExample counter_example = result->GetCounterExampleOrDie();
+  //     ASSIGN_OR_RETURN(Packet input_from_left_but_not_right,
+  //            counter_example.GetInputPacketInLeftButNotRight());
+  //     ...
+  //   }
+  //
+  SuccessOrCounterExample CheckEquivalent(const Policy& left,
+                                          const Policy& right);
 
   // Returns whether any given packet, represented by the set of packets in
   // `packets`, is forwarded by `program`. A packet is considered "forwaded" if
