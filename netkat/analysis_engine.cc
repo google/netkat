@@ -14,11 +14,144 @@
 
 #include "netkat/analysis_engine.h"
 
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "absl/algorithm/container.h"
+#include "absl/container/btree_map.h"
+#include "netkat/counter_example.h"
+#include "netkat/evaluator.h"
 #include "netkat/frontend.h"
 #include "netkat/packet_set.h"
 #include "netkat/packet_transformer.h"
 
 namespace netkat {
+
+namespace {
+
+void StableSortOutputPacketsToInputPacket(
+    std::vector<std::pair<Packet, OutputPackets>>&
+        output_packets_to_input_packet) {
+  absl::c_stable_sort(
+      output_packets_to_input_packet,
+      [](const std::pair<Packet, OutputPackets>& left,
+         const std::pair<Packet, OutputPackets>& right) {
+        // Create a canonical representation for the left and right Packet by
+        // sorting its key-value pairs.
+        std::vector<std::pair<std::string, int>> left_packet_vec(
+            left.first.begin(), left.first.end());
+        absl::c_sort(left_packet_vec);
+        std::vector<std::pair<std::string, int>> right_packet_vec(
+            right.first.begin(), right.first.end());
+        absl::c_sort(right_packet_vec);
+
+        // Compare the canonical representations of the Packets.
+        if (left_packet_vec != right_packet_vec) {
+          return left_packet_vec < right_packet_vec;
+        }
+
+        // If the Packets are identical, compare the OutputPackets.
+        // A canonical representation for a set of Packets is a sorted vector
+        // of their canonical representations.
+        auto create_canonical_rep = [](const OutputPackets& output_packets) {
+          std::vector<std::vector<std::pair<std::string, int>>> vec_of_vecs;
+          vec_of_vecs.reserve(output_packets.size());
+          for (const auto& packet : output_packets) {
+            std::vector<std::pair<std::string, int>> packet_vec(packet.begin(),
+                                                                packet.end());
+            absl::c_sort(packet_vec);
+            vec_of_vecs.push_back(std::move(packet_vec));
+          }
+          absl::c_sort(vec_of_vecs);
+          return vec_of_vecs;
+        };
+
+        return create_canonical_rep(left.second) <
+               create_canonical_rep(right.second);
+      });
+}
+
+SuccessOrCounterExample GenerateCounterExamples(
+    PacketTransformerManager& packet_transformer_manager, const Policy& left,
+    const Policy& right) {
+  PacketTransformerHandle left_packet_transformer =
+      packet_transformer_manager.Compile(left.ToProto());
+  PacketTransformerHandle right_packet_transformer =
+      packet_transformer_manager.Compile(right.ToProto());
+  if (left_packet_transformer == right_packet_transformer) {
+    return SuccessOrCounterExample();
+  }
+
+  // Compute the set of packets that are in L but not R, and vice versa.
+  PacketTransformerHandle left_diff_right_transformer =
+      packet_transformer_manager.Difference(left_packet_transformer,
+                                            right_packet_transformer);
+  PacketTransformerHandle right_diff_left_transformer =
+      packet_transformer_manager.Difference(right_packet_transformer,
+                                            left_packet_transformer);
+
+  // Compute the input packet sets to the difference of the left and right
+  // policies and vice versa.
+  PacketSetHandle fullset =
+      packet_transformer_manager.GetPacketSetManager().FullSet();
+  PacketSetHandle input_packet_set_for_left_diff_right_policies =
+      packet_transformer_manager.Pull(left_diff_right_transformer, fullset);
+  PacketSetHandle input_packet_set_for_right_diff_left_policies =
+      packet_transformer_manager.Pull(right_diff_left_transformer, fullset);
+
+  // Compute the output packets for each input packet for the counter examples.
+  std::vector<std::pair<Packet, OutputPackets>>
+      output_packets_to_input_packet_for_left_diff_right_policies;
+
+  // TODO: b/463710729 - Remove comment once GetConcretePackets returns a
+  // comprehensive set of packets.
+  // Currently, GetConcretePackets returns a set of packets that are not
+  // guaranteed to be exhaustive.
+  std::vector<Packet> input_packets_for_left_diff_right_policies =
+      packet_transformer_manager.GetPacketSetManager().GetConcretePackets(
+          input_packet_set_for_left_diff_right_policies);
+  output_packets_to_input_packet_for_left_diff_right_policies.reserve(
+      input_packets_for_left_diff_right_policies.size());
+  for (Packet& input_packet : input_packets_for_left_diff_right_policies) {
+    output_packets_to_input_packet_for_left_diff_right_policies.push_back(
+        std::make_pair(input_packet,
+                       packet_transformer_manager.Run(
+                           left_diff_right_transformer, input_packet)));
+  }
+  StableSortOutputPacketsToInputPacket(
+      output_packets_to_input_packet_for_left_diff_right_policies);
+
+  std::vector<std::pair<Packet, OutputPackets>>
+      output_packets_to_input_packet_for_right_diff_left_policies;
+
+  // TODO: b/463710729 - Remove comment once GetConcretePackets returns a
+  // comprehensive set of packets.
+  // Currently, GetConcretePackets returns a set of packets that are not
+  // guaranteed to be exhaustive.
+  std::vector<Packet> input_packets_for_right_diff_left_policies =
+      packet_transformer_manager.GetPacketSetManager().GetConcretePackets(
+          input_packet_set_for_right_diff_left_policies);
+  output_packets_to_input_packet_for_right_diff_left_policies.reserve(
+      input_packets_for_right_diff_left_policies.size());
+  for (Packet& input_packet : input_packets_for_right_diff_left_policies) {
+    output_packets_to_input_packet_for_right_diff_left_policies.push_back(
+        std::make_pair(input_packet,
+                       packet_transformer_manager.Run(
+                           right_diff_left_transformer, input_packet)));
+  }
+  StableSortOutputPacketsToInputPacket(
+      output_packets_to_input_packet_for_right_diff_left_policies);
+
+  return SuccessOrCounterExample(CounterExample(
+      packet_transformer_manager.GetPacketSetManager().ToDot(
+          input_packet_set_for_left_diff_right_policies),
+      packet_transformer_manager.GetPacketSetManager().ToDot(
+          input_packet_set_for_right_diff_left_policies),
+      output_packets_to_input_packet_for_left_diff_right_policies,
+      output_packets_to_input_packet_for_right_diff_left_policies));
+}
+}  // namespace
 
 bool AnalysisEngine::CheckEquivalent(const Predicate& left,
                                      const Predicate& right) {
@@ -26,9 +159,13 @@ bool AnalysisEngine::CheckEquivalent(const Predicate& left,
          packet_transformer_manager_.Compile(Filter(right).ToProto());
 }
 
-bool AnalysisEngine::CheckEquivalent(const Policy& left, const Policy& right) {
-  return packet_transformer_manager_.Compile(left.ToProto()) ==
-         packet_transformer_manager_.Compile(right.ToProto());
+SuccessOrCounterExample AnalysisEngine::CheckEquivalent(const Policy& left,
+                                                        const Policy& right) {
+  if (packet_transformer_manager_.Compile(left.ToProto()) ==
+      packet_transformer_manager_.Compile(right.ToProto())) {
+    return SuccessOrCounterExample();
+  }
+  return GenerateCounterExamples(packet_transformer_manager_, left, right);
 }
 
 bool AnalysisEngine::ProgramForwardsAnyPacket(const Policy& program,

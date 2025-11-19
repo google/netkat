@@ -81,9 +81,11 @@ TEST(NetkatSwitchTest, SingleStageSwitchReturnsCorrectPolicy) {
   EXPECT_CALL(*mock_stage, CleanUp()).WillOnce(Return(Modify("vrf", -1)));
 
   netkat::AnalysisEngine engine;
-  EXPECT_TRUE(engine.CheckEquivalent(
-      nk_switch.GetPolicy(),
-      Sequence(Filter(Match("vlan_id", 1)), Modify("vrf", -1))));
+  EXPECT_TRUE(engine
+                  .CheckEquivalent(
+                      nk_switch.GetPolicy(),
+                      Sequence(Filter(Match("vlan_id", 1)), Modify("vrf", -1)))
+                  .IsSuccess());
 }
 
 TEST(NetkatSwitchTest, MultiStageSwitchReturnsCorrectPolicy) {
@@ -109,10 +111,13 @@ TEST(NetkatSwitchTest, MultiStageSwitchReturnsCorrectPolicy) {
   // The VLAN sets a VRF, the VRF remaps the VLAN. The resulting policy should
   // be as-if the VLAN is simply remapped... plus the metadata cleanup.
   netkat::AnalysisEngine engine;
-  EXPECT_TRUE(engine.CheckEquivalent(
-      nk_switch.GetPolicy(),
-      Sequence(Filter(Match("vlan_id", 1)), Modify("vlan_id", 2),
-               Modify("vrf", -1), Modify("rnd_tag", -1))));
+  EXPECT_TRUE(
+      engine
+          .CheckEquivalent(
+              nk_switch.GetPolicy(),
+              Sequence(Filter(Match("vlan_id", 1)), Modify("vlan_id", 2),
+                       Modify("vrf", -1), Modify("rnd_tag", -1)))
+          .IsSuccess());
 }
 
 }  // namespace
