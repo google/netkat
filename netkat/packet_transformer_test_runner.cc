@@ -34,7 +34,7 @@ constexpr char kStringHeader[] =
     "-- STRING ----------------------------------------------------------------"
     "------\n";
 
-// A test case for the `ValidateTestRun` function.
+// A test case for the `PacketTransformerManager::Compile` function.
 struct TestCase {
   // Human-readable description of this test case, for documentation.
   std::string description;
