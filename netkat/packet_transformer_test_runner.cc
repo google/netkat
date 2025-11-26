@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // -----------------------------------------------------------------------------
+// To generate the `packet_transformer_test.expected` file, run:
+//  `bazel run //netkat:packet_transformer_diff_test
+//  -- --update`
 
 #include <iostream>
 #include <ostream>
