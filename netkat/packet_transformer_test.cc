@@ -186,6 +186,15 @@ void DifferenceCompilesToDifference(PolicyProto left, PolicyProto right) {
 }
 FUZZ_TEST(PacketTransformerManagerTest, DifferenceCompilesToDifference);
 
+void SymmetricDifferenceCompilesToSymmetricDifference(PolicyProto left,
+                                                      PolicyProto right) {
+  EXPECT_EQ(Manager().Compile(SymmetricDifferenceProto(left, right)),
+            Manager().SymmetricDifference(Manager().Compile(left),
+                                          Manager().Compile(right)));
+}
+FUZZ_TEST(PacketTransformerManagerTest,
+          SymmetricDifferenceCompilesToSymmetricDifference);
+
 /*--- Kleene algebra axioms and equivalences ---------------------------------*/
 
 void UnionIsAssociative(PolicyProto a, PolicyProto b, PolicyProto c) {
@@ -312,6 +321,63 @@ void DifferenceOfPolicyIsSubsetOfSelf(PolicyProto a, PolicyProto b) {
             Manager().Compile(a));
 }
 FUZZ_TEST(PacketTransformerManagerTest, DifferenceOfPolicyIsSubsetOfSelf);
+
+void SymmetricDifferenceIsAssociative(PolicyProto a, PolicyProto b,
+                                      PolicyProto c) {
+  EXPECT_EQ(Manager().Compile(
+                SymmetricDifferenceProto(a, SymmetricDifferenceProto(b, c))),
+            Manager().Compile(
+                SymmetricDifferenceProto(SymmetricDifferenceProto(a, b), c)));
+}
+FUZZ_TEST(PacketTransformerManagerTest, SymmetricDifferenceIsAssociative);
+
+void SymmetricDifferenceIsCommutative(PolicyProto a, PolicyProto b) {
+  EXPECT_EQ(Manager().Compile(SymmetricDifferenceProto(a, b)),
+            Manager().Compile(SymmetricDifferenceProto(b, a)));
+}
+FUZZ_TEST(PacketTransformerManagerTest, SymmetricDifferenceIsCommutative);
+
+void SymmetricDifferenceOfPolicyAndDenyIsIdentity(PolicyProto policy) {
+  EXPECT_EQ(Manager().Compile(SymmetricDifferenceProto(policy, DenyProto())),
+            Manager().Compile(policy));
+}
+FUZZ_TEST(PacketTransformerManagerTest,
+          SymmetricDifferenceOfPolicyAndDenyIsIdentity);
+
+void SymmetricDifferenceOfPolicyAndSelfIsDeny(PolicyProto policy) {
+  EXPECT_EQ(Manager().Compile(SymmetricDifferenceProto(policy, policy)),
+            Manager().Compile(DenyProto()));
+}
+FUZZ_TEST(PacketTransformerManagerTest,
+          SymmetricDifferenceOfPolicyAndSelfIsDeny);
+
+// TODO(matthewtlam): Uncomment this once Intersection is implemented.
+// void IntersectionDistributesOverSymmetricDifference(PolicyProto a,
+//                                                     PolicyProto b,
+//                                                     PolicyProto c) {
+//   EXPECT_EQ(
+//       Manager().Compile(IntersectionProto(a, SymmetricDifferenceProto(b,
+//       c))), Manager().Compile(SymmetricDifferenceProto(IntersectionProto(a,
+//       b),
+//                                                  IntersectionProto(a, c))));
+// }
+// FUZZ_TEST(PacketTransformerManagerTest,
+//           IntersectionDistributesOverSymmetricDifference);
+
+void SymmetricDifferenceDefinition(PolicyProto a, PolicyProto b) {
+  EXPECT_EQ(Manager().Compile(SymmetricDifferenceProto(a, b)),
+            Manager().Compile(
+                UnionProto(DifferenceProto(a, b), DifferenceProto(b, a))));
+}
+FUZZ_TEST(PacketTransformerManagerTest, SymmetricDifferenceDefinition);
+
+// TODO(matthewtlam): Uncomment this once Intersection is implemented.
+// void SymmetricDifference2(PolicyProto a, PolicyProto b) {
+//   EXPECT_EQ(Manager().Compile(SymmetricDifferenceProto(a, b)),
+//             Manager().Compile(
+//                 DifferenceProto(UnionProto(a, b), IntersectionProto(a, b))));
+// }
+// FUZZ_TEST(PacketTransformerManagerTest, SymmetricDifference2);
 
 /*--- Tests with concrete protos ---------------------------------------------*/
 
