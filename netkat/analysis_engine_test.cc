@@ -201,37 +201,87 @@ void DenyProgramAlwaysProducesNoOutput(PredicateProto predicate_proto) {
 FUZZ_TEST(AnalysisEngineTest, DenyProgramAlwaysProducesNoOutput)
     .WithDomains(netkat_test::ArbitraryValidPredicateProto());
 
-TEST(AnalysisEngineTest, AcceptProgramReflectsInputPacket) {
+TEST(CheckInputProducesOutputStrictTest, AcceptProgramReflectsInputPacket) {
   AnalysisEngine analyzer;
   EXPECT_TRUE(analyzer.CheckInputProducesOutput(
       Match("foo", 1), Policy::Accept(), Match("foo", 1)));
 }
 
-TEST(AnalysisEngineTest, InputPacketNotAcceptedReturnsEmptySet) {
+TEST(CheckInputProducesOutputStrictTest,
+     InputPacketNotAcceptedReturnsEmptySet) {
+  AnalysisEngine analyzer;
+  EXPECT_TRUE(analyzer.CheckInputProducesOutput(
+      Match("foo", 1), Filter(Match("foo", 2)), Predicate::False(),
+      /*strict=*/true));
+}
+
+TEST(CheckInputProducesOutputStrictTest,
+     InputProducingLargerOutputReturnsFalse) {
+  AnalysisEngine analyzer;
+  EXPECT_FALSE(analyzer.CheckInputProducesOutput(
+      Match("foo", 1), Union(Modify("tag", 1), Modify("tag2", 1)),
+      Match("foo", 1) && Match("tag", 1), /*strict=*/true));
+}
+
+TEST(CheckInputProducesOutputStrictTest, InputProducingExactOutputReturnsTrue) {
+  AnalysisEngine analyzer;
+  EXPECT_TRUE(analyzer.CheckInputProducesOutput(
+      Match("foo", 1), Union(Modify("tag", 1), Modify("tag2", 1)),
+      Match("foo", 1) && (Match("tag", 1) || Match("tag2", 1)),
+      /*strict=*/true));
+}
+
+TEST(CheckInputProducesOutputStrictTest,
+     InputProducingSmallerOutputReturnsFalse) {
+  AnalysisEngine analyzer;
+  EXPECT_FALSE(analyzer.CheckInputProducesOutput(
+      Match("foo", 1), Modify("tag", 1),
+      Match("foo", 1) && (Match("tag", 1) || Match("tag2", 1)),
+      /*strict=*/true));
+}
+
+TEST(CheckInputProducesOutputUnStrictTest,
+     NoOutputProducedIsNotASubsetOfAllOutputs) {
+  AnalysisEngine analyzer;
+  EXPECT_FALSE(analyzer.CheckInputProducesOutput(
+      Match("foo", 1), Filter(Match("foo", 2)), netkat::Predicate::True()));
+}
+
+TEST(CheckInputProducesOutputUnStrictTest,
+     NoOutputProducedIsEqualToFalseOutput) {
   AnalysisEngine analyzer;
   EXPECT_TRUE(analyzer.CheckInputProducesOutput(
       Match("foo", 1), Filter(Match("foo", 2)), Predicate::False()));
 }
 
-TEST(AnalysisEngineTest, InputProducingLargerOutputReturnsFalse) {
-  AnalysisEngine analyzer;
-  EXPECT_FALSE(analyzer.CheckInputProducesOutput(
-      Match("foo", 1), Union(Modify("tag", 1), Modify("tag2", 1)),
-      Match("foo", 1) && Match("tag", 1)));
-}
-
-TEST(AnalysisEngineTest, InputProducingExactOutputReturnsTrue) {
+TEST(CheckInputProducesOutputUnStrictTest, OutputIsExactlyEqualIsOk) {
   AnalysisEngine analyzer;
   EXPECT_TRUE(analyzer.CheckInputProducesOutput(
       Match("foo", 1), Union(Modify("tag", 1), Modify("tag2", 1)),
       Match("foo", 1) && (Match("tag", 1) || Match("tag2", 1))));
 }
 
-TEST(AnalysisEngineTest, InputProducingSmallerOutputReturnsFalse) {
+TEST(CheckInputProducesOutputUnStrictTest,
+     ProvidedOutputBeingStrictSupersetIsOk) {
   AnalysisEngine analyzer;
-  EXPECT_FALSE(analyzer.CheckInputProducesOutput(
+  EXPECT_TRUE(analyzer.CheckInputProducesOutput(
       Match("foo", 1), Modify("tag", 1),
       Match("foo", 1) && (Match("tag", 1) || Match("tag2", 1))));
+}
+
+TEST(CheckInputProducesOutputUnStrictTest,
+     ComputedOutputBeingStrictSubsetIsOk) {
+  AnalysisEngine analyzer;
+  EXPECT_TRUE(analyzer.CheckInputProducesOutput(
+      Match("foo", 1), Sequence(Modify("tag", 1), Modify("tag2", 1)),
+      Match("foo", 1) && Match("tag", 1)));
+}
+
+TEST(CheckInputProducesOutputUnStrictTest, OutputIsPartiallyOrthogonalIsFalse) {
+  AnalysisEngine analyzer;
+  EXPECT_FALSE(analyzer.CheckInputProducesOutput(
+      Match("foo", 1), Union(Modify("tag", 1), Modify("tag2", 1)),
+      Match("foo", 1) && Match("tag", 1)));
 }
 
 }  // namespace
