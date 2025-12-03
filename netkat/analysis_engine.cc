@@ -69,7 +69,8 @@ bool AnalysisEngine::ProgramForwardsAllPackets(const Policy& program,
 
 bool AnalysisEngine::CheckInputProducesOutput(const Predicate& input_packets,
                                               const Policy& program,
-                                              const Predicate& output_packets) {
+                                              const Predicate& output_packets,
+                                              bool strict) {
   PacketSetManager& set_manager =
       packet_transformer_manager_.GetPacketSetManager();
   PacketSetHandle compiled_input = set_manager.Compile(input_packets.ToProto());
@@ -79,7 +80,12 @@ bool AnalysisEngine::CheckInputProducesOutput(const Predicate& input_packets,
       packet_transformer_manager_.Compile(program.ToProto());
   PacketSetHandle program_output =
       packet_transformer_manager_.Push(compiled_input, compiled_program);
-  return program_output == compiled_output;
+
+  if (program_output == compiled_output) return true;
+  if (strict || program_output == set_manager.EmptySet()) return false;
+
+  // We can define less than or equal to as follows: a <= b === a + b == b
+  return set_manager.Or(program_output, compiled_output) == compiled_output;
 }
 
 }  // namespace netkat
