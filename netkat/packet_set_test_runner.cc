@@ -29,8 +29,11 @@ namespace {
 constexpr char kBanner[] =
     "=========================================================================="
     "======\n";
-constexpr char kDotHeader[] =
+constexpr char kDotRawHeader[] =
     "-- DOT -------------------------------------------------------------------"
+    "------\n";
+constexpr char kDotUrlHeader[] =
+    "-- URL -------------------------------------------------------------------"
     "------\n";
 constexpr char kStringHeader[] =
     "-- STRING ----------------------------------------------------------------"
@@ -90,7 +93,8 @@ void main() {
     std::cout << kBanner << "Test case: " << test_case.description << std::endl
               << kBanner;
     std::cout << kStringHeader << manager.ToString(packet_set);
-    std::cout << kDotHeader << manager.ToDot(packet_set);
+    std::cout << kDotRawHeader << manager.ToDotRaw(packet_set) << std::endl;
+    std::cout << kDotUrlHeader << manager.ToDotUrl(packet_set) << std::endl;
   }
 }
 
