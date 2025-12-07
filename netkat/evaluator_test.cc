@@ -260,6 +260,20 @@ void UnionCombines(Packet packet, PolicyProto left, PolicyProto right) {
 }
 FUZZ_TEST(EvaluatePolicyProtoTest, UnionCombines);
 
+// void IntersectionRemoves(Packet packet, PolicyProto left, PolicyProto right)
+// {
+//   absl::flat_hash_set<Packet> expected_packets = Evaluate(left, packet);
+//   for (const Packet& packet : Evaluate(right, packet)) {
+//     if (!expected_packets.contains(packet)) {
+//       expected_packets.erase(packet);
+//     }
+//   }
+
+//   EXPECT_THAT(Evaluate(IntersectionProto(left, right), packet),
+//               ContainerEq(expected_packets));
+// }
+// FUZZ_TEST(EvaluatePolicyProtoTest, IntersectionRemoves);
+
 void DifferenceRemoves(Packet packet, PolicyProto left, PolicyProto right) {
   absl::flat_hash_set<Packet> expected_packets = Evaluate(left, packet);
   const absl::flat_hash_set<Packet> subtrahend = Evaluate(right, packet);
@@ -270,6 +284,31 @@ void DifferenceRemoves(Packet packet, PolicyProto left, PolicyProto right) {
               ContainerEq(expected_packets));
 }
 FUZZ_TEST(EvaluatePolicyProtoTest, DifferenceRemoves);
+
+void SymmetricDifferenceIsXor(Packet packet, PolicyProto left,
+                              PolicyProto right) {
+  absl::flat_hash_set<Packet> expected_packets = Evaluate(left, packet);
+  for (const Packet& packet : Evaluate(right, packet)) {
+    if (expected_packets.contains(packet)) {
+      expected_packets.erase(packet);
+    } else {
+      expected_packets.insert(packet);
+    }
+  }
+
+  EXPECT_THAT(Evaluate(SymmetricDifferenceProto(left, right), packet),
+              ContainerEq(expected_packets));
+}
+FUZZ_TEST(EvaluatePolicyProtoTest, SymmetricDifferenceIsXor);
+
+void SymmetricDifferenceByDefinition(Packet packet, PolicyProto left,
+                                     PolicyProto right) {
+  EXPECT_EQ(Evaluate(SymmetricDifferenceProto(left, right), packet),
+            Evaluate(UnionProto(DifferenceProto(left, right),
+                                DifferenceProto(right, left)),
+                     packet));
+}
+FUZZ_TEST(EvaluatePolicyProtoTest, SymmetricDifferenceByDefinition);
 
 void SequenceSequences(Packet packet, PolicyProto left, PolicyProto right) {
   absl::flat_hash_set<Packet> expected_packets =
