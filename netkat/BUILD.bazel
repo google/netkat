@@ -20,6 +20,9 @@ proto_library(
 
 cc_proto_library(
     name = "netkat_cc_proto",
+    visibility = [
+        "//platforms/networking/orion/routing/netkat:__subpackages__",
+    ],
     deps = [":netkat_proto"],
 )
 
@@ -40,6 +43,9 @@ cc_library(
     name = "frontend",
     srcs = ["frontend.cc"],
     hdrs = ["frontend.h"],
+    visibility = [
+        "//platforms/networking/orion/routing/netkat:__subpackages__",
+    ],
     deps = [
         ":netkat_cc_proto",
         ":netkat_proto_constructors",
@@ -280,6 +286,9 @@ cc_library(
     name = "analysis_engine",
     srcs = ["analysis_engine.cc"],
     hdrs = ["analysis_engine.h"],
+    visibility = [
+        "//platforms/networking/orion/routing/netkat:__subpackages__",
+    ],
     deps = [
         ":frontend",
         ":packet_set",
