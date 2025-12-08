@@ -215,7 +215,8 @@ TEST(NetkatTable, MergeWithSameTableIsSemanticNoop) {
 
   AnalysisEngine engine;
   EXPECT_TRUE(
-      engine.CheckEquivalent(merged_table->GetPolicy(), table.GetPolicy()));
+      engine.CheckEquivalent(merged_table->GetPolicy(), table.GetPolicy())
+          .IsSuccess());
 }
 
 TEST(NetkatTable, MergeWithCopiedTableIsEquivalentToMergeWithSameTable) {
@@ -235,10 +236,14 @@ TEST(NetkatTable, MergeWithCopiedTableIsEquivalentToMergeWithSameTable) {
                        NetkatTable::Merge(copy_ctor_table, copy_ctor_table));
 
   AnalysisEngine engine;
-  EXPECT_TRUE(engine.CheckEquivalent(merged_table->GetPolicy(),
-                                     copy_assign_merged_table->GetPolicy()));
-  EXPECT_TRUE(engine.CheckEquivalent(merged_table->GetPolicy(),
-                                     copy_ctor_merged_table->GetPolicy()));
+  EXPECT_TRUE(engine
+                  .CheckEquivalent(merged_table->GetPolicy(),
+                                   copy_assign_merged_table->GetPolicy())
+                  .IsSuccess());
+  EXPECT_TRUE(engine
+                  .CheckEquivalent(merged_table->GetPolicy(),
+                                   copy_ctor_merged_table->GetPolicy())
+                  .IsSuccess());
 }
 
 TEST(NetkatTable, MergeWithDifferentTablesIsCorrect) {
@@ -263,12 +268,12 @@ TEST(NetkatTable, MergeWithDifferentTablesIsCorrect) {
             Sequence(Filter(Match("port", 2)), Modify("vrf", 3)),
             Sequence(Filter(Match("port", 3)), Modify("vrf", 4)));
   AnalysisEngine engine;
-  EXPECT_TRUE(
-      engine.CheckEquivalent(merged_table->GetPolicy(), expected_policy));
+  EXPECT_TRUE(engine.CheckEquivalent(merged_table->GetPolicy(), expected_policy)
+                  .IsSuccess());
 
   ASSERT_OK_AND_ASSIGN(merged_table, NetkatTable::Merge(table2, table1));
-  EXPECT_TRUE(
-      engine.CheckEquivalent(merged_table->GetPolicy(), expected_policy));
+  EXPECT_TRUE(engine.CheckEquivalent(merged_table->GetPolicy(), expected_policy)
+                  .IsSuccess());
 }
 
 TEST(NetkatTable, MergeWithNonDeterminismIsError) {
