@@ -1,0 +1,312 @@
+================================================================================
+Test case: left := Deny, right := Deny. No counter example found.
+================================================================================
+-- Left Policy -----------------------------------------------------------------
+filter {
+  bool_constant {
+  }
+}
+-- Right Policy ----------------------------------------------------------------
+filter {
+  bool_constant {
+  }
+}
+-- Counter Example -------------------------------------------------------------
+No counter example found.
+================================================================================
+Test case: left := Deny, right := Accept. Counter example found.
+================================================================================
+-- Left Policy -----------------------------------------------------------------
+filter {
+  bool_constant {
+  }
+}
+-- Right Policy ----------------------------------------------------------------
+filter {
+  bool_constant {
+    value: true
+  }
+}
+-- Counter Example -------------------------------------------------------------
+Pull(Left - Right, FullSet):
+digraph {
+  node [fontsize = 14]
+  edge [fontsize = 12]
+  4294967295 [label="F" shape=box]
+}
+
+Pull(Right - Left, FullSet):
+digraph {
+  node [fontsize = 14]
+  edge [fontsize = 12]
+  4294967294 [label="T" shape=box]
+}
+
+Input/Output Packet Exists in Right, but not in Left:
+- Input packet: {}
+- Output packet: {}
+================================================================================
+Test case: left := (a=2), right := (b=5).
+================================================================================
+-- Left Policy -----------------------------------------------------------------
+filter {
+  match {
+    field: "a"
+    value: 2
+  }
+}
+-- Right Policy ----------------------------------------------------------------
+filter {
+  match {
+    field: "b"
+    value: 5
+  }
+}
+-- Counter Example -------------------------------------------------------------
+Pull(Left - Right, FullSet):
+digraph {
+  node [fontsize = 14]
+  edge [fontsize = 12]
+  4294967294 [label="T" shape=box]
+  4294967295 [label="F" shape=box]
+  3 [label="a"]
+  3 -> 2 [label="a==2; a:=2"]
+  3 -> 4294967295 [style=dashed]
+  2 [label="b"]
+  2 -> 4294967295 [label="b==5"]
+  2 -> 4294967294 [style=dashed]
+}
+
+Pull(Right - Left, FullSet):
+digraph {
+  node [fontsize = 14]
+  edge [fontsize = 12]
+  4294967294 [label="T" shape=box]
+  4294967295 [label="F" shape=box]
+  4 [label="a"]
+  4 -> 4294967295 [label="a==2"]
+  4 -> 1 [style=dashed]
+  1 [label="b"]
+  1 -> 4294967294 [label="b==5; b:=5"]
+  1 -> 4294967295 [style=dashed]
+}
+
+Input/Output Packet Exists in Left, but not in Right:
+- Input packet: {a: 2}
+- Output packet: {a: 2}
+Input/Output Packet Exists in Right, but not in Left:
+- Input packet: {b: 5}
+- Output packet: {b: 5}
+================================================================================
+Test case: left := (a=5), right := (a=5 && b=2).
+================================================================================
+-- Left Policy -----------------------------------------------------------------
+filter {
+  match {
+    field: "a"
+    value: 5
+  }
+}
+-- Right Policy ----------------------------------------------------------------
+filter {
+  and_op {
+    left {
+      match {
+        field: "a"
+        value: 5
+      }
+    }
+    right {
+      match {
+        field: "b"
+        value: 2
+      }
+    }
+  }
+}
+-- Counter Example -------------------------------------------------------------
+Pull(Left - Right, FullSet):
+digraph {
+  node [fontsize = 14]
+  edge [fontsize = 12]
+  4294967294 [label="T" shape=box]
+  4294967295 [label="F" shape=box]
+  9 [label="a"]
+  9 -> 8 [label="a==5; a:=5"]
+  9 -> 4294967295 [style=dashed]
+  8 [label="b"]
+  8 -> 4294967295 [label="b==2"]
+  8 -> 4294967294 [style=dashed]
+}
+
+Pull(Right - Left, FullSet):
+digraph {
+  node [fontsize = 14]
+  edge [fontsize = 12]
+  4294967295 [label="F" shape=box]
+}
+
+Input/Output Packet Exists in Left, but not in Right:
+- Input packet: {a: 5}
+- Output packet: {a: 5}
+================================================================================
+Test case: left := (c=5), right := (c=5) || (d=2).
+================================================================================
+-- Left Policy -----------------------------------------------------------------
+filter {
+  match {
+    field: "c"
+    value: 5
+  }
+}
+-- Right Policy ----------------------------------------------------------------
+union_op {
+  left {
+    filter {
+      match {
+        field: "c"
+        value: 5
+      }
+    }
+  }
+  right {
+    filter {
+      match {
+        field: "d"
+        value: 2
+      }
+    }
+  }
+}
+-- Counter Example -------------------------------------------------------------
+Pull(Left - Right, FullSet):
+digraph {
+  node [fontsize = 14]
+  edge [fontsize = 12]
+  4294967295 [label="F" shape=box]
+}
+
+Pull(Right - Left, FullSet):
+digraph {
+  node [fontsize = 14]
+  edge [fontsize = 12]
+  4294967294 [label="T" shape=box]
+  4294967295 [label="F" shape=box]
+  13 [label="c"]
+  13 -> 4294967295 [label="c==5"]
+  13 -> 11 [style=dashed]
+  11 [label="d"]
+  11 -> 4294967294 [label="d==2; d:=2"]
+  11 -> 4294967295 [style=dashed]
+}
+
+Input/Output Packet Exists in Right, but not in Left:
+- Input packet: {d: 2}
+- Output packet: {d: 2}
+================================================================================
+Test case: left := !(c=5), right := (c=5).
+================================================================================
+-- Left Policy -----------------------------------------------------------------
+filter {
+  not_op {
+    negand {
+      match {
+        field: "c"
+        value: 5
+      }
+    }
+  }
+}
+-- Right Policy ----------------------------------------------------------------
+filter {
+  match {
+    field: "c"
+    value: 5
+  }
+}
+-- Counter Example -------------------------------------------------------------
+Pull(Left - Right, FullSet):
+digraph {
+  node [fontsize = 14]
+  edge [fontsize = 12]
+  4294967294 [label="T" shape=box]
+  4294967295 [label="F" shape=box]
+  14 [label="c"]
+  14 -> 4294967295 [label="c==5"]
+  14 -> 4294967294 [style=dashed]
+}
+
+Pull(Right - Left, FullSet):
+digraph {
+  node [fontsize = 14]
+  edge [fontsize = 12]
+  4294967294 [label="T" shape=box]
+  4294967295 [label="F" shape=box]
+  10 [label="c"]
+  10 -> 4294967294 [label="c==5; c:=5"]
+  10 -> 4294967295 [style=dashed]
+}
+
+Input/Output Packet Exists in Left, but not in Right:
+- Input packet: {}
+- Output packet: {}
+Input/Output Packet Exists in Right, but not in Left:
+- Input packet: {c: 5}
+- Output packet: {c: 5}
+================================================================================
+Test case: left := (f:=42), right := (g:=26).
+================================================================================
+-- Left Policy -----------------------------------------------------------------
+modification {
+  field: "f"
+  value: 42
+}
+-- Right Policy ----------------------------------------------------------------
+modification {
+  field: "g"
+  value: 26
+}
+-- Counter Example -------------------------------------------------------------
+Pull(Left - Right, FullSet):
+digraph {
+  node [fontsize = 14]
+  edge [fontsize = 12]
+  4294967294 [label="T" shape=box]
+  4294967295 [label="F" shape=box]
+  18 [label="f"]
+  18 -> 17 [label="f==42; f:=42"]
+  18 -> 4294967294 [label="f:=42" style=dashed]
+  18 -> 4294967295 [style=dashed]
+  17 [label="g"]
+  17 -> 4294967295 [label="g==26"]
+  17 -> 4294967294 [style=dashed]
+}
+
+Pull(Right - Left, FullSet):
+digraph {
+  node [fontsize = 14]
+  edge [fontsize = 12]
+  4294967294 [label="T" shape=box]
+  4294967295 [label="F" shape=box]
+  20 [label="f"]
+  20 -> 19 [label="f==42; f:=42"]
+  20 -> 16 [style=dashed]
+  19 [label="g"]
+  19 -> 4294967295 [label="g==26"]
+  19 -> 4294967294 [label="g:=26" style=dashed]
+  19 -> 4294967295 [style=dashed]
+  16 [label="g"]
+  16 -> 4294967294 [label="g:=26" style=dashed]
+  16 -> 4294967295 [style=dashed]
+}
+
+Input/Output Packet Exists in Left, but not in Right:
+- Input packet: {}
+- Output packet: {f: 42}
+- Input packet: {f: 42}
+- Output packet: {f: 42}
+Input/Output Packet Exists in Right, but not in Left:
+- Input packet: {}
+- Output packet: {g: 26}
+- Input packet: {f: 42}
+- Output packet: {g: 26,f: 42}
