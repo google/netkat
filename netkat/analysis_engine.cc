@@ -67,19 +67,35 @@ bool AnalysisEngine::ProgramForwardsAllPackets(const Policy& program,
          program_inputs_handle;
 }
 
-bool AnalysisEngine::CheckInputProducesOutput(const Predicate& input_packets,
-                                              const Policy& program,
-                                              const Predicate& output_packets) {
+bool AnalysisEngine::CheckInputProducesExactOutput(
+    const Predicate& input_packets, const Policy& program,
+    const Predicate& output_packets) {
   PacketSetManager& set_manager =
       packet_transformer_manager_.GetPacketSetManager();
   PacketSetHandle compiled_input = set_manager.Compile(input_packets.ToProto());
   PacketSetHandle compiled_output =
       set_manager.Compile(output_packets.ToProto());
-  PacketTransformerHandle compiled_program =
-      packet_transformer_manager_.Compile(program.ToProto());
-  PacketSetHandle program_output =
-      packet_transformer_manager_.Push(compiled_input, compiled_program);
+  PacketSetHandle program_output = packet_transformer_manager_.Push(
+      compiled_input, packet_transformer_manager_.Compile(program.ToProto()));
   return program_output == compiled_output;
+}
+
+bool AnalysisEngine::CheckInputProducesAtMostGivenOutput(
+    const Predicate& input_packets, const Policy& program,
+    const Predicate& output_packets) {
+  PacketSetManager& set_manager =
+      packet_transformer_manager_.GetPacketSetManager();
+  PacketSetHandle compiled_input = set_manager.Compile(input_packets.ToProto());
+  PacketSetHandle compiled_output =
+      set_manager.Compile(output_packets.ToProto());
+  PacketSetHandle program_output = packet_transformer_manager_.Push(
+      compiled_input, packet_transformer_manager_.Compile(program.ToProto()));
+
+  if (program_output == compiled_output) return true;
+  if (program_output == set_manager.EmptySet()) return false;
+
+  // We can define less than or equal to as follows: a <= b === a + b == b
+  return set_manager.Or(program_output, compiled_output) == compiled_output;
 }
 
 }  // namespace netkat

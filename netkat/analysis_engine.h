@@ -79,12 +79,24 @@ class AnalysisEngine {
   }
 
   // Returns whether the given `input_packets`, after being pushed through
-  // `program`, will produce an output equal to `output_packets`.
+  // `program`, will produce an output exactly equal to `output_packets`.
   //
   // Equivalent to: push(input_packet, program) == output_packet.
-  bool CheckInputProducesOutput(const Predicate& input_packets,
-                                const Policy& program,
-                                const Predicate& output_packets);
+  bool CheckInputProducesExactOutput(const Predicate& input_packets,
+                                     const Policy& program,
+                                     const Predicate& output_packets);
+
+  // Returns whether the given `input_packets`, after being pushed through
+  // `program`, will produce an output lesser than or equal to `output_packets`.
+  //
+  // Equivalent to: push(input_packet, program) <= output_packet.
+  //
+  // Note that the empty set is not considered a subset of `output_packets`,
+  // unless `output_packets` is also empty. This stops programs that would drop
+  // a given input from being considered able to produce any output.
+  bool CheckInputProducesAtMostGivenOutput(const Predicate& input_packets,
+                                           const Policy& program,
+                                           const Predicate& output_packets);
 
  private:
   PacketTransformerManager packet_transformer_manager_;

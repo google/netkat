@@ -194,44 +194,91 @@ void DenyProgramAlwaysProducesNoOutput(PredicateProto predicate_proto) {
   AnalysisEngine analyzer;
   ASSERT_OK_AND_ASSIGN(Predicate input_packet,
                        Predicate::FromProto(std::move(predicate_proto)));
-  EXPECT_TRUE(analyzer.CheckInputProducesOutput(
+  EXPECT_TRUE(analyzer.CheckInputProducesExactOutput(
       input_packet, /*program=*/Policy::Deny(),
       /*output_packets=*/Predicate::False()));
 }
 FUZZ_TEST(AnalysisEngineTest, DenyProgramAlwaysProducesNoOutput)
     .WithDomains(netkat_test::ArbitraryValidPredicateProto());
 
-TEST(AnalysisEngineTest, AcceptProgramReflectsInputPacket) {
+TEST(CheckInputProducesExactOutputTest, AcceptProgramReflectsInputPacket) {
   AnalysisEngine analyzer;
-  EXPECT_TRUE(analyzer.CheckInputProducesOutput(
+  EXPECT_TRUE(analyzer.CheckInputProducesExactOutput(
       Match("foo", 1), Policy::Accept(), Match("foo", 1)));
 }
 
-TEST(AnalysisEngineTest, InputPacketNotAcceptedReturnsEmptySet) {
+TEST(CheckInputProducesExactOutputTest, InputPacketNotAcceptedReturnsEmptySet) {
   AnalysisEngine analyzer;
-  EXPECT_TRUE(analyzer.CheckInputProducesOutput(
+  EXPECT_TRUE(analyzer.CheckInputProducesExactOutput(
       Match("foo", 1), Filter(Match("foo", 2)), Predicate::False()));
 }
 
-TEST(AnalysisEngineTest, InputProducingLargerOutputReturnsFalse) {
+TEST(CheckInputProducesExactOutputTest,
+     InputProducingLargerOutputReturnsFalse) {
   AnalysisEngine analyzer;
-  EXPECT_FALSE(analyzer.CheckInputProducesOutput(
+  EXPECT_FALSE(analyzer.CheckInputProducesExactOutput(
       Match("foo", 1), Union(Modify("tag", 1), Modify("tag2", 1)),
       Match("foo", 1) && Match("tag", 1)));
 }
 
-TEST(AnalysisEngineTest, InputProducingExactOutputReturnsTrue) {
+TEST(CheckInputProducesExactOutputTest, InputProducingExactOutputReturnsTrue) {
   AnalysisEngine analyzer;
-  EXPECT_TRUE(analyzer.CheckInputProducesOutput(
+  EXPECT_TRUE(analyzer.CheckInputProducesExactOutput(
       Match("foo", 1), Union(Modify("tag", 1), Modify("tag2", 1)),
       Match("foo", 1) && (Match("tag", 1) || Match("tag2", 1))));
 }
 
-TEST(AnalysisEngineTest, InputProducingSmallerOutputReturnsFalse) {
+TEST(CheckInputProducesExactOutputTest,
+     InputProducingSmallerOutputReturnsFalse) {
   AnalysisEngine analyzer;
-  EXPECT_FALSE(analyzer.CheckInputProducesOutput(
+  EXPECT_FALSE(analyzer.CheckInputProducesExactOutput(
       Match("foo", 1), Modify("tag", 1),
       Match("foo", 1) && (Match("tag", 1) || Match("tag2", 1))));
+}
+
+TEST(CheckInputProducesAtMostGivenOutputTest,
+     NoOutputProducedIsNotASubsetOfAllOutputs) {
+  AnalysisEngine analyzer;
+  EXPECT_FALSE(analyzer.CheckInputProducesAtMostGivenOutput(
+      Match("foo", 1), Filter(Match("foo", 2)), netkat::Predicate::True()));
+}
+
+TEST(CheckInputProducesAtMostGivenOutputTest,
+     NoOutputProducedIsEqualToFalseOutput) {
+  AnalysisEngine analyzer;
+  EXPECT_TRUE(analyzer.CheckInputProducesAtMostGivenOutput(
+      Match("foo", 1), Filter(Match("foo", 2)), Predicate::False()));
+}
+
+TEST(CheckInputProducesAtMostGivenOutputTest, OutputIsExactlyEqualIsOk) {
+  AnalysisEngine analyzer;
+  EXPECT_TRUE(analyzer.CheckInputProducesAtMostGivenOutput(
+      Match("foo", 1), Union(Modify("tag", 1), Modify("tag2", 1)),
+      Match("foo", 1) && (Match("tag", 1) || Match("tag2", 1))));
+}
+
+TEST(CheckInputProducesAtMostGivenOutputTest,
+     ProvidedOutputBeingStrictSupersetIsOk) {
+  AnalysisEngine analyzer;
+  EXPECT_TRUE(analyzer.CheckInputProducesAtMostGivenOutput(
+      Match("foo", 1), Modify("tag", 1),
+      Match("foo", 1) && (Match("tag", 1) || Match("tag2", 1))));
+}
+
+TEST(CheckInputProducesAtMostGivenOutputTest,
+     ComputedOutputBeingStrictSubsetIsOk) {
+  AnalysisEngine analyzer;
+  EXPECT_TRUE(analyzer.CheckInputProducesAtMostGivenOutput(
+      Match("foo", 1), Sequence(Modify("tag", 1), Modify("tag2", 1)),
+      Match("foo", 1) && Match("tag", 1)));
+}
+
+TEST(CheckInputProducesAtMostGivenOutputTest,
+     OutputIsPartiallyOrthogonalIsFalse) {
+  AnalysisEngine analyzer;
+  EXPECT_FALSE(analyzer.CheckInputProducesAtMostGivenOutput(
+      Match("foo", 1), Union(Modify("tag", 1), Modify("tag2", 1)),
+      Match("foo", 1) && Match("tag", 1)));
 }
 
 }  // namespace
