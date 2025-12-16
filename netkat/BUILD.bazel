@@ -277,13 +277,33 @@ cc_library(
 )
 
 cc_library(
+    name = "counter_example",
+    srcs = ["counter_example.cc"],
+    hdrs = ["counter_example.h"],
+    deps = [
+        ":evaluator",
+        ":packet_set",
+        ":packet_transformer",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_library(
     name = "analysis_engine",
     srcs = ["analysis_engine.cc"],
     hdrs = ["analysis_engine.h"],
     deps = [
+        ":counter_example",
         ":frontend",
         ":packet_set",
         ":packet_transformer",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status:statusor",
     ],
 )
 
@@ -299,6 +319,26 @@ cc_test(
         "@com_google_googletest//:gtest_main",
         "@com_google_gutil//gutil:status_matchers",
     ],
+)
+
+# go/golden-test-with-coverage
+cc_test(
+    name = "analysis_engine_counter_example_test_runner",
+    srcs = ["analysis_engine_counter_example_test_runner.cc"],
+    linkstatic = True,
+    deps = [
+        ":analysis_engine",
+        ":counter_example",
+        ":frontend",
+        "@com_google_gutil//gutil:proto",
+    ],
+)
+
+cmd_diff_test(
+    name = "analysis_engine_counter_example_diff_test",
+    actual_cmd = "$(execpath :analysis_engine_counter_example_test_runner)",
+    expected = ":analysis_engine_counter_example_test.expected",
+    tools = [":analysis_engine_counter_example_test_runner"],
 )
 
 cc_library(
