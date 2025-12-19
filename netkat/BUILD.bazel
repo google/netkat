@@ -277,13 +277,31 @@ cc_library(
 )
 
 cc_library(
+    name = "counter_example",
+    srcs = ["counter_example.cc"],
+    hdrs = ["counter_example.h"],
+    deps = [
+        ":evaluator",
+        ":packet_set",
+        ":packet_transformer",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+    ],
+)
+
+cc_library(
     name = "analysis_engine",
     srcs = ["analysis_engine.cc"],
     hdrs = ["analysis_engine.h"],
     deps = [
+        ":counter_example",
         ":frontend",
         ":packet_set",
         ":packet_transformer",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status:statusor",
     ],
 )
 
