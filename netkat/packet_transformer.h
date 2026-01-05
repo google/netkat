@@ -248,7 +248,7 @@ class PacketTransformerManager {
   // Returns the transformer that describes the packets produced by both the
   // `left` and the `right` transformers, but not either alone.
   PacketTransformerHandle Intersection(PacketTransformerHandle left,
-                                       PacketTransformerHandle right) = delete;
+                                       PacketTransformerHandle right);
 
   // Returns the transformer that describes the packets produced by the `left`
   // transformer, but not the `right` transformer.
@@ -257,8 +257,8 @@ class PacketTransformerManager {
 
   // Returns the transformer that describes the packets produced by the `left`
   // transformer or the `right` transformer, but not both.
-  PacketTransformerHandle SymmetricDifference(
-      PacketTransformerHandle left, PacketTransformerHandle right) = delete;
+  PacketTransformerHandle SymmetricDifference(PacketTransformerHandle left,
+                                              PacketTransformerHandle right);
 
   // Dynamically checks all class invariants. Exposed for testing only.
   absl::Status CheckInternalInvariants() const;
@@ -409,6 +409,7 @@ class PacketTransformerManager {
   // TODO(dilo): Is there a convenient way to either avoid these or avoid making
   // copies of the nodes?
   PacketTransformerHandle Union(DecisionNode left, DecisionNode right);
+  PacketTransformerHandle Intersection(DecisionNode left, DecisionNode right);
   PacketTransformerHandle Sequence(DecisionNode left, DecisionNode right);
   PacketTransformerHandle Difference(DecisionNode left, DecisionNode right);
 
