@@ -107,6 +107,19 @@ absl::flat_hash_set<Packet> Evaluate(const PolicyProto& policy,
                      [&](const Packet& p) { return subtrahend.contains(p); });
       return result;
     }
+    case PolicyProto::kSymmetricDifferenceOp: {
+      absl::flat_hash_set<Packet> result =
+          Evaluate(policy.symmetric_difference_op().left(), packet);
+      for (const Packet& packet :
+           Evaluate(policy.symmetric_difference_op().right(), packet)) {
+        if (result.contains(packet)) {
+          result.erase(packet);
+        } else {
+          result.insert(packet);
+        }
+      }
+      return result;
+    }
     case PolicyProto::POLICY_NOT_SET:
       // Unset policy is treated as Deny.
       return {};
