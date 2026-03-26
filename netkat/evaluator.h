@@ -24,23 +24,11 @@
 #ifndef GOOGLE_NETKAT_NETKAT_EVALUATOR_H_
 #define GOOGLE_NETKAT_NETKAT_EVALUATOR_H_
 
-#include <string>
-
-#include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "netkat/netkat.pb.h"
+#include "netkat/packet.h"
 
 namespace netkat {
-
-// A NetKAT packet is a map from field names to their values.
-//
-// NOTE: This is a simplistic, initial definition of `Packet` that we expect to
-// replace in the future. In particular, the value type will change to support
-// things like 128-bit IPv6 addresses.
-//
-// Fields that are not present in the map are assumed to carry an implicit "not
-// present" value that is distinct from all explicitly-assignable values.
-using Packet = absl::flat_hash_map<std::string, int>;
 
 // Returns true if the given `packet` satisfies the given `predicate`, false
 // otherwise.

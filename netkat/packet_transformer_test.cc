@@ -32,6 +32,7 @@
 #include "netkat/evaluator.h"
 #include "netkat/netkat.pb.h"
 #include "netkat/netkat_proto_constructors.h"
+#include "netkat/packet.h"
 #include "netkat/packet_set.h"
 #include "re2/re2.h"
 

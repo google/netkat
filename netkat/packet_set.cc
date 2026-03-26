@@ -32,7 +32,7 @@
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "gutil/status.h"
-#include "netkat/evaluator.h"
+#include "netkat/packet.h"
 
 namespace netkat {
 

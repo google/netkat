@@ -16,11 +16,12 @@
 #define GOOGLE_NETKAT_NETKAT_COUNTER_EXAMPLE_H_
 
 #include <optional>
+#include <string>
 #include <utility>
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/check.h"
-#include "netkat/evaluator.h"
+#include "netkat/packet.h"
 #include "netkat/packet_set.h"
 #include "netkat/packet_transformer.h"
 
@@ -63,6 +64,16 @@ class CounterExample {
   // PacketSetHandle := Pull(right policy - left policy, FullSet).
   absl::StatusOr<Packet> GetInputPacketInRightButNotLeft() const;
 
+  // Explain the counter example.
+  std::string Explain() const;
+  inline std::string ToString() const { return Explain(); }
+
+  // Formatting, see https://abseil.io/docs/cpp/guides/abslstringify.
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const CounterExample& counter_example) {
+    absl::Format(&sink, "%s", counter_example.ToString());
+  }
+
  private:
   CounterExample(PacketTransformerHandle left_packet_transformer,
                  PacketTransformerHandle right_packet_transformer,
@@ -95,6 +106,23 @@ class SuccessOrCounterExample {
   const CounterExample& GetCounterExampleOrDie() const {
     CHECK(counter_example_.has_value());  // Crash OK
     return *counter_example_;
+  }
+
+  // Explain the counter example. If there is no counter example, return
+  // "Success".
+  std::string Explain() const {
+    if (IsSuccess()) {
+      return "Success";
+    }
+    return GetCounterExampleOrDie().Explain();
+  }
+  std::string ToString() const { return Explain(); }
+
+  // Formatting, see https://abseil.io/docs/cpp/guides/abslstringify.
+  template <typename Sink>
+  friend void AbslStringify(
+      Sink& sink, const SuccessOrCounterExample& success_or_counter_example) {
+    absl::Format(&sink, "%s", success_or_counter_example.ToString());
   }
 
  private:
