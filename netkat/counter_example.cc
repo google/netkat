@@ -14,11 +14,16 @@
 
 #include "netkat/counter_example.h"
 
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
+#include "absl/strings/str_join.h"
 #include "netkat/evaluator.h"
 #include "netkat/packet_set.h"
 #include "netkat/packet_transformer.h"
@@ -80,6 +85,48 @@ absl::StatusOr<Packet> CounterExample::GetInputPacketInRightButNotLeft() const {
     return absl::NotFoundError("No input packets in right but not left found.");
   }
   return input_packets[0];
+}
+
+// TODO: dilo - This and the definition of Packet (now in evaluator.h) should be
+// in a separate file `packet.h`.
+std::string PacketToString(const Packet& packet) {
+  return absl::StrCat(
+      "{", absl::StrJoin(packet, ", ", absl::PairFormatter("=")), "}");
+}
+
+std::string CounterExample::Explain() const {
+  bool left_packet_found = true;
+  Packet input_packet;
+  Packet output_packet;
+  if (auto counter_example = GetInputPacketInLeftButNotRight();
+      counter_example.ok()) {
+    input_packet = std::move(*counter_example);
+    PacketTransformerHandle left_diff_right_transformer =
+        packet_transformer_manager_.Difference(left_packet_transformer_,
+                                               right_packet_transformer_);
+    output_packet = *packet_transformer_manager_
+                         .Run(left_diff_right_transformer, input_packet)
+                         .begin();
+  } else {
+    left_packet_found = false;
+    counter_example = GetInputPacketInRightButNotLeft();
+    CHECK_OK(counter_example)  // Crash OK, testing code.
+        << "No difference between left or right, yet a counter example was "
+           "produced.";
+    input_packet = std::move(*counter_example);
+    PacketTransformerHandle right_diff_left_transformer =
+        packet_transformer_manager_.Difference(right_packet_transformer_,
+                                               left_packet_transformer_);
+    output_packet = *packet_transformer_manager_
+                         .Run(right_diff_left_transformer, input_packet)
+                         .begin();
+  }
+  return absl::StrFormat(
+      "Input packet that distinguishes between the left and right "
+      "policy:\n  `%s`\nProduced output packet on %s policy, but not "
+      "on %s policy:\n  `%s`\n",
+      PacketToString(input_packet), left_packet_found ? "left" : "right",
+      left_packet_found ? "right" : "left", PacketToString(output_packet));
 }
 
 }  // namespace netkat
