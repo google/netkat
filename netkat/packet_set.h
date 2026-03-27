@@ -154,8 +154,11 @@ class PacketSetManager {
   // `packet`, or false otherwise.
   bool Contains(PacketSetHandle packet_set, const Packet& packet) const;
 
-  // Returns a dot string representation of the given `packet_set`.
-  std::string ToDot(PacketSetHandle packet_set) const;
+  // Returns a raw dot string representation of the given `packet_set`.
+  std::string ToDotRaw(PacketSetHandle packet_set) const;
+  // Returns a URL to a Graphviz visualized representation of the given
+  // `packet_set`.
+  std::string ToDotUrl(PacketSetHandle packet_set) const;
 
   // Compiles the given `PredicateProto` into a `PacketSetHandle` that
   // represents the set of packets satisfying the predicate.
