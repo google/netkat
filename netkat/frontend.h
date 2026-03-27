@@ -202,6 +202,7 @@ class Policy {
   friend Policy Union(std::vector<Policy>);
   friend Policy Iterate(Policy);
   friend Policy Difference(Policy, Policy);
+  friend Policy SymmetricDifference(Policy, Policy);
   friend Policy Record();
 
   // Policies that conceptually represent a program that should accept or
@@ -322,6 +323,13 @@ Policy Iterate(Policy policy);
 // outputs of p0 and p1. Note that Difference(p0, p1) and Difference(p1, p0) may
 // be semantically different.
 Policy Difference(Policy, Policy);
+
+// Performs a symmetric difference operation on the given policies.
+//
+// For example, SymmetricDifference(p0, p1) we compute the symmetric set
+// difference between the outputs of p0 and p1. Symmetric difference is both
+// associative and commutative.
+Policy SymmetricDifference(Policy, Policy);
 
 // Records the packet into the packet history. Referred to as 'dup' in the
 // literature.

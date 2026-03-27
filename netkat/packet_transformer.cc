@@ -303,6 +303,14 @@ PacketTransformerHandle PacketTransformerManager::Compile(
       if (it != transformer_by_hash_.end()) return it->second;
       return transformer_by_hash_[key] = Iterate(key.lhs_child);
     }
+    case PolicyProto::kIntersectionOp: {
+      key.lhs_child = Compile(policy.intersection_op().left());
+      key.rhs_child = Compile(policy.intersection_op().right());
+      auto it = transformer_by_hash_.find(key);
+      if (it != transformer_by_hash_.end()) return it->second;
+      return transformer_by_hash_[key] =
+                 Intersection(key.lhs_child, key.rhs_child);
+    }
     case PolicyProto::kDifferenceOp: {
       key.lhs_child = Compile(policy.difference_op().left());
       key.rhs_child = Compile(policy.difference_op().right());
@@ -310,6 +318,14 @@ PacketTransformerHandle PacketTransformerManager::Compile(
       if (it != transformer_by_hash_.end()) return it->second;
       return transformer_by_hash_[key] =
                  Difference(key.lhs_child, key.rhs_child);
+    }
+    case PolicyProto::kSymmetricDifferenceOp: {
+      key.lhs_child = Compile(policy.symmetric_difference_op().left());
+      key.rhs_child = Compile(policy.symmetric_difference_op().right());
+      auto it = transformer_by_hash_.find(key);
+      if (it != transformer_by_hash_.end()) return it->second;
+      return transformer_by_hash_[key] =
+                 SymmetricDifference(key.lhs_child, key.rhs_child);
     }
     // By convention, uninitialized policies must be treated like the Deny
     // policy.
@@ -647,6 +663,110 @@ PacketTransformerHandle PacketTransformerManager::Union(
   return Union(GetNodeOrDie(left), GetNodeOrDie(right));
 }
 
+PacketTransformerHandle PacketTransformerManager::Intersection(
+    DecisionNode left, DecisionNode right) {
+  // left.field > right.field: Expand the left node, reducing to the inductive
+  // case.
+  if (left.field > right.field) {
+    PacketFieldHandle first_field = right.field;
+    return Intersection(
+        DecisionNode{
+            .field = first_field,
+            .default_branch = NodeToTransformer(std::move(left)),
+        },
+        std::move(right));
+  }
+
+  // left.field < right.field: Expand the right node, reducing to the inductive
+  // case.
+  if (left.field < right.field) {
+    PacketFieldHandle first_field = left.field;
+    return Intersection(
+        std::move(left),
+        DecisionNode{
+            .field = first_field,
+            .default_branch = NodeToTransformer(std::move(right)),
+        });
+  }
+
+  // left.field == right.field: branch on shared field.
+  DCHECK(left.field == right.field);
+  DecisionNode result_node{
+      .field = left.field,
+      .default_branch_by_field_modification = CombineModifyBranches(
+          left.default_branch_by_field_modification,
+          right.default_branch_by_field_modification,
+          /*combiner=*/
+          [this](PacketTransformerHandle left, PacketTransformerHandle right) {
+            return Intersection(left, right);
+          },
+          /*default_value=*/Deny()),
+      .default_branch = Intersection(left.default_branch, right.default_branch),
+  };
+
+  // Collect every value in mapped in each node.
+  absl::flat_hash_set<int> all_possible_values;
+  all_possible_values.reserve(
+      left.modify_branch_by_field_match.size() +
+      right.modify_branch_by_field_match.size() +
+      left.default_branch_by_field_modification.size() +
+      right.default_branch_by_field_modification.size());
+
+  absl::c_transform(
+      left.modify_branch_by_field_match,
+      std::inserter(all_possible_values, all_possible_values.end()),
+      [](auto pair) { return pair.first; });
+  absl::c_transform(
+      right.modify_branch_by_field_match,
+      std::inserter(all_possible_values, all_possible_values.end()),
+      [](auto pair) { return pair.first; });
+  absl::c_transform(
+      left.default_branch_by_field_modification,
+      std::inserter(all_possible_values, all_possible_values.end()),
+      [](auto pair) { return pair.first; });
+  absl::c_transform(
+      right.default_branch_by_field_modification,
+      std::inserter(all_possible_values, all_possible_values.end()),
+      [](auto pair) { return pair.first; });
+
+  // For every value in mapped in each node, construct the proper new branch.
+  // TODO(dilo): Would like to use absl::bind_front here instead of a lambda:
+  //   absl::bind_front<PacketTransformerHandle(PacketTransformerHandle,
+  //     PacketTransformerHandle)>(
+  // &PacketTransformerManager::Intersection, this),
+  for (int value : all_possible_values) {
+    result_node.modify_branch_by_field_match[value] = CombineModifyBranches(
+        GetMapAtValue(left, value), GetMapAtValue(right, value),
+        /*combiner=*/
+        [this](PacketTransformerHandle left, PacketTransformerHandle right) {
+          return Intersection(left, right);
+        },
+        /*default_value=*/Deny());
+  }
+
+  return NodeToTransformer(std::move(result_node));
+}
+
+PacketTransformerHandle PacketTransformerManager::Intersection(
+    PacketTransformerHandle left, PacketTransformerHandle right) {
+  if (left == right) return left;
+  if (IsDeny(left) || IsDeny(right)) return Deny();
+
+  if (IsAccept(left) || IsAccept(right)) {
+    const DecisionNode& other_node =
+        GetNodeOrDie(IsAccept(left) ? right : left);
+    return Intersection(
+        DecisionNode{
+            .field = other_node.field,
+            .default_branch = Accept(),
+        },
+        other_node);
+  }
+
+  // If neither node is accept or deny, then intersection the nodes directly.
+  return Intersection(GetNodeOrDie(left), GetNodeOrDie(right));
+}
+
 PacketTransformerHandle PacketTransformerManager::Difference(
     DecisionNode left, DecisionNode right) {
   // left.field > right.field: Expand the left node, reducing to the inductive
@@ -754,6 +874,11 @@ PacketTransformerHandle PacketTransformerManager::Difference(
 
   // If neither node is accept or deny, then difference the nodes directly.
   return Difference(GetNodeOrDie(left), GetNodeOrDie(right));
+}
+
+PacketTransformerHandle PacketTransformerManager::SymmetricDifference(
+    PacketTransformerHandle left, PacketTransformerHandle right) {
+  return Union(Difference(left, right), Difference(right, left));
 }
 
 PacketTransformerHandle PacketTransformerManager::Iterate(
