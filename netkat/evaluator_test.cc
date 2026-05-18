@@ -21,6 +21,7 @@
 #include "gtest/gtest.h"
 #include "netkat/netkat.pb.h"
 #include "netkat/netkat_proto_constructors.h"
+#include "netkat/packet.h"
 
 namespace netkat {
 namespace {

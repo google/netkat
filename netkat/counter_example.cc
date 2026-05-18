@@ -24,7 +24,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
-#include "netkat/evaluator.h"
+#include "netkat/packet.h"
 #include "netkat/packet_set.h"
 #include "netkat/packet_transformer.h"
 
@@ -85,13 +85,6 @@ absl::StatusOr<Packet> CounterExample::GetInputPacketInRightButNotLeft() const {
     return absl::NotFoundError("No input packets in right but not left found.");
   }
   return input_packets[0];
-}
-
-// TODO: dilo - This and the definition of Packet (now in evaluator.h) should be
-// in a separate file `packet.h`.
-std::string PacketToString(const Packet& packet) {
-  return absl::StrCat(
-      "{", absl::StrJoin(packet, ", ", absl::PairFormatter("=")), "}");
 }
 
 std::string CounterExample::Explain() const {

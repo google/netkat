@@ -124,8 +124,8 @@ cc_library(
     srcs = ["packet_set.cc"],
     hdrs = ["packet_set.h"],
     deps = [
-        ":evaluator",
         ":netkat_cc_proto",
+        ":packet",
         ":packet_field",
         ":paged_stable_vector",
         "@com_google_absl//absl/algorithm:container",
@@ -148,6 +148,7 @@ cc_test(
     deps = [
         ":evaluator",
         ":netkat_proto_constructors",
+        ":packet",
         ":packet_set",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -197,11 +198,28 @@ cc_library(
     hdrs = ["evaluator.h"],
     deps = [
         ":netkat_cc_proto",
-        "@com_google_absl//absl/container:flat_hash_map",
+        ":packet",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log",
+    ],
+)
+
+cc_library(
+    name = "packet",
+    srcs = ["packet.cc"],
+    hdrs = ["packet.h"],
+    deps = [
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_test(
+    name = "packet_test",
+    srcs = ["packet_test.cc"],
+    deps = [
+        ":packet",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -213,6 +231,7 @@ cc_test(
         ":evaluator",
         ":netkat_cc_proto",
         ":netkat_proto_constructors",
+        ":packet",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_fuzztest//fuzztest",
         "@com_google_googletest//:gtest_main",
@@ -283,7 +302,7 @@ cc_library(
     srcs = ["counter_example.cc"],
     hdrs = ["counter_example.h"],
     deps = [
-        ":evaluator",
+        ":packet",
         ":packet_set",
         ":packet_transformer",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -300,8 +319,8 @@ cc_test(
     srcs = ["counter_example_test.cc"],
     deps = [
         ":counter_example",
-        ":evaluator",
         ":frontend",
+        ":packet",
         ":packet_transformer",
         "@com_google_absl//absl/status",
         "@com_google_googletest//:gtest_main",
@@ -342,8 +361,8 @@ cc_library(
     srcs = ["packet_transformer.cc"],
     hdrs = ["packet_transformer.h"],
     deps = [
-        ":evaluator",
         ":netkat_cc_proto",
+        ":packet",
         ":packet_field",
         ":packet_set",
         ":paged_stable_vector",
@@ -382,6 +401,7 @@ cc_test(
         ":evaluator",
         ":netkat_cc_proto",
         ":netkat_proto_constructors",
+        ":packet",
         ":packet_set",
         ":packet_transformer",
         "@com_google_absl//absl/base:no_destructor",

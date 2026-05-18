@@ -21,7 +21,7 @@
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/check.h"
-#include "netkat/evaluator.h"
+#include "netkat/packet.h"
 #include "netkat/packet_set.h"
 #include "netkat/packet_transformer.h"
 

@@ -31,6 +31,7 @@
 #include "gutil/status_matchers.h"  // IWYU pragma: keep
 #include "netkat/evaluator.h"
 #include "netkat/netkat_proto_constructors.h"
+#include "netkat/packet.h"
 #include "re2/re2.h"
 
 namespace netkat {

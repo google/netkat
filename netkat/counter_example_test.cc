@@ -6,8 +6,8 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "gutil/status_matchers.h"
-#include "netkat/evaluator.h"
 #include "netkat/frontend.h"
+#include "netkat/packet.h"
 #include "netkat/packet_transformer.h"
 
 namespace netkat {

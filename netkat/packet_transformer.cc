@@ -37,8 +37,8 @@
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "gutil/status.h"
-#include "netkat/evaluator.h"
 #include "netkat/netkat.pb.h"
+#include "netkat/packet.h"
 #include "netkat/packet_field.h"
 #include "netkat/packet_set.h"
 
