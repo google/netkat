@@ -21,8 +21,12 @@
 #ifndef GOOGLE_NETKAT_NETKAT_ANALYSIS_ENGINE_H_
 #define GOOGLE_NETKAT_NETKAT_ANALYSIS_ENGINE_H_
 
+#include <optional>
+
+#include "absl/status/status.h"
 #include "netkat/counter_example.h"
 #include "netkat/frontend.h"
+#include "netkat/packet.h"
 #include "netkat/packet_transformer.h"
 
 namespace netkat {
@@ -66,6 +70,27 @@ class AnalysisEngine {
   //
   SuccessOrCounterExample CheckEquivalent(const Policy& left,
                                           const Policy& right);
+
+  // Returns whether the given `packets` satisfy the given `property`.
+  // This is true if all packets in `packets` are also in `property`.
+  // Equivalent to: packets <= property.
+  // WARNING: The empty set of packets vacuously satisfies all properties.
+  // If not satisfied, returns an InvalidArgument error with an example packet
+  // that violates the property.
+  absl::Status CheckPacketsSatisfyProperty(const Predicate& packets,
+                                           const Predicate& property);
+
+  // Returns whether the output of `program` for the given `input_packets`
+  // satisfies the given `property`.
+  // This is true if all packets produced by `program` from `input_packets`
+  // are in `property`.
+  // Equivalent to: push(input_packets, program) <= property.
+  // WARNING: The empty set of packets vacuously satisfies all properties.
+  // If not satisfied, returns an InvalidArgument error with an example packet
+  // that violates the property.
+  absl::Status CheckOutputSatisfiesProperty(const Predicate& input_packets,
+                                            const Policy& program,
+                                            const Predicate& property);
 
   // Returns whether any given packet, represented by the set of packets in
   // `packets`, is forwarded by `program`. A packet is considered "forwaded" if

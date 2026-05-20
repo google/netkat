@@ -14,14 +14,43 @@
 
 #include "netkat/analysis_engine.h"
 
+#include <vector>
+
 #include "absl/log/check.h"
+#include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "gutil/status.h"
 #include "netkat/counter_example.h"
 #include "netkat/frontend.h"
+#include "netkat/packet.h"
 #include "netkat/packet_set.h"
 #include "netkat/packet_transformer.h"
 
 namespace netkat {
+namespace {
+absl::Status SatisfyProperty(PacketSetManager& set_manager,
+                             PacketSetHandle packets,
+                             PacketSetHandle property) {
+  PacketSetHandle violating_set =
+      set_manager.And(packets, set_manager.Not(property));
+
+  if (set_manager.IsEmptySet(violating_set)) {
+    return absl::OkStatus();
+  }
+
+  std::vector<Packet> concrete_packets =
+      set_manager.GetConcretePackets(violating_set);
+  if (concrete_packets.empty()) {
+    return absl::InternalError(
+        "Property violated, but could not get any concrete packet from the "
+        "violating set.");
+  }
+  return gutil::InvalidArgumentErrorBuilder()
+         << "Property violated by example packet:\n "
+         << PacketToString(concrete_packets[0]);
+}
+
+}  // namespace
 
 bool AnalysisEngine::CheckEquivalent(const Predicate& left,
                                      const Predicate& right) {
@@ -47,6 +76,30 @@ SuccessOrCounterExample AnalysisEngine::CheckEquivalent(const Policy& left,
   // this cannot be out of scope when creating the CounterExample.
   CHECK_OK(counter_example.status());  // Crash OK
   return SuccessOrCounterExample(*counter_example);
+}
+
+absl::Status AnalysisEngine::CheckPacketsSatisfyProperty(
+    const Predicate& packets, const Predicate& property) {
+  PacketSetManager& set_manager =
+      packet_transformer_manager_.GetPacketSetManager();
+  PacketSetHandle compiled_packets = set_manager.Compile(packets.ToProto());
+  PacketSetHandle compiled_property = set_manager.Compile(property.ToProto());
+  return SatisfyProperty(set_manager, compiled_packets, compiled_property);
+}
+
+absl::Status AnalysisEngine::CheckOutputSatisfiesProperty(
+    const Predicate& input_packets, const Policy& program,
+    const Predicate& property) {
+  PacketSetManager& set_manager =
+      packet_transformer_manager_.GetPacketSetManager();
+  PacketSetHandle compiled_input = set_manager.Compile(input_packets.ToProto());
+  PacketSetHandle compiled_property = set_manager.Compile(property.ToProto());
+
+  PacketTransformerHandle program_handle =
+      packet_transformer_manager_.Compile(program.ToProto());
+  PacketSetHandle program_output =
+      packet_transformer_manager_.Push(compiled_input, program_handle);
+  return SatisfyProperty(set_manager, program_output, compiled_property);
 }
 
 bool AnalysisEngine::ProgramForwardsAnyPacket(const Policy& program,
@@ -112,8 +165,7 @@ bool AnalysisEngine::CheckInputProducesAtMostGivenOutput(
   if (program_output == compiled_output) return true;
   if (program_output == set_manager.EmptySet()) return false;
 
-  // We can define less than or equal to as follows: a <= b === a + b == b
-  return set_manager.Or(program_output, compiled_output) == compiled_output;
+  return SatisfyProperty(set_manager, program_output, compiled_output).ok();
 }
 
 }  // namespace netkat

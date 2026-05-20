@@ -16,6 +16,7 @@
 
 #include <utility>
 
+#include "absl/status/status_matchers.h"
 #include "fuzztest/fuzztest.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -25,6 +26,9 @@
 
 namespace netkat {
 namespace {
+
+using ::gutil::IsOk;
+using ::testing::Not;
 
 // We include only a single `CheckEquivalent` test as a smoke test since the
 // function is implemented in terms of `PacketSetManager`, which is tested
@@ -292,6 +296,60 @@ TEST(CheckInputProducesAtMostGivenOutputTest,
   EXPECT_FALSE(analyzer.CheckInputProducesAtMostGivenOutput(
       Match("foo", 1), Union(Modify("tag", 1), Modify("tag2", 1)),
       Match("foo", 1) && Match("tag", 1)));
+}
+
+TEST(CheckPacketsSatisfyPropertyTest, EmptySetSatisfiesAllProperties) {
+  AnalysisEngine analyzer;
+  EXPECT_OK(analyzer.CheckPacketsSatisfyProperty(Predicate::False(),
+                                                 Predicate::True()));
+  EXPECT_OK(analyzer.CheckPacketsSatisfyProperty(Predicate::False(),
+                                                 Predicate::False()));
+  EXPECT_OK(analyzer.CheckPacketsSatisfyProperty(Predicate::False(),
+                                                 Match("foo", 1)));
+}
+
+TEST(CheckPacketsSatisfyPropertyTest, PacketsSatisfyPropertyReturnsOk) {
+  AnalysisEngine analyzer;
+  Predicate packets = Match("foo", 1);
+  Predicate property = Match("foo", 1) || Match("bar", 1);
+  EXPECT_OK(analyzer.CheckPacketsSatisfyProperty(packets, property));
+}
+
+TEST(CheckPacketsSatisfyPropertyTest,
+     PacketsDoNotSatisfyPropertyReturnsInvalidArgument) {
+  AnalysisEngine analyzer;
+  Predicate packets = Match("foo", 1) || Match("bar", 1);
+  Predicate property = Match("foo", 1);
+  EXPECT_THAT(analyzer.CheckPacketsSatisfyProperty(packets, property),
+              Not(IsOk()));
+}
+
+TEST(CheckOutputSatisfiesPropertyTest, EmptyOutputSatisfiesAllProperties) {
+  AnalysisEngine analyzer;
+  // Program that drops everything
+  Policy program = Filter(Predicate::False());
+  EXPECT_OK(analyzer.CheckOutputSatisfiesProperty(Predicate::True(), program,
+                                                  Predicate::True()));
+  EXPECT_OK(analyzer.CheckOutputSatisfiesProperty(Predicate::True(), program,
+                                                  Predicate::False()));
+}
+
+TEST(CheckOutputSatisfiesPropertyTest, OutputSatisfiesPropertyReturnsOk) {
+  AnalysisEngine analyzer;
+  Policy program = Modify("foo", 1);
+  Predicate property = Match("foo", 1);
+  EXPECT_OK(analyzer.CheckOutputSatisfiesProperty(Predicate::True(), program,
+                                                  property));
+}
+
+TEST(CheckOutputSatisfiesPropertyTest,
+     OutputDoesNotSatisfyPropertyReturnsInvalidArgument) {
+  AnalysisEngine analyzer;
+  Policy program = Modify("foo", 2);
+  Predicate property = Match("foo", 1);
+  EXPECT_THAT(analyzer.CheckOutputSatisfiesProperty(Predicate::True(), program,
+                                                    property),
+              Not(IsOk()));
 }
 
 }  // namespace
