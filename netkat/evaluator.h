@@ -18,8 +18,6 @@
 //
 // Defines a library of functions for evaluating NetKAT predicates and policies
 // on concrete packets.
-//
-// See go/netkat-hld for more details.
 
 #ifndef GOOGLE_NETKAT_NETKAT_EVALUATOR_H_
 #define GOOGLE_NETKAT_NETKAT_EVALUATOR_H_
