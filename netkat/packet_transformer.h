@@ -41,6 +41,7 @@
 #include <cstdint>
 #include <string>
 #include <utility>
+#include <variant>
 
 #include "absl/container/btree_map.h"
 #include "absl/container/flat_hash_map.h"
@@ -411,10 +412,16 @@ class PacketTransformerManager {
   PacketTransformerHandle Sequence(DecisionNode left, DecisionNode right);
   PacketTransformerHandle Difference(DecisionNode left, DecisionNode right);
 
+  using MapOrPtr =
+      std::variant<const absl::btree_map<int, PacketTransformerHandle>*,
+                   absl::btree_map<int, PacketTransformerHandle>>;
+
+  static const absl::btree_map<int, PacketTransformerHandle>& GetRef(
+      const MapOrPtr& var);
+
   // Internal helper function to get a map of possible modification values to
   // branches for a given input value at `node`.
-  absl::btree_map<int, PacketTransformerHandle> GetMapAtValue(
-      const DecisionNode& node, int value);
+  MapOrPtr GetMapAtValue(const DecisionNode& node, int value);
 
   // The decision nodes forming the BDD-style DAG representation of packets.
   // `PacketTransformerHandle::node_index_` indexes into this vector.
