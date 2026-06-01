@@ -26,19 +26,28 @@ combining them, or inspecting the underlying sets, one must call methods on the
 manager class, which acts as an arena allocator that owns all memory associated
 with the handles.
 
-For example: ``` // We need a manager to construct handles. PacketSetManager
-manager; PacketSetHandle a = manager.EmptySet() PacketSetHandle b =
-manager.Match("src_mac", 0xFF'FF'FF'FF);
+For example:
 
-// Handles can be compared and hashed without the help of the manager, // but
-that's about it. CHECK(a != b); absl::flat_hash_map<PacketSetHandle> ab_set{a,
-b};
+```
+// We need a manager to construct handles.
+PacketSetManager manager;
+PacketSetHandle a = manager.EmptySet()
+PacketSetHandle b = manager.Match("src_mac", 0xFF'FF'FF'FF);
+
+// Handles can be compared and hashed without the help of the manager,
+// but that's about it.
+CHECK(a != b);
+absl::flat_hash_map<PacketSetHandle> ab_set{a, b};
 
 // To do interesting things with the handles, we need the manager.
-PacketSetHandle c = manager.And(a, b); // The set union of `a` and `b`.
-PacketSetHandle not_c = manager.Not(c); // The set complement of `c`. if
-(manager.Contains(c, packet)) { CHECK(!manager.Contains(not_c, packet)); } else
-{ CHECK(manager.Contains(not_c, packet)); } ```
+PacketSetHandle c = manager.And(a, b);   // The set union of `a` and `b`.
+PacketSetHandle not_c = manager.Not(c);  // The set complement of `c`.
+if (manager.Contains(c, packet)) {
+  CHECK(!manager.Contains(not_c, packet));
+} else {
+  CHECK(manager.Contains(not_c, packet));
+}
+```
 
 ## Motivation for Using the Pattern
 

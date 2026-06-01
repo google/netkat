@@ -21,6 +21,7 @@
 #include <queue>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "absl/algorithm/container.h"
@@ -78,18 +79,30 @@ PacketTransformerManager::GetNodeOrDie(
   return nodes_[transformer.node_index_];
 }
 
+const absl::btree_map<int, PacketTransformerHandle>&
+PacketTransformerManager::GetRef(const MapOrPtr& var) {
+  if (std::holds_alternative<
+          const absl::btree_map<int, PacketTransformerHandle>*>(var)) {
+    return *std::get<const absl::btree_map<int, PacketTransformerHandle>*>(var);
+  }
+  return std::get<absl::btree_map<int, PacketTransformerHandle>>(var);
+}
+
 // TODO(dilo): Creating as many map copies as this method facilitates is
 // probably going to cause terrible performance, and needs to be revisited.
-absl::btree_map<int, PacketTransformerHandle>
+PacketTransformerManager::MapOrPtr
+
 PacketTransformerManager::GetMapAtValue(const DecisionNode& node, int value) {
   if (node.modify_branch_by_field_match.contains(value))
-    return node.modify_branch_by_field_match.at(value);
+    return &node.modify_branch_by_field_match.at(value);
 
-  absl::btree_map<int, PacketTransformerHandle> result =
-      node.default_branch_by_field_modification;
-  if (result.contains(value) || IsDeny(node.default_branch)) return result;
+  if (node.default_branch_by_field_modification.contains(value) ||
+      IsDeny(node.default_branch))
+    return &node.default_branch_by_field_modification;
 
   // Otherwise, add a mapping from `value` to the default branch, then return.
+  absl::btree_map<int, PacketTransformerHandle> result =
+      node.default_branch_by_field_modification;
   result[value] = node.default_branch;
   return result;
 }
@@ -384,17 +397,38 @@ absl::btree_map<int, PacketTransformerHandle> CombineModifyBranches(
         combiner,
     PacketTransformerHandle default_value) {
   absl::btree_map<int, PacketTransformerHandle> result;
-  for (const auto& [value, branch] : left) {
-    if (right.contains(value)) {
-      result[value] = combiner(branch, right.at(value));
+  auto it_left = left.begin();
+  auto it_right = right.begin();
+
+  while (it_left != left.end() && it_right != right.end()) {
+    if (it_left->first < it_right->first) {
+      result.emplace_hint(result.end(), it_left->first,
+                          combiner(it_left->second, default_value));
+      ++it_left;
+    } else if (it_left->first > it_right->first) {
+      result.emplace_hint(result.end(), it_right->first,
+                          combiner(default_value, it_right->second));
+      ++it_right;
     } else {
-      result[value] = combiner(branch, default_value);
+      result.emplace_hint(result.end(), it_left->first,
+                          combiner(it_left->second, it_right->second));
+      ++it_left;
+      ++it_right;
     }
   }
-  for (const auto& [value, branch] : right) {
-    if (!result.contains(value))
-      result[value] = combiner(default_value, branch);
+
+  while (it_left != left.end()) {
+    result.emplace_hint(result.end(), it_left->first,
+                        combiner(it_left->second, default_value));
+    ++it_left;
   }
+
+  while (it_right != right.end()) {
+    result.emplace_hint(result.end(), it_right->first,
+                        combiner(default_value, it_right->second));
+    ++it_right;
+  }
+
   return result;
 }
 
@@ -440,7 +474,7 @@ PacketTransformerHandle PacketTransformerManager::Sequence(DecisionNode left,
        left.default_branch_by_field_modification) {
     absl::btree_map<int, PacketTransformerHandle> right_at_value_with_sequence =
         CombineModifyBranches(
-            {}, GetMapAtValue(right, value),
+            {}, GetRef(GetMapAtValue(right, value)),
             /*combiner=*/
             [this](PacketTransformerHandle left,
                    PacketTransformerHandle right) {
@@ -501,18 +535,21 @@ PacketTransformerHandle PacketTransformerManager::Sequence(DecisionNode left,
 
   // For every value in mapped in each node, construct the proper new branch.
   for (int value : all_possible_values) {
-    auto left_map_at_value = GetMapAtValue(left, value);
-    // An empty map is equivalent to a map with a single entry of
-    // <value, Deny>, but the latter is not always canonical. However, an
-    // empty map won't work correctly for the merges below (an in fact, the
-    // whole for-loop would be skipped), so we expand it here if necessary.
-    if (left_map_at_value.empty()) left_map_at_value[value] = Deny();
+    auto left_map_at_value_var = GetMapAtValue(left, value);
+    const auto& left_map_at_value_ref = GetRef(left_map_at_value_var);
+    absl::btree_map<int, PacketTransformerHandle> left_map_at_value_storage;
+    const absl::btree_map<int, PacketTransformerHandle>* left_map_at_value =
+        &left_map_at_value_ref;
+    if (left_map_at_value->empty()) {
+      left_map_at_value_storage[value] = Deny();
+      left_map_at_value = &left_map_at_value_storage;
+    }
 
-    for (const auto& [left_value, left_spp] : left_map_at_value) {
+    for (const auto& [left_value, left_spp] : *left_map_at_value) {
       result_node.modify_branch_by_field_match[value] = CombineModifyBranches(
           result_node.modify_branch_by_field_match[value],
           CombineModifyBranches(
-              {}, GetMapAtValue(right, left_value),
+              {}, GetRef(GetMapAtValue(right, left_value)),
               /*combiner=*/
               [this](PacketTransformerHandle left,
                      PacketTransformerHandle right) {
@@ -613,7 +650,7 @@ PacketTransformerHandle PacketTransformerManager::Union(DecisionNode left,
   // &PacketTransformerManager::Union, this),
   for (int value : all_possible_values) {
     result_node.modify_branch_by_field_match[value] = CombineModifyBranches(
-        GetMapAtValue(left, value), GetMapAtValue(right, value),
+        GetRef(GetMapAtValue(left, value)), GetRef(GetMapAtValue(right, value)),
         /*combiner=*/
         [this](PacketTransformerHandle left, PacketTransformerHandle right) {
           return Union(left, right);
@@ -715,7 +752,7 @@ PacketTransformerHandle PacketTransformerManager::Difference(
   // For every value in mapped in each node, construct the proper new branch.
   for (int value : all_possible_values) {
     result_node.modify_branch_by_field_match[value] = CombineModifyBranches(
-        GetMapAtValue(left, value), GetMapAtValue(right, value),
+        GetRef(GetMapAtValue(left, value)), GetRef(GetMapAtValue(right, value)),
         /*combiner=*/
         [this](PacketTransformerHandle left, PacketTransformerHandle right) {
           return Difference(left, right);
