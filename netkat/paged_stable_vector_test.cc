@@ -85,11 +85,15 @@ FUZZ_TEST(PagedStableVectorTest, BracketAssigmentWorks);
 TEST(PagedStableVectorTest, ReferencesDontGetInvalidated) {
   PagedStableVector<std::string, kSmallPageSize> vector;
 
-  // Store a few references.
-  vector.push_back("first element");
-  std::string* first_element_ptr = &vector[0];
-  vector.push_back("second element");
-  std::string* second_element_ptr = &vector[1];
+  // Store a reference to every element as it is added, spanning several pages
+  // so that some references point to elements right before and right after
+  // page boundaries -- the positions most at risk when a new page or a larger
+  // page table gets allocated.
+  std::vector<std::string*> element_ptrs;
+  for (int i = 0; i < 10 * kSmallPageSize; ++i) {
+    vector.push_back(std::to_string(i));
+    element_ptrs.push_back(&vector[i]);
+  }
 
   // Push a ton of elements to trigger page allocation.
   // If this were a regular std::vector, the references would be invalidated.
@@ -98,8 +102,10 @@ TEST(PagedStableVectorTest, ReferencesDontGetInvalidated) {
   }
 
   // Check that the references are still valid.
-  EXPECT_EQ(&vector[0], first_element_ptr);
-  EXPECT_EQ(&vector[1], second_element_ptr);
+  for (int i = 0; i < element_ptrs.size(); ++i) {
+    EXPECT_EQ(&vector[i], element_ptrs[i]);
+    EXPECT_EQ(*element_ptrs[i], std::to_string(i));
+  }
 };
 
 }  // namespace
