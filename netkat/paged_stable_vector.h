@@ -36,26 +36,28 @@ namespace netkat {
 // significant for very large vectors in performance-sensitive applications.
 //
 // The API of this class is kept just large enough to cover our use cases.
+//
+// PERFORMANCE: Prefer a power-of-two `PageSize` so that the index arithmetic
+// in `operator[]` compiles to shifts and masks rather than multiply sequences.
 template <class T, size_t PageSize>
 class PagedStableVector {
  public:
   PagedStableVector() = default;
 
-  size_t size() const {
-    return data_.empty() ? 0
-                         : (data_.size() - 1) * PageSize + data_.back().size();
-  }
+  size_t size() const { return size_; }
 
   template <class Value>
   void push_back(Value&& value) {
-    if (size() % PageSize == 0) data_.emplace_back().reserve(PageSize);
+    ReserveSpaceForNextElement();
     data_.back().push_back(std::forward<Value>(value));
+    ++size_;
   }
 
   template <class... Args>
   void emplace_back(Args&&... value) {
-    if (size() % PageSize == 0) data_.emplace_back().reserve(PageSize);
+    ReserveSpaceForNextElement();
     data_.back().emplace_back(std::forward<Args>(value)...);
+    ++size_;
   }
 
   T& operator[](size_t index) {
@@ -66,7 +68,20 @@ class PagedStableVector {
   }
 
  private:
+  void ReserveSpaceForNextElement() {
+    if (data_.empty() || data_.back().size() == PageSize) {
+      // Reserving each page upfront is what guarantees pointer stability: a
+      // page never grows beyond its initial capacity, so its elements are
+      // never relocated.
+      data_.emplace_back().reserve(PageSize);
+    }
+  }
+
   std::vector<std::vector<T>> data_;
+
+  // Tracked explicitly (rather than computed from `data_`) since clients call
+  // `size()` on every element insertion.
+  size_t size_ = 0;
 };
 
 }  // namespace netkat
