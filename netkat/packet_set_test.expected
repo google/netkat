@@ -24,17 +24,17 @@ digraph {
 Test case: p := (a=3 && b=4) || (b!=5 && c=5). Example from Katch paper Fig 3.
 ================================================================================
 -- STRING ----------------------------------------------------------------------
-PacketSetHandle<14>:
-  PacketFieldHandle<0>:'a' == 3 -> PacketSetHandle<13>
-  PacketFieldHandle<0>:'a' == * -> PacketSetHandle<6>
-PacketSetHandle<13>:
+PacketSetHandle<0:4>:
+  PacketFieldHandle<0>:'a' == 3 -> PacketSetHandle<1:7>
+  PacketFieldHandle<0>:'a' == * -> PacketSetHandle<1:3>
+PacketSetHandle<1:7>:
   PacketFieldHandle<1>:'b' == 4 -> PacketSetHandle<full>
   PacketFieldHandle<1>:'b' == 5 -> PacketSetHandle<empty>
-  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<5>
-PacketSetHandle<6>:
+  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<2:0>
+PacketSetHandle<1:3>:
   PacketFieldHandle<1>:'b' == 5 -> PacketSetHandle<empty>
-  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<5>
-PacketSetHandle<5>:
+  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<2:0>
+PacketSetHandle<2:0>:
   PacketFieldHandle<2>:'c' == 5 -> PacketSetHandle<full>
   PacketFieldHandle<2>:'c' == * -> PacketSetHandle<empty>
 -- DOT -------------------------------------------------------------------------
@@ -43,34 +43,34 @@ digraph {
   edge [fontsize = 12]
   4294967294 [label="T" shape=box]
   4294967295 [label="F" shape=box]
-  14 [label="a"]
-  14 -> 13 [label="3"]
-  14 -> 6 [style=dashed]
-  13 [label="b"]
-  13 -> 4294967294 [label="4"]
-  13 -> 4294967295 [label="5"]
-  13 -> 5 [style=dashed]
-  6 [label="b"]
-  6 -> 4294967295 [label="5"]
-  6 -> 5 [style=dashed]
-  5 [label="c"]
-  5 -> 4294967294 [label="5"]
-  5 -> 4294967295 [style=dashed]
+  4 [label="a"]
+  4 -> 4194311 [label="3"]
+  4 -> 4194307 [style=dashed]
+  4194311 [label="b"]
+  4194311 -> 4294967294 [label="4"]
+  4194311 -> 4294967295 [label="5"]
+  4194311 -> 8388608 [style=dashed]
+  4194307 [label="b"]
+  4194307 -> 4294967295 [label="5"]
+  4194307 -> 8388608 [style=dashed]
+  8388608 [label="c"]
+  8388608 -> 4294967294 [label="5"]
+  8388608 -> 4294967295 [style=dashed]
 }
 ================================================================================
 Test case: q := (b=3 && c=4) || (a=5 && c!=5). Example from Katch paper Fig 3.
 ================================================================================
 -- STRING ----------------------------------------------------------------------
-PacketSetHandle<24>:
-  PacketFieldHandle<0>:'a' == 5 -> PacketSetHandle<9>
-  PacketFieldHandle<0>:'a' == * -> PacketSetHandle<17>
-PacketSetHandle<9>:
+PacketSetHandle<0:9>:
+  PacketFieldHandle<0>:'a' == 5 -> PacketSetHandle<2:1>
+  PacketFieldHandle<0>:'a' == * -> PacketSetHandle<1:9>
+PacketSetHandle<2:1>:
   PacketFieldHandle<2>:'c' == 5 -> PacketSetHandle<empty>
   PacketFieldHandle<2>:'c' == * -> PacketSetHandle<full>
-PacketSetHandle<17>:
-  PacketFieldHandle<1>:'b' == 3 -> PacketSetHandle<16>
+PacketSetHandle<1:9>:
+  PacketFieldHandle<1>:'b' == 3 -> PacketSetHandle<2:2>
   PacketFieldHandle<1>:'b' == * -> PacketSetHandle<empty>
-PacketSetHandle<16>:
+PacketSetHandle<2:2>:
   PacketFieldHandle<2>:'c' == 4 -> PacketSetHandle<full>
   PacketFieldHandle<2>:'c' == * -> PacketSetHandle<empty>
 -- DOT -------------------------------------------------------------------------
@@ -79,47 +79,47 @@ digraph {
   edge [fontsize = 12]
   4294967294 [label="T" shape=box]
   4294967295 [label="F" shape=box]
-  24 [label="a"]
-  24 -> 9 [label="5"]
-  24 -> 17 [style=dashed]
-  9 [label="c"]
-  9 -> 4294967295 [label="5"]
-  9 -> 4294967294 [style=dashed]
-  17 [label="b"]
-  17 -> 16 [label="3"]
-  17 -> 4294967295 [style=dashed]
-  16 [label="c"]
-  16 -> 4294967294 [label="4"]
-  16 -> 4294967295 [style=dashed]
+  9 [label="a"]
+  9 -> 8388609 [label="5"]
+  9 -> 4194313 [style=dashed]
+  8388609 [label="c"]
+  8388609 -> 4294967295 [label="5"]
+  8388609 -> 4294967294 [style=dashed]
+  4194313 [label="b"]
+  4194313 -> 8388610 [label="3"]
+  4194313 -> 4294967295 [style=dashed]
+  8388610 [label="c"]
+  8388610 -> 4294967294 [label="4"]
+  8388610 -> 4294967295 [style=dashed]
 }
 ================================================================================
 Test case: p + q. Example from Katch paper Fig 3.
 ================================================================================
 -- STRING ----------------------------------------------------------------------
-PacketSetHandle<34>:
-  PacketFieldHandle<0>:'a' == 3 -> PacketSetHandle<32>
-  PacketFieldHandle<0>:'a' == 5 -> PacketSetHandle<33>
-  PacketFieldHandle<0>:'a' == * -> PacketSetHandle<31>
-PacketSetHandle<32>:
-  PacketFieldHandle<1>:'b' == 3 -> PacketSetHandle<30>
+PacketSetHandle<0:11>:
+  PacketFieldHandle<0>:'a' == 3 -> PacketSetHandle<1:15>
+  PacketFieldHandle<0>:'a' == 5 -> PacketSetHandle<1:16>
+  PacketFieldHandle<0>:'a' == * -> PacketSetHandle<1:14>
+PacketSetHandle<1:15>:
+  PacketFieldHandle<1>:'b' == 3 -> PacketSetHandle<2:5>
   PacketFieldHandle<1>:'b' == 4 -> PacketSetHandle<full>
   PacketFieldHandle<1>:'b' == 5 -> PacketSetHandle<empty>
-  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<5>
-PacketSetHandle<33>:
-  PacketFieldHandle<1>:'b' == 5 -> PacketSetHandle<9>
+  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<2:0>
+PacketSetHandle<1:16>:
+  PacketFieldHandle<1>:'b' == 5 -> PacketSetHandle<2:1>
   PacketFieldHandle<1>:'b' == * -> PacketSetHandle<full>
-PacketSetHandle<31>:
-  PacketFieldHandle<1>:'b' == 3 -> PacketSetHandle<30>
+PacketSetHandle<1:14>:
+  PacketFieldHandle<1>:'b' == 3 -> PacketSetHandle<2:5>
   PacketFieldHandle<1>:'b' == 5 -> PacketSetHandle<empty>
-  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<5>
-PacketSetHandle<30>:
+  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<2:0>
+PacketSetHandle<2:5>:
   PacketFieldHandle<2>:'c' == 4 -> PacketSetHandle<full>
   PacketFieldHandle<2>:'c' == 5 -> PacketSetHandle<full>
   PacketFieldHandle<2>:'c' == * -> PacketSetHandle<empty>
-PacketSetHandle<5>:
+PacketSetHandle<2:0>:
   PacketFieldHandle<2>:'c' == 5 -> PacketSetHandle<full>
   PacketFieldHandle<2>:'c' == * -> PacketSetHandle<empty>
-PacketSetHandle<9>:
+PacketSetHandle<2:1>:
   PacketFieldHandle<2>:'c' == 5 -> PacketSetHandle<empty>
   PacketFieldHandle<2>:'c' == * -> PacketSetHandle<full>
 -- DOT -------------------------------------------------------------------------
@@ -128,30 +128,30 @@ digraph {
   edge [fontsize = 12]
   4294967294 [label="T" shape=box]
   4294967295 [label="F" shape=box]
-  34 [label="a"]
-  34 -> 32 [label="3"]
-  34 -> 33 [label="5"]
-  34 -> 31 [style=dashed]
-  32 [label="b"]
-  32 -> 30 [label="3"]
-  32 -> 4294967294 [label="4"]
-  32 -> 4294967295 [label="5"]
-  32 -> 5 [style=dashed]
-  33 [label="b"]
-  33 -> 9 [label="5"]
-  33 -> 4294967294 [style=dashed]
-  31 [label="b"]
-  31 -> 30 [label="3"]
-  31 -> 4294967295 [label="5"]
-  31 -> 5 [style=dashed]
-  30 [label="c"]
-  30 -> 4294967294 [label="4"]
-  30 -> 4294967294 [label="5"]
-  30 -> 4294967295 [style=dashed]
-  5 [label="c"]
-  5 -> 4294967294 [label="5"]
-  5 -> 4294967295 [style=dashed]
-  9 [label="c"]
-  9 -> 4294967295 [label="5"]
-  9 -> 4294967294 [style=dashed]
+  11 [label="a"]
+  11 -> 4194319 [label="3"]
+  11 -> 4194320 [label="5"]
+  11 -> 4194318 [style=dashed]
+  4194319 [label="b"]
+  4194319 -> 8388613 [label="3"]
+  4194319 -> 4294967294 [label="4"]
+  4194319 -> 4294967295 [label="5"]
+  4194319 -> 8388608 [style=dashed]
+  4194320 [label="b"]
+  4194320 -> 8388609 [label="5"]
+  4194320 -> 4294967294 [style=dashed]
+  4194318 [label="b"]
+  4194318 -> 8388613 [label="3"]
+  4194318 -> 4294967295 [label="5"]
+  4194318 -> 8388608 [style=dashed]
+  8388613 [label="c"]
+  8388613 -> 4294967294 [label="4"]
+  8388613 -> 4294967294 [label="5"]
+  8388613 -> 4294967295 [style=dashed]
+  8388608 [label="c"]
+  8388608 -> 4294967294 [label="5"]
+  8388608 -> 4294967295 [style=dashed]
+  8388609 [label="c"]
+  8388609 -> 4294967295 [label="5"]
+  8388609 -> 4294967294 [style=dashed]
 }

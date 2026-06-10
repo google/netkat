@@ -98,7 +98,7 @@ class [[nodiscard]] PacketTransformerHandle {
   // Hashing, see https://abseil.io/docs/cpp/guides/hash.
   template <typename H>
   friend H AbslHashValue(H h, PacketTransformerHandle transformer) {
-    return H::combine(std::move(h), transformer.node_index_);
+    return H::combine(std::move(h), transformer.bits_);
   }
 
   // Formatting, see https://abseil.io/docs/cpp/guides/abslstringify.
@@ -112,17 +112,28 @@ class [[nodiscard]] PacketTransformerHandle {
   std::string ToString() const;
 
  private:
-  // An index into the `nodes_` vector of the `PacketTransformerManager`
-  // object associated with this `PacketTransformerHandle`. The semantics of
-  // this packet transformer is entirely determined by the node
-  // `nodes_[node_index_]`. The index is otherwise arbitrary and meaningless.
+  // The location of the decision node defining the semantics of this packet
+  // transformer, packed into 32 bits: the top `kFieldBits` bits hold the
+  // index of the packet field the node branches on (`kSentinelFieldIndex` for
+  // the sentinel handles representing Deny/Accept), and the bottom
+  // `kSlotBits` bits hold the node's slot in the `PacketTransformerManager`'s
+  // arena for that field (`nodes_by_field_`). The location is otherwise
+  // arbitrary and meaningless.
   //
-  // We use a 32-bit index as a tradeoff between minimizing memory usage and
-  // maximizing the number of `PacketTransformerHandle`s that can be created,
-  // both aspects that impact how well we scale to large NetKAT models.
-  uint32_t node_index_;
-  explicit PacketTransformerHandle(uint32_t node_index)
-      : node_index_(node_index) {}
+  // The encoding (and its rationale) mirrors `PacketSetHandle::bits_`; see
+  // there for details.
+  static constexpr uint32_t kSlotBits = 22;
+  static constexpr uint32_t kFieldBits = 32 - kSlotBits;
+  static constexpr uint32_t kMaxSlotsPerField = uint32_t{1} << kSlotBits;
+  static constexpr uint32_t kSentinelFieldIndex =
+      (uint32_t{1} << kFieldBits) - 1;
+
+  uint32_t bits_;
+  explicit PacketTransformerHandle(uint32_t bits) : bits_(bits) {}
+  PacketTransformerHandle(uint32_t field_index, uint32_t slot)
+      : bits_((field_index << kSlotBits) | slot) {}
+  uint32_t field_index() const { return bits_ >> kSlotBits; }
+  uint32_t slot() const { return bits_ & (kMaxSlotsPerField - 1); }
   friend class PacketTransformerManager;
 };
 
@@ -405,10 +416,15 @@ class PacketTransformerManager {
 
   [[nodiscard]] std::string ToString(const DecisionNode& node) const;
 
-  // The page size of the `nodes_` vector: 64 MiB or ~ 67 MB.
-  // Chosen large enough to reduce the cost of dynamic allocation, and small
-  // enough to avoid excessive memory overhead.
-  static constexpr size_t kPageSize = (1 << 26) / sizeof(DecisionNode);
+  // The page size of the per-field node arenas: 16 KiB per page.
+  // Chosen large enough to amortize the cost of dynamic allocation over
+  // hundreds of nodes, and small enough that (a) models touching many fields
+  // don't pay a large per-field memory overhead (each non-empty arena
+  // allocates at least one page), and (b) pages stay below the malloc
+  // mmap/trim thresholds (typically 128 KiB), so short-lived managers recycle
+  // pages through the allocator's freelists instead of syscalls.
+  static constexpr size_t kPageSize = (1 << 14) / sizeof(DecisionNode);
+  using NodeArena = PagedStableVector<DecisionNode, kPageSize>;
 
   // Helper functions to deal with DecisionNodes directly.
   // TODO(dilo): Is there a convenient way to either avoid these or avoid making
@@ -422,33 +438,40 @@ class PacketTransformerManager {
   absl::btree_map<int, PacketTransformerHandle> GetMapAtValue(
       const DecisionNode& node, int value);
 
-  // The decision nodes forming the BDD-style DAG representation of packets.
-  // `PacketTransformerHandle::node_index_` indexes into this vector.
+  // The decision nodes forming the BDD-style DAG representation of packet
+  // transformers, stored by the field they branch on: a node with field index
+  // `f` and slot `s` (in the sense of `PacketTransformerHandle::bits_`) is
+  // `nodes_by_field_[f][s]`. Storing nodes by field clusters the nodes of a
+  // field together in memory; operations tend to process nodes field by
+  // field, so this improves locality.
   //
-  // We use a custom vector class that provides pointer stability, allowing us
-  // to create new nodes while traversing the graph. The class also avoids
-  // expensive relocations.
-  PagedStableVector<DecisionNode, kPageSize> nodes_;
+  // We use a custom vector class for the arenas that provides pointer
+  // stability, allowing us to create new nodes while traversing the graph.
+  // The class also avoids expensive relocations.
+  //
+  // INVARIANT: `nodes_by_field_[f][s].field.index_ == f`.
+  std::vector<NodeArena> nodes_by_field_;
 
-  // The location of `nodes_`, behind a level of indirection that remains
-  // stable when the manager object is moved: the unique tables below hash and
-  // compare node indices by dereferencing into `nodes_`, and their
-  // hasher/equality functors would otherwise dangle on move. Move operations
-  // repoint the location at the new manager's `nodes_` member.
-  std::unique_ptr<const PagedStableVector<DecisionNode, kPageSize>*>
-      nodes_location_ = std::make_unique<
-          const PagedStableVector<DecisionNode, kPageSize>*>(&nodes_);
+  // The location of `nodes_by_field_`, behind a level of indirection that
+  // remains stable when the manager object is moved: the unique tables below
+  // hash and compare node slots by dereferencing into `nodes_by_field_`, and
+  // their hasher/equality functors would otherwise dangle on move. Move
+  // operations repoint the location at the new manager's `nodes_by_field_`
+  // member.
+  std::unique_ptr<const std::vector<NodeArena>*> nodes_location_ =
+      std::make_unique<const std::vector<NodeArena>*>(&nodes_by_field_);
 
-  // Hasher and equality for unique table entries, which are indices into
-  // `nodes_`. Hashing/comparing the *node* (rather than the index) is what
-  // makes the tables deduplicate by node content.
+  // Hasher and equality for unique table entries, which are slots in the
+  // node arena of the table's field. Hashing/comparing the *node* (rather
+  // than the slot) is what makes the tables deduplicate by node content.
   // The `DecisionNode` overloads enable heterogeneous lookup, so that a
-  // candidate node can be probed before it is added to `nodes_`.
+  // candidate node can be probed before it is added to the arena.
   struct InternedNodeHash {
     using is_transparent = void;
-    const PagedStableVector<DecisionNode, kPageSize>* const* nodes;
-    size_t operator()(uint32_t node_index) const {
-      return absl::HashOf((**nodes)[node_index]);
+    const std::vector<NodeArena>* const* nodes_by_field;
+    uint32_t field_index;
+    size_t operator()(uint32_t slot) const {
+      return absl::HashOf((**nodes_by_field)[field_index][slot]);
     }
     size_t operator()(const DecisionNode& node) const {
       return absl::HashOf(node);
@@ -456,34 +479,37 @@ class PacketTransformerManager {
   };
   struct InternedNodeEq {
     using is_transparent = void;
-    const PagedStableVector<DecisionNode, kPageSize>* const* nodes;
+    const std::vector<NodeArena>* const* nodes_by_field;
+    uint32_t field_index;
     bool operator()(uint32_t a, uint32_t b) const {
-      return (**nodes)[a] == (**nodes)[b];
+      const NodeArena& arena = (**nodes_by_field)[field_index];
+      return arena[a] == arena[b];
     }
     bool operator()(uint32_t a, const DecisionNode& b) const {
-      return (**nodes)[a] == b;
+      return (**nodes_by_field)[field_index][a] == b;
     }
     bool operator()(const DecisionNode& a, uint32_t b) const {
-      return (**nodes)[b] == a;
+      return (**nodes_by_field)[field_index][b] == a;
     }
   };
   using UniqueNodeTable =
       absl::flat_hash_set<uint32_t, InternedNodeHash, InternedNodeEq>;
 
-  // So called "unique tables" to ensure each node is only added to `nodes_`
-  // once, and thus has a unique `PacketTransformerHandle::node_index`. One
-  // table per packet field: a node's entry lives in the table of the field it
-  // branches on. Splitting by field keeps the tables, and thus probe
-  // sequences, small, and storing indices (instead of node copies) keeps each
-  // node stored exactly once, in `nodes_`.
+  // So called "unique tables" to ensure each node is only added to
+  // `nodes_by_field_` once, and thus has a unique slot. One table per packet
+  // field: a node's entry lives in the table of the field it branches on.
+  // Splitting by field keeps the tables, and thus probe sequences, small, and
+  // storing slots (instead of node copies) keeps each node stored exactly
+  // once, in `nodes_by_field_`.
   //
-  // INVARIANT: `unique_table_by_field_[f]` contains `i` iff
-  // `nodes_[i].field.index_ == f`. Every valid node index is contained in
-  // exactly one table.
+  // INVARIANT: `unique_table_by_field_.size() == nodes_by_field_.size()`.
+  // INVARIANT: `unique_table_by_field_[f]` contains `s` iff
+  // `s < nodes_by_field_[f].size()`; no two nodes in an arena are equal.
   std::vector<UniqueNodeTable> unique_table_by_field_;
 
-  // Returns the unique table for nodes branching on `field`, creating it (and
-  // any tables for smaller fields) if it does not exist yet.
+  // Returns the unique table for nodes branching on `field`, creating it and
+  // the field's node arena (as well as those of any smaller fields) if they
+  // don't exist yet.
   UniqueNodeTable& GetOrCreateUniqueTable(PacketFieldHandle field);
 
   // A map of a given `PolicyProto` to a `PacketTransformerHandle`.

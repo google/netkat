@@ -37,52 +37,57 @@
 namespace netkat {
 
 // The empty and full set of packets are not decision nodes, and thus we cannot
-// associate an index into the `nodes_` vector with them. Instead, we represent
-// them using sentinel values, chosen maximally to avoid collisions with proper
-// indices.
+// associate a node location with them. Instead, we represent them using
+// sentinel values whose field bits are `PacketSetHandle::kSentinelFieldIndex`,
+// a field index reserved for this purpose (and enforced to never be used by
+// proper nodes at node-creation time).
 enum SentinelNodeIndex : uint32_t {
   // Encodes the empty set of packets.
   kEmptySet = std::numeric_limits<uint32_t>::max(),
   // Encodes the full set of packets.
   kFullSet = std::numeric_limits<uint32_t>::max() - 1,
-  // The minimum sentinel node index.
-  // Smaller values are reserved for proper indices into the `nodes_` vector.
-  kMinSentinel = kFullSet,
 };
 
-PacketSetHandle::PacketSetHandle()
-    : node_index_(SentinelNodeIndex::kEmptySet) {}
+PacketSetHandle::PacketSetHandle() : bits_(SentinelNodeIndex::kEmptySet) {}
 
 std::string PacketSetHandle::ToString() const {
-  if (node_index_ == SentinelNodeIndex::kEmptySet) {
+  if (bits_ == SentinelNodeIndex::kEmptySet) {
     return "PacketSetHandle<empty>";
-  } else if (node_index_ == SentinelNodeIndex::kFullSet) {
+  } else if (bits_ == SentinelNodeIndex::kFullSet) {
     return "PacketSetHandle<full>";
   } else {
-    return absl::StrFormat("PacketSetHandle<%d>", node_index_);
+    // Print the packed node location as `field_index:slot`.
+    return absl::StrFormat("PacketSetHandle<%d:%d>", field_index(), slot());
   }
 }
 
 PacketSetManager::PacketSetManager(PacketSetManager&& other)
-    : nodes_(std::move(other.nodes_)),
+    : nodes_by_field_(std::move(other.nodes_by_field_)),
       nodes_location_(std::move(other.nodes_location_)),
       unique_table_by_field_(std::move(other.unique_table_by_field_)),
       packet_set_by_hash_(std::move(other.packet_set_by_hash_)),
       field_manager_(std::move(other.field_manager_)) {
-  *nodes_location_ = &nodes_;
+  *nodes_location_ = &nodes_by_field_;
 }
 
 PacketSetManager& PacketSetManager::operator=(PacketSetManager&& other) {
-  nodes_ = std::move(other.nodes_);
+  nodes_by_field_ = std::move(other.nodes_by_field_);
   nodes_location_ = std::move(other.nodes_location_);
   unique_table_by_field_ = std::move(other.unique_table_by_field_);
   packet_set_by_hash_ = std::move(other.packet_set_by_hash_);
   field_manager_ = std::move(other.field_manager_);
-  *nodes_location_ = &nodes_;
+  *nodes_location_ = &nodes_by_field_;
   return *this;
 }
 
 PacketSetHandle PacketSetManager::EmptySet() const {
+  // The sentinel values must carry the reserved sentinel field index, so they
+  // can never collide with proper node locations. (Asserted here because both
+  // the sentinel enum and the handle's private encoding are in scope.)
+  static_assert(SentinelNodeIndex::kEmptySet >> PacketSetHandle::kSlotBits ==
+                PacketSetHandle::kSentinelFieldIndex);
+  static_assert(SentinelNodeIndex::kFullSet >> PacketSetHandle::kSlotBits ==
+                PacketSetHandle::kSentinelFieldIndex);
   return PacketSetHandle(SentinelNodeIndex::kEmptySet);
 }
 
@@ -100,10 +105,12 @@ bool PacketSetManager::IsFullSet(PacketSetHandle packet_set) const {
 
 const PacketSetManager::DecisionNode& PacketSetManager::GetNodeOrDie(
     PacketSetHandle packet_set) const {
-  CHECK_LT(packet_set.node_index_, nodes_.size())
+  CHECK_LT(packet_set.field_index(), nodes_by_field_.size())
       << "Did you call this function on a leaf node (i.e. FullSet() or "
          "EmptySet())? ";  // Crash ok
-  return nodes_[packet_set.node_index_];
+  const NodeArena& arena = nodes_by_field_[packet_set.field_index()];
+  CHECK_LT(packet_set.slot(), arena.size());  // Crash ok
+  return arena[packet_set.slot()];
 }
 
 PacketSetHandle PacketSetManager::NodeToPacket(DecisionNode&& node) {
@@ -128,31 +135,37 @@ PacketSetHandle PacketSetManager::NodeToPacket(DecisionNode&& node) {
   }
 #endif
 
-  // Probe the unique table by node content first (heterogeneous lookup): the
-  // common case is that an equal node has already been interned, and probing
-  // with the candidate node avoids touching `nodes_` in that case.
+  // Probe the unique table by node content first (heterogeneous lookup):
+  // the common case is that an equal node has already been interned, and
+  // probing with the candidate node avoids touching the arena in that case.
+  const uint32_t field_index = node.field.index_;
   UniqueNodeTable& unique_table = GetOrCreateUniqueTable(node.field);
   if (auto it = unique_table.find(node); it != unique_table.end()) {
-    return PacketSetHandle(*it);
+    return PacketSetHandle(field_index, *it);
   }
-  uint32_t node_index = nodes_.size();
-  nodes_.push_back(std::move(node));
-  unique_table.insert(node_index);
-  LOG_IF(DFATAL, nodes_.size() > SentinelNodeIndex::kMinSentinel)
-      << "Internal invariant violated: Proper and sentinel node indices must "
-         "be disjoint. This indicates that we allocated more nodes than are "
-         "supported (> 2^32 - 2).";
-  return PacketSetHandle(node_index);
+  NodeArena& arena = nodes_by_field_[field_index];
+  uint32_t slot = arena.size();
+  CHECK_LT(slot, PacketSetHandle::kMaxSlotsPerField)  // Crash ok
+      << "PacketSetManager supports at most 2^" << PacketSetHandle::kSlotBits
+      << " decision nodes per packet field.";
+  arena.push_back(std::move(node));
+  unique_table.insert(slot);
+  return PacketSetHandle(field_index, slot);
 }
 
 PacketSetManager::UniqueNodeTable& PacketSetManager::GetOrCreateUniqueTable(
     PacketFieldHandle field) {
+  CHECK_LT(field.index_, PacketSetHandle::kSentinelFieldIndex)  // Crash ok
+      << "PacketSetManager supports at most 2^" << PacketSetHandle::kFieldBits
+      << " - 1 packet fields.";
   if (field.index_ >= unique_table_by_field_.size()) {
-    unique_table_by_field_.resize(
-        field.index_ + 1,
-        UniqueNodeTable(/*bucket_count=*/0,
-                        InternedNodeHash{nodes_location_.get()},
-                        InternedNodeEq{nodes_location_.get()}));
+    nodes_by_field_.resize(field.index_ + 1);
+    for (size_t f = unique_table_by_field_.size(); f <= field.index_; ++f) {
+      unique_table_by_field_.push_back(UniqueNodeTable(
+          /*bucket_count=*/0,
+          InternedNodeHash{nodes_location_.get(), static_cast<uint32_t>(f)},
+          InternedNodeEq{nodes_location_.get(), static_cast<uint32_t>(f)}));
+    }
   }
   return unique_table_by_field_[field.index_];
 }
@@ -206,19 +219,19 @@ std::string PacketSetManager::ToDot(PacketSetHandle packet_set) const {
 
     const DecisionNode& node = GetNodeOrDie(packet_set);
     absl::StrAppendFormat(&result, "  %d [label=\"%s\"]\n",
-                          packet_set.node_index_,
+                          packet_set.bits_,
                           field_manager_.GetFieldName(node.field));
 
     for (const auto& [value, branch] : node.branch_by_field_value) {
       absl::StrAppendFormat(&result, "  %d -> %d [label=\"%d\"]\n",
-                            packet_set.node_index_, branch.node_index_, value);
+                            packet_set.bits_, branch.bits_, value);
       if (IsFullSet(branch) || IsEmptySet(branch)) continue;
       bool new_branch = visited.insert(branch).second;
       if (new_branch) work_list.push(branch);
     }
     PacketSetHandle fallthrough = node.default_branch;
     absl::StrAppendFormat(&result, "  %d -> %d [style=dashed]\n",
-                          packet_set.node_index_, fallthrough.node_index_);
+                          packet_set.bits_, fallthrough.bits_);
     if (IsFullSet(fallthrough) || IsEmptySet(fallthrough)) continue;
     bool new_branch = visited.insert(fallthrough).second;
     if (new_branch) work_list.push(fallthrough);
@@ -317,29 +330,27 @@ PacketSetHandle PacketSetManager::And(PacketSetHandle left,
   // reduce the number of nodes we need to visit exponentially.
 
   // Compute result the hard way.
-  const DecisionNode* left_node = &GetNodeOrDie(left);
-  const DecisionNode* right_node = &GetNodeOrDie(right);
-
+  //
   // We exploit that `And` is commutative to canonicalize the order of the
-  // arguments, reducing the number of cases by 1.
-  if (left_node->field > right_node->field) {
-    std::swap(left, right);
-    std::swap(left_node, right_node);
-  }
+  // arguments, reducing the number of cases by 1. The field comparisons below
+  // read the field bits packed into the handles, requiring no node loads.
+  if (left.field_index() > right.field_index()) std::swap(left, right);
 
-  // Case 1: left_node->field < right_node->field: branch on left field.
-  if (left_node->field < right_node->field) {
-    PacketSetHandle default_branch = And(left_node->default_branch, right);
+  // Case 1: left field < right field: branch on left field.
+  // Note that the right node is never loaded from memory in this case.
+  if (left.field_index() < right.field_index()) {
+    const DecisionNode& left_node = GetNodeOrDie(left);
+    PacketSetHandle default_branch = And(left_node.default_branch, right);
     absl::FixedArray<std::pair<int, PacketSetHandle>> branch_by_field_value(
-        left_node->branch_by_field_value.size());
+        left_node.branch_by_field_value.size());
     int num_branches = 0;
-    for (const auto& [value, left_branch] : left_node->branch_by_field_value) {
+    for (const auto& [value, left_branch] : left_node.branch_by_field_value) {
       PacketSetHandle branch = And(left_branch, right);
       if (branch == default_branch) continue;
       branch_by_field_value[num_branches++] = std::make_pair(value, branch);
     }
     return NodeToPacket(DecisionNode{
-        .field = left_node->field,
+        .field = left_node.field,
         .default_branch = default_branch,
         .branch_by_field_value{
             branch_by_field_value.begin(),
@@ -348,30 +359,32 @@ PacketSetHandle PacketSetManager::And(PacketSetHandle left,
     });
   }
 
-  // Case 2: left_node->field == right_node->field: branch on shared field.
-  DCHECK(left_node->field == right_node->field);
+  // Case 2: left field == right field: branch on shared field.
+  const DecisionNode& left_node = GetNodeOrDie(left);
+  const DecisionNode& right_node = GetNodeOrDie(right);
+  DCHECK(left_node.field == right_node.field);
   PacketSetHandle default_branch =
-      And(left_node->default_branch, right_node->default_branch);
+      And(left_node.default_branch, right_node.default_branch);
   absl::FixedArray<std::pair<int, PacketSetHandle>> branch_by_field_value(
-      left_node->branch_by_field_value.size() +
-      right_node->branch_by_field_value.size());
+      left_node.branch_by_field_value.size() +
+      right_node.branch_by_field_value.size());
   int num_branches = 0;
   auto add_branch = [&](int value, PacketSetHandle branch) {
     if (branch == default_branch) return;
     branch_by_field_value[num_branches++] = std::make_pair(value, branch);
   };
-  auto left_it = left_node->branch_by_field_value.begin();
-  auto left_end = left_node->branch_by_field_value.end();
-  auto right_it = right_node->branch_by_field_value.begin();
-  auto right_end = right_node->branch_by_field_value.end();
+  auto left_it = left_node.branch_by_field_value.begin();
+  auto left_end = left_node.branch_by_field_value.end();
+  auto right_it = right_node.branch_by_field_value.begin();
+  auto right_end = right_node.branch_by_field_value.end();
   while (left_it != left_end && right_it != right_end) {
     auto [left_value, left_branch] = *left_it;
     auto [right_value, right_branch] = *right_it;
     if (left_value < right_value) {
-      add_branch(left_value, And(left_branch, right_node->default_branch));
+      add_branch(left_value, And(left_branch, right_node.default_branch));
       ++left_it;
     } else if (left_value > right_value) {
-      add_branch(right_value, And(left_node->default_branch, right_branch));
+      add_branch(right_value, And(left_node.default_branch, right_branch));
       ++right_it;
     } else {  // left_value == right_value
       add_branch(left_value, And(left_branch, right_branch));
@@ -381,14 +394,14 @@ PacketSetHandle PacketSetManager::And(PacketSetHandle left,
   }
   for (; left_it != left_end; ++left_it) {
     auto [left_value, left_branch] = *left_it;
-    add_branch(left_value, And(left_branch, right_node->default_branch));
+    add_branch(left_value, And(left_branch, right_node.default_branch));
   }
   for (; right_it != right_end; ++right_it) {
     auto [right_value, right_branch] = *right_it;
-    add_branch(right_value, And(left_node->default_branch, right_branch));
+    add_branch(right_value, And(left_node.default_branch, right_branch));
   }
   return NodeToPacket(DecisionNode{
-      .field = left_node->field,
+      .field = left_node.field,
       .default_branch = default_branch,
       .branch_by_field_value{
           branch_by_field_value.begin(),
@@ -516,56 +529,64 @@ std::string PacketSetManager::ToString(const DecisionNode& node) const {
 }
 
 absl::Status PacketSetManager::CheckInternalInvariants() const {
-  // Invariant: Proper and sentinel node indices are disjoint.
-  RET_CHECK(nodes_.size() <= SentinelNodeIndex::kMinSentinel);
+  // Invariant: Proper node locations and sentinel values are disjoint, i.e.
+  // the field/slot bounds of the packed handle encoding are respected.
+  RET_CHECK(nodes_by_field_.size() <= PacketSetHandle::kSentinelFieldIndex);
+  RET_CHECK(unique_table_by_field_.size() == nodes_by_field_.size());
 
-  // Invariant: `unique_table_by_field_[f]` contains `i` iff
-  // `nodes_[i].field.index_ == f`. Every valid node index is in exactly one
-  // table, and no two interned nodes are equal.
-  size_t total_table_size = 0;
-  for (size_t f = 0; f < unique_table_by_field_.size(); ++f) {
+  for (size_t f = 0; f < nodes_by_field_.size(); ++f) {
+    const NodeArena& arena = nodes_by_field_[f];
+    RET_CHECK(arena.size() <= PacketSetHandle::kMaxSlotsPerField);
+
+    // Invariant: `unique_table_by_field_[f]` contains exactly the slots of
+    // `nodes_by_field_[f]`, and no two interned nodes are equal.
     const UniqueNodeTable& unique_table = unique_table_by_field_[f];
-    total_table_size += unique_table.size();
-    for (uint32_t node_index : unique_table) {
-      RET_CHECK(node_index < nodes_.size());
-      RET_CHECK(nodes_[node_index].field.index_ == f);
+    RET_CHECK(unique_table.size() == arena.size());
+    for (uint32_t slot : unique_table) {
+      RET_CHECK(slot < arena.size());
     }
-  }
-  RET_CHECK(total_table_size == nodes_.size());
-  for (uint32_t i = 0; i < nodes_.size(); ++i) {
-    const DecisionNode& node = nodes_[i];
-    RET_CHECK(node.field.index_ < unique_table_by_field_.size());
-    const UniqueNodeTable& unique_table =
-        unique_table_by_field_[node.field.index_];
-    // Looking up `i` probes by node content; finding exactly `i` proves that
-    // no other interned node has the same content.
-    auto it = unique_table.find(i);
-    RET_CHECK(it != unique_table.end());
-    RET_CHECK(*it == i);
+    for (uint32_t slot = 0; slot < arena.size(); ++slot) {
+      // Invariant: Nodes are stored in the arena of their field.
+      RET_CHECK(arena[slot].field.index_ == f);
+      // Looking up `slot` probes by node content; finding exactly `slot`
+      // proves that no other interned node has the same content.
+      auto it = unique_table.find(slot);
+      RET_CHECK(it != unique_table.end());
+      RET_CHECK(*it == slot);
+    }
   }
 
   // Node Invariants.
-  for (int i = 0; i < nodes_.size(); ++i) {
-    const DecisionNode& node = nodes_[i];
-    // Invariant: `branch_by_field_value` is non-empty.
-    // Maintained by `NodeToPacket`.
-    RET_CHECK(!node.branch_by_field_value.empty());
+  for (size_t f = 0; f < nodes_by_field_.size(); ++f) {
+    const NodeArena& arena = nodes_by_field_[f];
+    for (uint32_t slot = 0; slot < arena.size(); ++slot) {
+      const DecisionNode& node = arena[slot];
+      // Invariant: `branch_by_field_value` is non-empty.
+      // Maintained by `NodeToPacket`.
+      RET_CHECK(!node.branch_by_field_value.empty());
 
-    // Invariant: node field is strictly smaller than sub-node fields.
-    RET_CHECK(IsFullSet(node.default_branch) ||
-              IsEmptySet(node.default_branch) ||
-              GetNodeOrDie(node.default_branch).field > node.field);
-    for (const auto& [value, branch] : node.branch_by_field_value) {
-      RET_CHECK(IsFullSet(branch) || IsEmptySet(branch) ||
-                GetNodeOrDie(branch).field > node.field);
+      // Invariant: node field is strictly smaller than sub-node fields.
+      RET_CHECK(IsFullSet(node.default_branch) ||
+                IsEmptySet(node.default_branch) ||
+                GetNodeOrDie(node.default_branch).field > node.field);
+      for (const auto& [value, branch] : node.branch_by_field_value) {
+        RET_CHECK(IsFullSet(branch) || IsEmptySet(branch) ||
+                  GetNodeOrDie(branch).field > node.field);
 
-      // Invariant:  Each case in `branch_by_field_value` is !=
-      // `default_branch`.
-      RET_CHECK(branch != node.default_branch);
+        // Invariant: Each case in `branch_by_field_value` is !=
+        // `default_branch`.
+        RET_CHECK(branch != node.default_branch);
+
+        // Invariant: The field encoded in a branch handle matches the field
+        // of the node it points to.
+        if (!IsFullSet(branch) && !IsEmptySet(branch)) {
+          RET_CHECK(GetNodeOrDie(branch).field.index_ == branch.field_index());
+        }
+      }
+
+      // Invariant: node field is interned by `field_manager_`.
+      field_manager_.GetFieldName(node.field);  // No crash.
     }
-
-    // Invariant: node field is interned by `field_manager_`.
-    field_manager_.GetFieldName(node.field);  // No crash.
   }
 
   return absl::OkStatus();

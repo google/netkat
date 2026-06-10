@@ -45,58 +45,61 @@
 namespace netkat {
 
 // The Deny and Accept transformers are not decision nodes, and thus we cannot
-// associate an index into the `nodes_` vector with them. Instead, we represent
-// them using sentinel values, chosen maximally to avoid collisions with proper
-// indices.
+// associate a node location with them. Instead, we represent them using
+// sentinel values whose field bits are
+// `PacketTransformerHandle::kSentinelFieldIndex`, a field index reserved for
+// this purpose (and enforced to never be used by proper nodes at
+// node-creation time).
 enum SentinelNodeIndex : uint32_t {
   // Encodes the Deny transformer.
   kDeny = std::numeric_limits<uint32_t>::max(),
   // Encodes the Accept transformer.
   kAccept = std::numeric_limits<uint32_t>::max() - 1,
-  // The minimum sentinel node index.
-  // Smaller values are reserved for proper indices into the `nodes_` vector.
-  kMinSentinel = kAccept,
 };
 
 PacketTransformerHandle::PacketTransformerHandle()
-    : node_index_(SentinelNodeIndex::kDeny) {}
+    : bits_(SentinelNodeIndex::kDeny) {}
 
 PacketTransformerManager::PacketTransformerManager(
     PacketTransformerManager&& other)
-    : nodes_(std::move(other.nodes_)),
+    : nodes_by_field_(std::move(other.nodes_by_field_)),
       nodes_location_(std::move(other.nodes_location_)),
       unique_table_by_field_(std::move(other.unique_table_by_field_)),
       transformer_by_hash_(std::move(other.transformer_by_hash_)),
       packet_set_manager_(std::move(other.packet_set_manager_)) {
-  *nodes_location_ = &nodes_;
+  *nodes_location_ = &nodes_by_field_;
 }
 
 PacketTransformerManager& PacketTransformerManager::operator=(
     PacketTransformerManager&& other) {
-  nodes_ = std::move(other.nodes_);
+  nodes_by_field_ = std::move(other.nodes_by_field_);
   nodes_location_ = std::move(other.nodes_location_);
   unique_table_by_field_ = std::move(other.unique_table_by_field_);
   transformer_by_hash_ = std::move(other.transformer_by_hash_);
   packet_set_manager_ = std::move(other.packet_set_manager_);
-  *nodes_location_ = &nodes_;
+  *nodes_location_ = &nodes_by_field_;
   return *this;
 }
 
 std::string PacketTransformerHandle::ToString() const {
-  if (node_index_ == SentinelNodeIndex::kDeny) {
+  if (bits_ == SentinelNodeIndex::kDeny) {
     return "PacketTransformerHandle<deny>";
-  } else if (node_index_ == SentinelNodeIndex::kAccept) {
+  } else if (bits_ == SentinelNodeIndex::kAccept) {
     return "PacketTransformerHandle<accept>";
   } else {
-    return absl::StrFormat("PacketTransformerHandle<%d>", node_index_);
+    // Print the packed node location as `field_index:slot`.
+    return absl::StrFormat("PacketTransformerHandle<%d:%d>", field_index(),
+                           slot());
   }
 }
 
 const PacketTransformerManager::DecisionNode&
 PacketTransformerManager::GetNodeOrDie(
     PacketTransformerHandle transformer) const {
-  CHECK_LT(transformer.node_index_, nodes_.size());  // Crash ok
-  return nodes_[transformer.node_index_];
+  CHECK_LT(transformer.field_index(), nodes_by_field_.size());  // Crash ok
+  const NodeArena& arena = nodes_by_field_[transformer.field_index()];
+  CHECK_LT(transformer.slot(), arena.size());  // Crash ok
+  return arena[transformer.slot()];
 }
 
 // TODO(dilo): Creating as many map copies as this method facilitates is
@@ -193,31 +196,39 @@ PacketTransformerHandle PacketTransformerManager::NodeToTransformer(
       node.default_branch_by_field_modification.empty())
     return node.default_branch;
 
-  // Probe the unique table by node content first (heterogeneous lookup): the
-  // common case is that an equal node has already been interned, and probing
-  // with the candidate node avoids touching `nodes_` in that case.
+  // Probe the unique table by node content first (heterogeneous lookup):
+  // the common case is that an equal node has already been interned, and
+  // probing with the candidate node avoids touching the arena in that case.
+  const uint32_t field_index = node.field.index_;
   UniqueNodeTable& unique_table = GetOrCreateUniqueTable(node.field);
   if (auto it = unique_table.find(node); it != unique_table.end()) {
-    return PacketTransformerHandle(*it);
+    return PacketTransformerHandle(field_index, *it);
   }
-  uint32_t node_index = nodes_.size();
-  nodes_.push_back(std::move(node));
-  unique_table.insert(node_index);
-  LOG_IF(DFATAL, nodes_.size() > SentinelNodeIndex::kMinSentinel)
-      << "Internal invariant violated: Proper and sentinel node indices must "
-         "be disjoint. This indicates that we allocated more nodes than are "
-         "supported (> 2^32 - 2).";
-  return PacketTransformerHandle(node_index);
+  NodeArena& arena = nodes_by_field_[field_index];
+  uint32_t slot = arena.size();
+  CHECK_LT(slot, PacketTransformerHandle::kMaxSlotsPerField)  // Crash ok
+      << "PacketTransformerManager supports at most 2^"
+      << PacketTransformerHandle::kSlotBits
+      << " decision nodes per packet field.";
+  arena.push_back(std::move(node));
+  unique_table.insert(slot);
+  return PacketTransformerHandle(field_index, slot);
 }
 
 PacketTransformerManager::UniqueNodeTable&
 PacketTransformerManager::GetOrCreateUniqueTable(PacketFieldHandle field) {
+  CHECK_LT(field.index_,  // Crash ok
+           PacketTransformerHandle::kSentinelFieldIndex)
+      << "PacketTransformerManager supports at most 2^"
+      << PacketTransformerHandle::kFieldBits << " - 1 packet fields.";
   if (field.index_ >= unique_table_by_field_.size()) {
-    unique_table_by_field_.resize(
-        field.index_ + 1,
-        UniqueNodeTable(/*bucket_count=*/0,
-                        InternedNodeHash{nodes_location_.get()},
-                        InternedNodeEq{nodes_location_.get()}));
+    nodes_by_field_.resize(field.index_ + 1);
+    for (size_t f = unique_table_by_field_.size(); f <= field.index_; ++f) {
+      unique_table_by_field_.push_back(UniqueNodeTable(
+          /*bucket_count=*/0,
+          InternedNodeHash{nodes_location_.get(), static_cast<uint32_t>(f)},
+          InternedNodeEq{nodes_location_.get(), static_cast<uint32_t>(f)}));
+    }
   }
   return unique_table_by_field_[field.index_];
 }
@@ -360,6 +371,15 @@ PacketTransformerHandle PacketTransformerManager::Compile(
 }
 
 PacketTransformerHandle PacketTransformerManager::Deny() const {
+  // The sentinel values must carry the reserved sentinel field index, so they
+  // can never collide with proper node locations. (Asserted here because both
+  // the sentinel enum and the handle's private encoding are in scope.)
+  static_assert(SentinelNodeIndex::kDeny >>
+                    PacketTransformerHandle::kSlotBits ==
+                PacketTransformerHandle::kSentinelFieldIndex);
+  static_assert(SentinelNodeIndex::kAccept >>
+                    PacketTransformerHandle::kSlotBits ==
+                PacketTransformerHandle::kSentinelFieldIndex);
   return PacketTransformerHandle(SentinelNodeIndex::kDeny);
 }
 
@@ -1100,17 +1120,17 @@ std::string PacketTransformerManager::ToDot(
     std::string field =
         packet_set_manager_.field_manager_.GetFieldName(node.field);
     absl::StrAppendFormat(&result, "  %d [label=\"%s\"]\n",
-                          transformer.node_index_, field);
+                          transformer.bits_, field);
     for (const auto& [value, modify_map] : node.modify_branch_by_field_match) {
       if (modify_map.empty()) {
         absl::StrAppendFormat(&result, "  %d -> %d [label=\"%s==%s\"]\n",
-                              transformer.node_index_, SentinelNodeIndex::kDeny,
+                              transformer.bits_, SentinelNodeIndex::kDeny,
                               field, absl::StrCat(value));
       }
       for (const auto& [new_value, branch] : modify_map) {
         absl::StrAppendFormat(&result,
                               "  %d -> %d [label=\"%s==%s; %s:=%d\"]\n",
-                              transformer.node_index_, branch.node_index_,
+                              transformer.bits_, branch.bits_,
                               field, absl::StrCat(value), field, new_value);
         if (IsAccept(branch) || IsDeny(branch)) continue;
         bool new_branch = visited.insert(branch).second;
@@ -1122,14 +1142,14 @@ std::string PacketTransformerManager::ToDot(
          node.default_branch_by_field_modification) {
       absl::StrAppendFormat(
           &result, "  %d -> %d [label=\"%s:=%d\" style=dashed]\n",
-          transformer.node_index_, branch.node_index_, field, new_value);
+          transformer.bits_, branch.bits_, field, new_value);
       if (IsAccept(branch) || IsDeny(branch)) continue;
       bool new_branch = visited.insert(branch).second;
       if (new_branch) work_list.push(branch);
     }
     PacketTransformerHandle fallthrough = node.default_branch;
     absl::StrAppendFormat(&result, "  %d -> %d [style=dashed]\n",
-                          transformer.node_index_, fallthrough.node_index_);
+                          transformer.bits_, fallthrough.bits_);
     if (IsAccept(fallthrough) || IsDeny(fallthrough)) continue;
     bool new_branch = visited.insert(fallthrough).second;
     if (new_branch) work_list.push(fallthrough);
@@ -1139,78 +1159,81 @@ std::string PacketTransformerManager::ToDot(
 }
 
 absl::Status PacketTransformerManager::CheckInternalInvariants() const {
-  // Invariant: Proper and sentinel node indices are disjoint.
-  RET_CHECK(nodes_.size() <= SentinelNodeIndex::kMinSentinel);
+  // Invariant: Proper node locations and sentinel values are disjoint, i.e.
+  // the field/slot bounds of the packed handle encoding are respected.
+  RET_CHECK(nodes_by_field_.size() <=
+            PacketTransformerHandle::kSentinelFieldIndex);
+  RET_CHECK(unique_table_by_field_.size() == nodes_by_field_.size());
 
-  // Invariant: `unique_table_by_field_[f]` contains `i` iff
-  // `nodes_[i].field.index_ == f`. Every valid node index is in exactly one
-  // table, and no two interned nodes are equal.
-  size_t total_table_size = 0;
-  for (size_t f = 0; f < unique_table_by_field_.size(); ++f) {
+  for (size_t f = 0; f < nodes_by_field_.size(); ++f) {
+    const NodeArena& arena = nodes_by_field_[f];
+    RET_CHECK(arena.size() <= PacketTransformerHandle::kMaxSlotsPerField);
+
+    // Invariant: `unique_table_by_field_[f]` contains exactly the slots of
+    // `nodes_by_field_[f]`, and no two interned nodes are equal.
     const UniqueNodeTable& unique_table = unique_table_by_field_[f];
-    total_table_size += unique_table.size();
-    for (uint32_t node_index : unique_table) {
-      RET_CHECK(node_index < nodes_.size());
-      RET_CHECK(nodes_[node_index].field.index_ == f);
+    RET_CHECK(unique_table.size() == arena.size());
+    for (uint32_t slot : unique_table) {
+      RET_CHECK(slot < arena.size());
     }
-  }
-  RET_CHECK(total_table_size == nodes_.size());
-  for (uint32_t i = 0; i < nodes_.size(); ++i) {
-    const DecisionNode& node = nodes_[i];
-    RET_CHECK(node.field.index_ < unique_table_by_field_.size());
-    const UniqueNodeTable& unique_table =
-        unique_table_by_field_[node.field.index_];
-    // Looking up `i` probes by node content; finding exactly `i` proves that
-    // no other interned node has the same content.
-    auto it = unique_table.find(i);
-    RET_CHECK(it != unique_table.end());
-    RET_CHECK(*it == i);
+    for (uint32_t slot = 0; slot < arena.size(); ++slot) {
+      // Invariant: Nodes are stored in the arena of their field.
+      RET_CHECK(arena[slot].field.index_ == f);
+      // Looking up `slot` probes by node content; finding exactly `slot`
+      // proves that no other interned node has the same content.
+      auto it = unique_table.find(slot);
+      RET_CHECK(it != unique_table.end());
+      RET_CHECK(*it == slot);
+    }
   }
 
   // Node Invariants.
-  for (int i = 0; i < nodes_.size(); ++i) {
-    const DecisionNode& node = nodes_[i];
-    // Invariant: `modify_branch_by_field_match` or
-    // `default_branch_by_field_modification` is non-empty.
-    // Maintained by `NodeToTransformer`.
-    RET_CHECK(!node.modify_branch_by_field_match.empty() ||
-              !node.default_branch_by_field_modification.empty());
-
-    // Invariant: node field is strictly smaller than sub-node fields.
-    RET_CHECK(IsAccept(node.default_branch) || IsDeny(node.default_branch) ||
-              GetNodeOrDie(node.default_branch).field > node.field)
-        << ":\n"
-        << ToString(node);
-
-    for (const auto& [match_value, branch_by_modify] :
-         node.modify_branch_by_field_match) {
-      for (const auto& [modify_value, branch] : branch_by_modify) {
-        // Invariant: Modify branches are not Deny unless `modify_value ==
-        // match_value`.
-        RET_CHECK(!IsDeny(branch) || modify_value == match_value)
-            << ":\n"
-            << ToString(node);
-
-        // Invariant: node field is strictly smaller than sub-node fields.
-        RET_CHECK(IsAccept(branch) || IsDeny(branch) ||
-                  GetNodeOrDie(branch).field > node.field)
-            << ":\n"
-            << ToString(node);
-      }
-    }
-
-    for (const auto& [match_value, branch] :
-         node.default_branch_by_field_modification) {
-      // Invariant: Default modify branches are not Deny.
-      RET_CHECK(!IsDeny(branch));
+  for (size_t f = 0; f < nodes_by_field_.size(); ++f) {
+    const NodeArena& arena = nodes_by_field_[f];
+    for (uint32_t slot = 0; slot < arena.size(); ++slot) {
+      const DecisionNode& node = arena[slot];
+      // Invariant: `modify_branch_by_field_match` or
+      // `default_branch_by_field_modification` is non-empty.
+      // Maintained by `NodeToTransformer`.
+      RET_CHECK(!node.modify_branch_by_field_match.empty() ||
+                !node.default_branch_by_field_modification.empty());
 
       // Invariant: node field is strictly smaller than sub-node fields.
-      RET_CHECK(IsAccept(branch) || GetNodeOrDie(branch).field > node.field);
-    }
+      RET_CHECK(IsAccept(node.default_branch) || IsDeny(node.default_branch) ||
+                GetNodeOrDie(node.default_branch).field > node.field)
+          << ":\n"
+          << ToString(node);
 
-    // Invariant: node field is interned by
-    // `packet_set_manager_.field_manager_`.
-    packet_set_manager_.field_manager_.GetFieldName(node.field);  // No crash.
+      for (const auto& [match_value, branch_by_modify] :
+           node.modify_branch_by_field_match) {
+        for (const auto& [modify_value, branch] : branch_by_modify) {
+          // Invariant: Modify branches are not Deny unless `modify_value ==
+          // match_value`.
+          RET_CHECK(!IsDeny(branch) || modify_value == match_value)
+              << ":\n"
+              << ToString(node);
+
+          // Invariant: node field is strictly smaller than sub-node fields.
+          RET_CHECK(IsAccept(branch) || IsDeny(branch) ||
+                    GetNodeOrDie(branch).field > node.field)
+              << ":\n"
+              << ToString(node);
+        }
+      }
+
+      for (const auto& [match_value, branch] :
+           node.default_branch_by_field_modification) {
+        // Invariant: Default modify branches are not Deny.
+        RET_CHECK(!IsDeny(branch));
+
+        // Invariant: node field is strictly smaller than sub-node fields.
+        RET_CHECK(IsAccept(branch) || GetNodeOrDie(branch).field > node.field);
+      }
+
+      // Invariant: node field is interned by
+      // `packet_set_manager_.field_manager_` (GetFieldName crashes if not).
+      packet_set_manager_.field_manager_.GetFieldName(node.field);
+    }
   }
 
   return absl::OkStatus();
