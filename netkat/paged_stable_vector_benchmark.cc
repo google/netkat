@@ -39,8 +39,8 @@ struct FakeNode {
 };
 static_assert(sizeof(FakeNode) == 24);
 
-// The page size of `PacketSetManager::nodes_`: 2^21 nodes, or 48 MiB.
-constexpr size_t kPageSize = size_t{1} << 21;
+// The page size of `PacketSetManager::nodes_`: 512 nodes, or 12 KiB.
+constexpr size_t kPageSize = size_t{1} << 9;
 
 template <class Vector>
 Vector MakeFilledVector(size_t size) {
