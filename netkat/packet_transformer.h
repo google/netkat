@@ -399,13 +399,15 @@ class PacketTransformerManager {
 
   [[nodiscard]] std::string ToString(const DecisionNode& node) const;
 
-  // The page size of the `nodes_` vector: 16 KiB.
+  // The page size of the `nodes_` vector: 256 nodes, or 16 KiB.
   // Chosen large enough to amortize the cost of dynamic allocation over
   // hundreds of nodes, and small enough that pages stay below the malloc
   // mmap/trim thresholds (typically 128 KiB): this way, short-lived managers
   // recycle pages through the allocator's freelists instead of paying an
-  // mmap/munmap syscall pair per manager.
-  static constexpr size_t kPageSize = (1 << 14) / sizeof(DecisionNode);
+  // mmap/munmap syscall pair per manager. A power of two so that indexing
+  // into the vector -- which is on the hot path of nearly every operation --
+  // compiles to shifts and masks rather than multiply sequences.
+  static constexpr size_t kPageSize = size_t{1} << 8;
 
   // Helper functions to deal with DecisionNodes directly.
   // TODO(dilo): Is there a convenient way to either avoid these or avoid making
