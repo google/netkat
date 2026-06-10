@@ -404,18 +404,6 @@ class PacketTransformerManager {
   // enough to avoid excessive memory overhead.
   static constexpr size_t kPageSize = (1 << 26) / sizeof(DecisionNode);
 
-  // Helper functions to deal with DecisionNodes directly.
-  // TODO(dilo): Is there a convenient way to either avoid these or avoid making
-  // copies of the nodes?
-  PacketTransformerHandle Union(DecisionNode left, DecisionNode right);
-  PacketTransformerHandle Sequence(DecisionNode left, DecisionNode right);
-  PacketTransformerHandle Difference(DecisionNode left, DecisionNode right);
-
-  // Internal helper function to get a map of possible modification values to
-  // branches for a given input value at `node`.
-  absl::btree_map<int, PacketTransformerHandle> GetMapAtValue(
-      const DecisionNode& node, int value);
-
   // The decision nodes forming the BDD-style DAG representation of packets.
   // `PacketTransformerHandle::node_index_` indexes into this vector.
   //
