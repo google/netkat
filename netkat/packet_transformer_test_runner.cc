@@ -16,13 +16,12 @@
 //  `bazel run //netkat:packet_transformer_diff_test
 //  -- --update`
 
-#include <algorithm>
 #include <iostream>
 #include <ostream>
 #include <string>
 #include <vector>
 
-#include "absl/algorithm/container.h"
+#include "absl/container/btree_set.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "netkat/netkat_proto_constructors.h"
@@ -45,32 +44,33 @@ class PacketTransformerManagerTestPeer {
       PacketTransformerManager& to) {
     // Intern the fields of all reachable nodes in their original relative
     // order, which the node invariants ("fields increase strictly along each
-    // path") depend on.
-    std::vector<PacketFieldHandle> fields;
+    // path") depend on, and record the handle translation for `Copy`.
+    absl::btree_set<PacketFieldHandle> fields;
     absl::flat_hash_set<PacketTransformerHandle> visited;
     CollectFields(from, transformer, visited, fields);
-    absl::c_sort(fields);
-    fields.erase(std::unique(fields.begin(), fields.end()), fields.end());
+    absl::flat_hash_map<PacketFieldHandle, PacketFieldHandle> field_translation;
     for (PacketFieldHandle field : fields) {
-      to.packet_set_manager_.field_manager_.GetOrCreatePacketFieldHandle(
-          from.packet_set_manager_.field_manager_.GetFieldName(field));
+      field_translation.try_emplace(
+          field,
+          to.packet_set_manager_.field_manager_.GetOrCreatePacketFieldHandle(
+              from.packet_set_manager_.field_manager_.GetFieldName(field)));
     }
 
     absl::flat_hash_map<PacketTransformerHandle, PacketTransformerHandle>
         copy_by_original;
-    return Copy(from, transformer, to, copy_by_original);
+    return Copy(from, transformer, to, field_translation, copy_by_original);
   }
 
  private:
   static void CollectFields(
       const PacketTransformerManager& from, PacketTransformerHandle transformer,
       absl::flat_hash_set<PacketTransformerHandle>& visited,
-      std::vector<PacketFieldHandle>& fields) {
+      absl::btree_set<PacketFieldHandle>& fields) {
     if (from.IsDeny(transformer) || from.IsAccept(transformer)) return;
     if (!visited.insert(transformer).second) return;
     const PacketTransformerManager::DecisionNode& node =
         from.GetNodeOrDie(transformer);
-    fields.push_back(node.field);
+    fields.insert(node.field);
     for (const auto& [match_value, branch_by_modify] :
          node.modify_branch_by_field_match) {
       for (const auto& [modify_value, branch] : branch_by_modify) {
@@ -87,6 +87,8 @@ class PacketTransformerManagerTestPeer {
   static PacketTransformerHandle Copy(
       const PacketTransformerManager& from, PacketTransformerHandle transformer,
       PacketTransformerManager& to,
+      const absl::flat_hash_map<PacketFieldHandle, PacketFieldHandle>&
+          field_translation,
       absl::flat_hash_map<PacketTransformerHandle, PacketTransformerHandle>&
           copy_by_original) {
     if (from.IsDeny(transformer)) return to.Deny();
@@ -99,10 +101,7 @@ class PacketTransformerManagerTestPeer {
     const PacketTransformerManager::DecisionNode& node =
         from.GetNodeOrDie(transformer);
     PacketTransformerManager::DecisionNode copy{
-        .field =
-            to.packet_set_manager_.field_manager_.GetOrCreatePacketFieldHandle(
-                from.packet_set_manager_.field_manager_.GetFieldName(
-                    node.field)),
+        .field = field_translation.at(node.field),
     };
     for (const auto& [match_value, branch_by_modify] :
          node.modify_branch_by_field_match) {
@@ -112,15 +111,16 @@ class PacketTransformerManagerTestPeer {
           copy.modify_branch_by_field_match[match_value];
       for (const auto& [modify_value, branch] : branch_by_modify) {
         copy_branch_by_modify[modify_value] =
-            Copy(from, branch, to, copy_by_original);
+            Copy(from, branch, to, field_translation, copy_by_original);
       }
     }
     for (const auto& [modify_value, branch] :
          node.default_branch_by_field_modification) {
       copy.default_branch_by_field_modification[modify_value] =
-          Copy(from, branch, to, copy_by_original);
+          Copy(from, branch, to, field_translation, copy_by_original);
     }
-    copy.default_branch = Copy(from, node.default_branch, to, copy_by_original);
+    copy.default_branch = Copy(from, node.default_branch, to, field_translation,
+                               copy_by_original);
 
     PacketTransformerHandle result = to.NodeToTransformer(std::move(copy));
     copy_by_original.emplace(transformer, result);
