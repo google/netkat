@@ -571,15 +571,12 @@ PacketTransformerHandle PacketTransformerManager::Sequence(
   const DecisionNodeView left_view = ViewAtField(field, left, left_node);
   const DecisionNodeView right_view = ViewAtField(field, right, right_node);
 
-  auto sequence_combiner = [this](PacketTransformerHandle left,
-                                  PacketTransformerHandle right) {
-    return Sequence(left, right);
+  // Unions `branch` into `branches[modify_value]`, treating absence as Deny.
+  auto union_into = [this](ModifyBranchMap& branches, int modify_value,
+                           PacketTransformerHandle branch) {
+    auto [it, inserted] = branches.try_emplace(modify_value, branch);
+    if (!inserted) it->second = Union(it->second, branch);
   };
-  auto union_combiner = [this](PacketTransformerHandle left,
-                               PacketTransformerHandle right) {
-    return Union(left, right);
-  };
-  const ModifyBranchesView empty_view(EmptyModifyBranchMap());
 
   DecisionNode result_node{
       .field = field,
@@ -588,28 +585,24 @@ PacketTransformerHandle PacketTransformerManager::Sequence(
   };
 
   // Construct the possible results of applying the right node to packets
-  // gotten by taken default modification branches in the left node.
-  ModifyBranchMap right_applied_to_left_modifications;
+  // gotten by taken default modification branches in the left node...
+  ModifyBranchMap& result_modifications =
+      result_node.default_branch_by_field_modification;
   for (const auto& [value, branch] :
        *left_view.default_branch_by_field_modification) {
-    ModifyBranchMap right_at_value_with_sequence = CombineModifyBranches(
-        empty_view, ModifyBranchesAtValue(right_view, value), sequence_combiner,
-        /*default_value=*/branch);
-    right_applied_to_left_modifications = CombineModifyBranches(
-        ModifyBranchesView(right_applied_to_left_modifications),
-        ModifyBranchesView(right_at_value_with_sequence), union_combiner,
-        /*default_value=*/Deny());
+    for (auto [modify_value, right_branch] :
+         ModifyBranchesAtValue(right_view, value)) {
+      union_into(result_modifications, modify_value,
+                 Sequence(branch, right_branch));
+    }
   }
-
-  ModifyBranchMap sequenced_right_modifications = CombineModifyBranches(
-      empty_view,
-      ModifyBranchesView(*right_view.default_branch_by_field_modification),
-      sequence_combiner,
-      /*default_value=*/left_view.default_branch);
-  result_node.default_branch_by_field_modification = CombineModifyBranches(
-      ModifyBranchesView(right_applied_to_left_modifications),
-      ModifyBranchesView(sequenced_right_modifications), union_combiner,
-      /*default_value=*/Deny());
+  // ... and of applying the right node's default modifications to packets
+  // falling through the left node unmodified.
+  for (const auto& [modify_value, right_branch] :
+       *right_view.default_branch_by_field_modification) {
+    union_into(result_modifications, modify_value,
+               Sequence(left_view.default_branch, right_branch));
+  }
 
   // For every value mapped in either node, construct the proper new branch.
   for (int value :
@@ -617,7 +610,7 @@ PacketTransformerHandle PacketTransformerManager::Sequence(
                         *right_view.modify_branch_by_field_match,
                         *left_view.default_branch_by_field_modification,
                         *right_view.default_branch_by_field_modification,
-                        right_applied_to_left_modifications)) {
+                        result_modifications)) {
     ModifyBranchesView left_branches_at_value =
         ModifyBranchesAtValue(left_view, value);
     // An empty map is equivalent to a map with a single entry of
@@ -632,15 +625,54 @@ PacketTransformerHandle PacketTransformerManager::Sequence(
     ModifyBranchMap& result_branches =
         result_node.modify_branch_by_field_match[value];
     for (auto [left_value, left_branch] : left_branches_at_value) {
-      ModifyBranchMap sequenced = CombineModifyBranches(
-          empty_view, ModifyBranchesAtValue(right_view, left_value),
-          sequence_combiner,
-          /*default_value=*/left_branch);
-      result_branches =
-          CombineModifyBranches(ModifyBranchesView(result_branches),
-                                ModifyBranchesView(sequenced), union_combiner,
-                                /*default_value=*/Deny());
+      for (auto [modify_value, right_branch] :
+           ModifyBranchesAtValue(right_view, left_value)) {
+        union_into(result_branches, modify_value,
+                   Sequence(left_branch, right_branch));
+      }
     }
+  }
+
+  return NodeToTransformer(std::move(result_node));
+}
+
+template <typename Combiner>
+PacketTransformerHandle PacketTransformerManager::PointwiseCombine(
+    PacketTransformerHandle left, PacketTransformerHandle right,
+    Combiner&& combiner) {
+  // Neither operand is Deny and at most one is Accept, so at least one is a
+  // decision node. Combine the operands at the smallest field branched on by
+  // either; an operand that is Accept, or branches on a strictly larger
+  // field, is viewed as a trivial node at that field.
+  const DecisionNode* left_node =
+      IsAccept(left) ? nullptr : &GetNodeOrDie(left);
+  const DecisionNode* right_node =
+      IsAccept(right) ? nullptr : &GetNodeOrDie(right);
+  const PacketFieldHandle field = SmallestField(left_node, right_node);
+  const DecisionNodeView left_view = ViewAtField(field, left, left_node);
+  const DecisionNodeView right_view = ViewAtField(field, right, right_node);
+
+  DecisionNode result_node{
+      .field = field,
+      .default_branch_by_field_modification = CombineModifyBranches(
+          ModifyBranchesView(*left_view.default_branch_by_field_modification),
+          ModifyBranchesView(*right_view.default_branch_by_field_modification),
+          combiner,
+          /*default_value=*/Deny()),
+      .default_branch =
+          combiner(left_view.default_branch, right_view.default_branch),
+  };
+
+  // For every value mapped in either node, construct the proper new branch.
+  for (int value :
+       SortedUniqueKeys(*left_view.modify_branch_by_field_match,
+                        *right_view.modify_branch_by_field_match,
+                        *left_view.default_branch_by_field_modification,
+                        *right_view.default_branch_by_field_modification)) {
+    result_node.modify_branch_by_field_match[value] = CombineModifyBranches(
+        ModifyBranchesAtValue(left_view, value),
+        ModifyBranchesAtValue(right_view, value), combiner,
+        /*default_value=*/Deny());
   }
 
   return NodeToTransformer(std::move(result_node));
@@ -653,47 +685,11 @@ PacketTransformerHandle PacketTransformerManager::Union(
   if (IsDeny(right)) return left;
   if (IsDeny(left)) return right;
 
-  // Neither operand is Deny and at most one is Accept, so at least one is a
-  // decision node. Combine the operands at the smallest field branched on by
-  // either; an operand that is Accept, or branches on a strictly larger
-  // field, is viewed as a trivial node at that field.
-  const DecisionNode* left_node =
-      IsAccept(left) ? nullptr : &GetNodeOrDie(left);
-  const DecisionNode* right_node =
-      IsAccept(right) ? nullptr : &GetNodeOrDie(right);
-  const PacketFieldHandle field = SmallestField(left_node, right_node);
-  const DecisionNodeView left_view = ViewAtField(field, left, left_node);
-  const DecisionNodeView right_view = ViewAtField(field, right, right_node);
-
-  auto union_combiner = [this](PacketTransformerHandle left,
-                               PacketTransformerHandle right) {
-    return Union(left, right);
-  };
-
-  DecisionNode result_node{
-      .field = field,
-      .default_branch_by_field_modification = CombineModifyBranches(
-          ModifyBranchesView(*left_view.default_branch_by_field_modification),
-          ModifyBranchesView(*right_view.default_branch_by_field_modification),
-          union_combiner,
-          /*default_value=*/Deny()),
-      .default_branch =
-          Union(left_view.default_branch, right_view.default_branch),
-  };
-
-  // For every value mapped in either node, construct the proper new branch.
-  for (int value :
-       SortedUniqueKeys(*left_view.modify_branch_by_field_match,
-                        *right_view.modify_branch_by_field_match,
-                        *left_view.default_branch_by_field_modification,
-                        *right_view.default_branch_by_field_modification)) {
-    result_node.modify_branch_by_field_match[value] = CombineModifyBranches(
-        ModifyBranchesAtValue(left_view, value),
-        ModifyBranchesAtValue(right_view, value), union_combiner,
-        /*default_value=*/Deny());
-  }
-
-  return NodeToTransformer(std::move(result_node));
+  return PointwiseCombine(
+      left, right,
+      [this](PacketTransformerHandle left, PacketTransformerHandle right) {
+        return Union(left, right);
+      });
 }
 
 PacketTransformerHandle PacketTransformerManager::Difference(
@@ -703,47 +699,11 @@ PacketTransformerHandle PacketTransformerManager::Difference(
   if (IsDeny(left)) return Deny();
   if (IsDeny(right)) return left;
 
-  // Neither operand is Deny and at most one is Accept, so at least one is a
-  // decision node. Combine the operands at the smallest field branched on by
-  // either; an operand that is Accept, or branches on a strictly larger
-  // field, is viewed as a trivial node at that field.
-  const DecisionNode* left_node =
-      IsAccept(left) ? nullptr : &GetNodeOrDie(left);
-  const DecisionNode* right_node =
-      IsAccept(right) ? nullptr : &GetNodeOrDie(right);
-  const PacketFieldHandle field = SmallestField(left_node, right_node);
-  const DecisionNodeView left_view = ViewAtField(field, left, left_node);
-  const DecisionNodeView right_view = ViewAtField(field, right, right_node);
-
-  auto difference_combiner = [this](PacketTransformerHandle left,
-                                    PacketTransformerHandle right) {
-    return Difference(left, right);
-  };
-
-  DecisionNode result_node{
-      .field = field,
-      .default_branch_by_field_modification = CombineModifyBranches(
-          ModifyBranchesView(*left_view.default_branch_by_field_modification),
-          ModifyBranchesView(*right_view.default_branch_by_field_modification),
-          difference_combiner,
-          /*default_value=*/Deny()),
-      .default_branch =
-          Difference(left_view.default_branch, right_view.default_branch),
-  };
-
-  // For every value mapped in either node, construct the proper new branch.
-  for (int value :
-       SortedUniqueKeys(*left_view.modify_branch_by_field_match,
-                        *right_view.modify_branch_by_field_match,
-                        *left_view.default_branch_by_field_modification,
-                        *right_view.default_branch_by_field_modification)) {
-    result_node.modify_branch_by_field_match[value] = CombineModifyBranches(
-        ModifyBranchesAtValue(left_view, value),
-        ModifyBranchesAtValue(right_view, value), difference_combiner,
-        /*default_value=*/Deny());
-  }
-
-  return NodeToTransformer(std::move(result_node));
+  return PointwiseCombine(
+      left, right,
+      [this](PacketTransformerHandle left, PacketTransformerHandle right) {
+        return Difference(left, right);
+      });
 }
 
 PacketTransformerHandle PacketTransformerManager::Iterate(

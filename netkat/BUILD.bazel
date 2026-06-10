@@ -440,7 +440,11 @@ cc_test(
     linkstatic = True,
     deps = [
         ":netkat_proto_constructors",
+        ":packet_field",
         ":packet_transformer",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
     ],
 )
 
