@@ -24,7 +24,6 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
-#include "absl/base/no_destructor.h"
 #include "absl/container/btree_map.h"
 #include "absl/container/fixed_array.h"
 #include "absl/container/flat_hash_map.h"
@@ -79,19 +78,132 @@ PacketTransformerManager::GetNodeOrDie(
   return nodes_[transformer.node_index_];
 }
 
-size_t PacketTransformerManager::NodeHash::operator()(
-    const DecisionNode* node) const {
-  return absl::HashOf(*node);
+template <typename MatchFn, typename ModifyFn>
+bool PacketTransformerManager::ForEachFlatEntry(const DecisionNode& node,
+                                                MatchFn&& match,
+                                                ModifyFn&& modify) {
+  for (const auto& [match_value, end_offset] : node.matches) {
+    if (!match(match_value, end_offset)) return false;
+  }
+  for (const auto& [modify_value, branch] : node.modifies) {
+    if (!modify(modify_value, branch)) return false;
+  }
+  return true;
+}
+
+template <typename MatchFn, typename ModifyFn>
+bool PacketTransformerManager::ForEachFlatEntry(
+    const DecisionNodeBuilder& builder, MatchFn&& match, ModifyFn&& modify) {
+  uint32_t end_offset = 0;
+  for (const auto& [match_value, modify_branch_by_value] :
+       builder.modify_branch_by_field_match) {
+    end_offset += modify_branch_by_value.size();
+    if (!match(match_value, end_offset)) return false;
+  }
+  for (const auto& [match_value, modify_branch_by_value] :
+       builder.modify_branch_by_field_match) {
+    for (const auto& [modify_value, branch] : modify_branch_by_value) {
+      if (!modify(modify_value, branch)) return false;
+    }
+  }
+  for (const auto& [modify_value, branch] :
+       builder.default_branch_by_field_modification) {
+    if (!modify(modify_value, branch)) return false;
+  }
+  return true;
+}
+
+PacketTransformerManager::DecisionNode PacketTransformerManager::Flatten(
+    DecisionNodeBuilder&& builder) {
+  size_t num_matches = 0;
+  size_t num_modifies = 0;
+  ForEachFlatEntry(
+      builder,
+      [&](int, uint32_t) {
+        ++num_matches;
+        return true;
+      },
+      [&](int, PacketTransformerHandle) {
+        ++num_modifies;
+        return true;
+      });
+  DecisionNode node{
+      .field = builder.field,
+      .default_branch = builder.default_branch,
+      .matches{num_matches},
+      .modifies{num_modifies},
+  };
+  size_t i = 0;
+  size_t j = 0;
+  ForEachFlatEntry(
+      builder,
+      [&](int match_value, uint32_t end_offset) {
+        node.matches[i++] = {match_value, end_offset};
+        return true;
+      },
+      [&](int modify_value, PacketTransformerHandle branch) {
+        node.modifies[j++] = {modify_value, branch};
+        return true;
+      });
+  return node;
+}
+
+PacketTransformerManager::DecisionNodeBuilder
+PacketTransformerManager::ToBuilder(const DecisionNode& node) {
+  DecisionNodeBuilder builder{
+      .field = node.field,
+      .default_branch = node.default_branch,
+  };
+  for (const DecisionNode::Match& match : node.Matches()) {
+    absl::btree_map<int, PacketTransformerHandle>& modify_branch_by_value =
+        builder.modify_branch_by_field_match[match.value];
+    for (const DecisionNode::ModifyEntry& entry : match.modifies) {
+      modify_branch_by_value.insert(modify_branch_by_value.end(), entry);
+    }
+  }
+  for (const DecisionNode::ModifyEntry& entry : node.DefaultModifies()) {
+    builder.default_branch_by_field_modification.insert(
+        builder.default_branch_by_field_modification.end(), entry);
+  }
+  return builder;
 }
 
 size_t PacketTransformerManager::NodeHash::operator()(
-    const DecisionNode& node) const {
-  return absl::HashOf(node);
+    const DecisionNode* node) const {
+  return absl::HashOf(FlatSequenceView<DecisionNode>{*node});
+}
+
+size_t PacketTransformerManager::NodeHash::operator()(
+    const DecisionNodeBuilder& builder) const {
+  return absl::HashOf(FlatSequenceView<DecisionNodeBuilder>{builder});
+}
+
+bool PacketTransformerManager::NodeEq::operator()(
+    const DecisionNode* a, const DecisionNodeBuilder& b) const {
+  if (a->field != b.field || a->default_branch != b.default_branch) {
+    return false;
+  }
+  // Walk b's canonical flat sequence and compare it element-wise against a's.
+  size_t i = 0;
+  size_t j = 0;
+  bool prefixes_equal = ForEachFlatEntry(
+      b,
+      [&](int match_value, uint32_t end_offset) {
+        return i < a->matches.size() &&
+               a->matches[i++] ==
+                   std::pair<int, uint32_t>(match_value, end_offset);
+      },
+      [&](int modify_value, PacketTransformerHandle branch) {
+        return j < a->modifies.size() &&
+               a->modifies[j++] ==
+                   DecisionNode::ModifyEntry(modify_value, branch);
+      });
+  return prefixes_equal && i == a->matches.size() && j == a->modifies.size();
 }
 
 // Canonicalizes a decision node and returns a transformer.
 PacketTransformerHandle PacketTransformerManager::NodeToTransformer(
-    DecisionNode&& node) {
+    DecisionNodeBuilder&& node) {
   // Remove any default branches pointing to Deny, saving the value.
   absl::flat_hash_set<int> deny_values;
   for (const auto& [modify_value, branch] :
@@ -164,14 +276,14 @@ PacketTransformerHandle PacketTransformerManager::NodeToTransformer(
       node.default_branch_by_field_modification.empty())
     return node.default_branch;
 
-  // Look up the node by value via the transparent `NodeHash`/`NodeEq`
-  // functors; only new nodes get stored (exactly once, in `nodes_`).
+  // Look up the builder directly (without flattening) via the transparent
+  // `NodeHash`/`NodeEq` functors; only new nodes pay for flattening.
   if (auto it = transformer_by_node_.find(node);
       it != transformer_by_node_.end()) {
     return it->second;
   }
   PacketTransformerHandle transformer(nodes_.size());
-  nodes_.push_back(std::move(node));
+  nodes_.push_back(Flatten(std::move(node)));
   transformer_by_node_.insert({&nodes_[transformer.node_index_], transformer});
   LOG_IF(DFATAL, nodes_.size() > SentinelNodeIndex::kMinSentinel)
       << "Internal invariant violated: Proper and sentinel node indices must "
@@ -235,11 +347,11 @@ absl::flat_hash_set<Packet> PacketTransformerManager::Run(
   if (initial_field_value.has_value()) {
     // If it exists, see if there is a value match for it and follow every
     // corresponding branch with value modified appropriately.
-    if (auto mod_map_it =
-            node.modify_branch_by_field_match.find(*initial_field_value);
-        mod_map_it != node.modify_branch_by_field_match.end()) {
+    if (std::optional<size_t> match_index =
+            node.FindMatch(*initial_field_value);
+        match_index.has_value()) {
       matched = true;
-      for (const auto& [value, branch] : mod_map_it->second) {
+      for (const auto& [value, branch] : node.MatchModifies(*match_index)) {
         result.merge(
             RunWithNewValueThenReset(*this, branch, packet, field, value));
       }
@@ -251,8 +363,7 @@ absl::flat_hash_set<Packet> PacketTransformerManager::Run(
   if (matched) return result;
 
   // Otherwise, follow the default branches.
-  for (const auto& [value, branch] :
-       node.default_branch_by_field_modification) {
+  for (const auto& [value, branch] : node.DefaultModifies()) {
     // If the original packet already had this field with the same value as
     // this modified branch, then we should not also attempt the default
     // branch.
@@ -333,7 +444,7 @@ PacketTransformerHandle PacketTransformerManager::FromPacketSetHandle(
   const PacketSetManager::DecisionNode& packet_node =
       packet_set_manager_.GetNodeOrDie(packet_set);
 
-  DecisionNode transformer_node{
+  DecisionNodeBuilder transformer_node{
       .field = packet_node.field,
       // This starts out empty and will be populated below.
       .modify_branch_by_field_match = {},
@@ -362,7 +473,7 @@ PacketTransformerHandle PacketTransformerManager::Filter(
 
 PacketTransformerHandle PacketTransformerManager::Modification(
     absl::string_view field, int value) {
-  return NodeToTransformer(DecisionNode{
+  return NodeToTransformer(DecisionNodeBuilder{
       .field = packet_set_manager_.field_manager_.GetOrCreatePacketFieldHandle(
           field),
       .modify_branch_by_field_match = {},
@@ -373,19 +484,15 @@ PacketTransformerHandle PacketTransformerManager::Modification(
 
 namespace {
 
-// Aliases for the map types of `PacketTransformerManager::DecisionNode`.
+// Alias for the modify-map type of
+// `PacketTransformerManager::DecisionNodeBuilder`, used to accumulate
+// combinator results before interning.
 using ModifyBranchMap = absl::btree_map<int, PacketTransformerHandle>;
-using MatchBranchMap = absl::btree_map<int, ModifyBranchMap>;
 
-const MatchBranchMap& EmptyMatchBranchMap() {
-  static const absl::NoDestructor<MatchBranchMap> kEmpty;
-  return *kEmpty;
-}
-
-const ModifyBranchMap& EmptyModifyBranchMap() {
-  static const absl::NoDestructor<ModifyBranchMap> kEmpty;
-  return *kEmpty;
-}
+// The public entry types of the flat `PacketTransformerManager::DecisionNode`
+// arrays (respelled here since the node type itself is private).
+using ModifyEntry = std::pair<int, PacketTransformerHandle>;
+using MatchEntry = std::pair<int, uint32_t>;
 
 // Returns true iff `transformer` is the Deny transformer, which by documented
 // contract is the default-constructed handle. (Unlike
@@ -394,46 +501,70 @@ bool IsDenyHandle(PacketTransformerHandle transformer) {
   return transformer == PacketTransformerHandle();
 }
 
-// A cheap, non-owning view of a decision node as seen "at" a field no larger
-// than the node's own field: either the node's own maps (if the node branches
-// on that field), or the trivial expansion "for every value of the field,
-// leave it unmodified and fall through to the node" (if the node branches on
-// a strictly larger field, or is Accept). This lets the binary operations
-// below combine operands with distinct fields without materializing — and
-// then re-interning — the trivial expansion as a `DecisionNode`.
-struct DecisionNodeView {
-  const MatchBranchMap* modify_branch_by_field_match;
-  const ModifyBranchMap* default_branch_by_field_modification;
-  PacketTransformerHandle default_branch;
-};
+// Returns true iff `entries` (sorted by modify value) contains an entry with
+// the given modify value.
+bool ContainsModifyValue(absl::Span<const ModifyEntry> entries,
+                         int modify_value) {
+  auto it = std::lower_bound(
+      entries.begin(), entries.end(), modify_value,
+      [](const ModifyEntry& entry, int value) { return entry.first < value; });
+  return it != entries.end() && it->first == modify_value;
+}
 
-// Returns the view of `node` (the decision node of `transformer`, or null if
-// `transformer` is Accept) at `field`, which must be <= `node->field`.
+// A cheap, non-owning view of a decision node as seen "at" a field no larger
+// than the node's own field: either the node itself (if the node branches on
+// that field), or the trivial expansion "for every value of the field, leave
+// it unmodified and fall through to the node" (if the node branches on a
+// strictly larger field, or is Accept). This lets the binary operations below
+// combine operands with distinct fields without materializing — and then
+// re-interning — the trivial expansion as a `DecisionNode`.
 //
 // `Node` is always `PacketTransformerManager::DecisionNode`; it is a template
 // parameter only because that type is private and cannot be named here.
 template <typename Node>
-DecisionNodeView ViewAtField(PacketFieldHandle field,
-                             PacketTransformerHandle transformer,
-                             const Node* node) {
+struct DecisionNodeView {
+  // The viewed node, or null for the trivial expansion.
+  const Node* node;
+
+  // The "leave field unmodified" fall-through: the node's default branch, or
+  // the viewed transformer itself for the trivial expansion.
+  PacketTransformerHandle default_branch;
+
+  // The (match value, end offset) headers; empty for the trivial expansion.
+  absl::Span<const MatchEntry> Matches() const {
+    if (node == nullptr) return {};
+    return absl::MakeConstSpan(node->matches);
+  }
+
+  // The default (modify value -> branch) entries; empty for the trivial
+  // expansion.
+  absl::Span<const ModifyEntry> DefaultModifies() const {
+    if (node == nullptr) return {};
+    return node->DefaultModifies();
+  }
+};
+
+// Returns the view of `node` (the decision node of `transformer`, or null if
+// `transformer` is Accept) at `field`, which must be <= `node->field`.
+template <typename Node>
+DecisionNodeView<Node> ViewAtField(PacketFieldHandle field,
+                                   PacketTransformerHandle transformer,
+                                   const Node* node) {
   if (node != nullptr && node->field == field) {
-    return DecisionNodeView{
-        .modify_branch_by_field_match = &node->modify_branch_by_field_match,
-        .default_branch_by_field_modification =
-            &node->default_branch_by_field_modification,
+    return DecisionNodeView<Node>{
+        .node = node,
         .default_branch = node->default_branch,
     };
   }
-  return DecisionNodeView{
-      .modify_branch_by_field_match = &EmptyMatchBranchMap(),
-      .default_branch_by_field_modification = &EmptyModifyBranchMap(),
+  return DecisionNodeView<Node>{
+      .node = nullptr,
       .default_branch = transformer,
   };
 }
 
 // Returns the smallest field branched on by the given decision nodes, at
 // least one of which must be non-null (null encodes Accept, which branches on
-// no field). See `ViewAtField` regarding the `Node` template parameter.
+// no field). See `DecisionNodeView` regarding the `Node` template parameter.
 template <typename Node>
 PacketFieldHandle SmallestField(const Node* left, const Node* right) {
   DCHECK(left != nullptr || right != nullptr);
@@ -445,23 +576,23 @@ PacketFieldHandle SmallestField(const Node* left, const Node* right) {
 // The two operands of a binary combinator, viewed at the smallest field
 // branched on by either: an operand that is Accept, or branches on a strictly
 // larger field, is viewed as a trivial node at that field.
+template <typename Node>
 struct OperandViews {
   PacketFieldHandle field;
-  DecisionNodeView left;
-  DecisionNodeView right;
+  DecisionNodeView<Node> left;
+  DecisionNodeView<Node> right;
 };
 
 // Views the operands `left` and `right`, whose decision nodes are `left_node`
 // and `right_node` (null encoding Accept; at least one must be non-null), at
-// the smallest field branched on by either. See `ViewAtField` regarding the
-// `Node` template parameter.
+// the smallest field branched on by either.
 template <typename Node>
-OperandViews ViewOperandsAtSmallestField(PacketTransformerHandle left,
-                                         const Node* left_node,
-                                         PacketTransformerHandle right,
-                                         const Node* right_node) {
+OperandViews<Node> ViewOperandsAtSmallestField(PacketTransformerHandle left,
+                                               const Node* left_node,
+                                               PacketTransformerHandle right,
+                                               const Node* right_node) {
   const PacketFieldHandle field = SmallestField(left_node, right_node);
-  return OperandViews{
+  return OperandViews<Node>{
       .field = field,
       .left = ViewAtField(field, left, left_node),
       .right = ViewAtField(field, right, right_node),
@@ -469,56 +600,64 @@ OperandViews ViewOperandsAtSmallestField(PacketTransformerHandle left,
 }
 
 // A cheap, non-owning view of a logical (modify value -> branch) map,
-// represented as a base map plus at most one extra entry whose key must not
-// be a key of the base map.
+// represented as a base range of entries (sorted by modify value) plus at
+// most one extra entry whose key must not be a key of the base range.
 class ModifyBranchesView {
  public:
-  using Entry = std::pair<int, PacketTransformerHandle>;
+  using Entry = ModifyEntry;
 
-  explicit ModifyBranchesView(const ModifyBranchMap& base) : base_(&base) {}
-  ModifyBranchesView(const ModifyBranchMap& base, Entry extra)
-      : base_(&base), extra_(extra) {
-    DCHECK(!base.contains(extra.first));
+  explicit ModifyBranchesView(absl::Span<const ModifyEntry> base)
+      : base_(base) {}
+  ModifyBranchesView(absl::Span<const ModifyEntry> base, Entry extra)
+      : base_(base), extra_(extra) {
+    DCHECK(!ContainsModifyValue(base, extra.first));
   }
 
-  // Invokes `fn(modify_value, branch)` for each entry: the base map entries
-  // in increasing key order, then the extra entry, if any.
+  // Invokes `fn(modify_value, branch)` for each entry: the base entries in
+  // increasing key order, then the extra entry, if any.
   template <typename Fn>
   void ForEach(Fn&& fn) const {
-    for (const auto& [value, branch] : *base_) fn(value, branch);
+    for (const auto& [value, branch] : base_) fn(value, branch);
     if (extra_.has_value()) fn(extra_->first, extra_->second);
   }
 
   std::optional<PacketTransformerHandle> Find(int value) const {
     if (extra_.has_value() && extra_->first == value) return extra_->second;
-    if (auto it = base_->find(value); it != base_->end()) return it->second;
+    auto it = std::lower_bound(
+        base_.begin(), base_.end(), value,
+        [](const ModifyEntry& entry, int v) { return entry.first < v; });
+    if (it != base_.end() && it->first == value) return it->second;
     return std::nullopt;
   }
 
-  bool empty() const { return base_->empty() && !extra_.has_value(); }
+  bool empty() const { return base_.empty() && !extra_.has_value(); }
 
  private:
-  const ModifyBranchMap* base_;
+  absl::Span<const ModifyEntry> base_;
   std::optional<Entry> extra_;
 };
 
 // Returns a view of the logical (modify value -> branch) map that `node`
 // applies to packets whose field is equal to `value`: the matching entry of
-// `modify_branch_by_field_match` if there is one; otherwise the default
+// the node's match branches if there is one; otherwise the default
 // modifications, plus the unmodified fall-through to `default_branch` (keyed
 // by `value`, since the field keeps its value) unless that branch is Deny or
 // shadowed by a default modification to `value`.
-ModifyBranchesView ModifyBranchesAtValue(const DecisionNodeView& node,
+template <typename Node>
+ModifyBranchesView ModifyBranchesAtValue(const DecisionNodeView<Node>& view,
                                          int value) {
-  if (auto it = node.modify_branch_by_field_match->find(value);
-      it != node.modify_branch_by_field_match->end()) {
-    return ModifyBranchesView(it->second);
+  if (view.node != nullptr) {
+    if (std::optional<size_t> match_index = view.node->FindMatch(value);
+        match_index.has_value()) {
+      return ModifyBranchesView(view.node->MatchModifies(*match_index));
+    }
   }
-  const ModifyBranchMap& defaults = *node.default_branch_by_field_modification;
-  if (defaults.contains(value) || IsDenyHandle(node.default_branch)) {
+  absl::Span<const ModifyEntry> defaults = view.DefaultModifies();
+  if (ContainsModifyValue(defaults, value) ||
+      IsDenyHandle(view.default_branch)) {
     return ModifyBranchesView(defaults);
   }
-  return ModifyBranchesView(defaults, {value, node.default_branch});
+  return ModifyBranchesView(defaults, {value, view.default_branch});
 }
 
 // Combines two (modify value -> branch) maps key-wise into a new map, using
@@ -577,7 +716,7 @@ PacketTransformerHandle PacketTransformerManager::Sequence(
     if (!inserted) it->second = Union(it->second, branch);
   };
 
-  DecisionNode result_node{
+  DecisionNodeBuilder result_node{
       .field = field,
       .default_branch =
           Sequence(left_view.default_branch, right_view.default_branch),
@@ -587,8 +726,7 @@ PacketTransformerHandle PacketTransformerManager::Sequence(
   // gotten by taken default modification branches in the left node...
   ModifyBranchMap& result_modifications =
       result_node.default_branch_by_field_modification;
-  for (const auto& [value, branch] :
-       *left_view.default_branch_by_field_modification) {
+  for (const auto& [value, branch] : left_view.DefaultModifies()) {
     ModifyBranchesAtValue(right_view, value)
         .ForEach([&, branch = branch](int modify_value,
                                       PacketTransformerHandle right_branch) {
@@ -599,18 +737,16 @@ PacketTransformerHandle PacketTransformerManager::Sequence(
   // ... and of applying the right node's default modifications to packets
   // falling through the left node unmodified.
   for (const auto& [modify_value, right_branch] :
-       *right_view.default_branch_by_field_modification) {
+       right_view.DefaultModifies()) {
     union_into(result_modifications, modify_value,
                Sequence(left_view.default_branch, right_branch));
   }
 
   // For every value mapped in either node, construct the proper new branch.
   for (int value :
-       SortedUniqueKeys(*left_view.modify_branch_by_field_match,
-                        *right_view.modify_branch_by_field_match,
-                        *left_view.default_branch_by_field_modification,
-                        *right_view.default_branch_by_field_modification,
-                        result_modifications)) {
+       SortedUniqueKeys(left_view.Matches(), right_view.Matches(),
+                        left_view.DefaultModifies(),
+                        right_view.DefaultModifies(), result_modifications)) {
     ModifyBranchesView left_branches_at_value =
         ModifyBranchesAtValue(left_view, value);
     // An empty map is equivalent to a map with a single entry of
@@ -618,8 +754,8 @@ PacketTransformerHandle PacketTransformerManager::Sequence(
     // empty map won't work correctly for the merges below (an in fact, the
     // whole for-loop would be skipped), so we expand it here if necessary.
     if (left_branches_at_value.empty()) {
-      left_branches_at_value =
-          ModifyBranchesView(EmptyModifyBranchMap(), {value, Deny()});
+      left_branches_at_value = ModifyBranchesView(
+          /*base=*/{}, /*extra=*/{value, Deny()});
     }
 
     // `value`s arrive in increasing order, so inserting at `end()` is O(1).
@@ -650,12 +786,11 @@ PacketTransformerHandle PacketTransformerManager::PointwiseCombine(
       left, IsAccept(left) ? nullptr : &GetNodeOrDie(left), right,
       IsAccept(right) ? nullptr : &GetNodeOrDie(right));
 
-  DecisionNode result_node{
+  DecisionNodeBuilder result_node{
       .field = field,
       .default_branch_by_field_modification = CombineModifyBranches(
-          ModifyBranchesView(*left_view.default_branch_by_field_modification),
-          ModifyBranchesView(*right_view.default_branch_by_field_modification),
-          combiner,
+          ModifyBranchesView(left_view.DefaultModifies()),
+          ModifyBranchesView(right_view.DefaultModifies()), combiner,
           /*default_value=*/Deny()),
       .default_branch =
           combiner(left_view.default_branch, right_view.default_branch),
@@ -663,10 +798,9 @@ PacketTransformerHandle PacketTransformerManager::PointwiseCombine(
 
   // For every value mapped in either node, construct the proper new branch.
   for (int value :
-       SortedUniqueKeys(*left_view.modify_branch_by_field_match,
-                        *right_view.modify_branch_by_field_match,
-                        *left_view.default_branch_by_field_modification,
-                        *right_view.default_branch_by_field_modification)) {
+       SortedUniqueKeys(left_view.Matches(), right_view.Matches(),
+                        left_view.DefaultModifies(),
+                        right_view.DefaultModifies())) {
     // `value`s arrive in increasing order, so inserting at `end()` is O(1).
     result_node.modify_branch_by_field_match.try_emplace(
         result_node.modify_branch_by_field_match.end(), value,
@@ -737,8 +871,7 @@ PacketSetHandle PacketTransformerManager::GetAllPossibleOutputPackets(
   // Case 1: Output packets that hit the default branch and got modified.
   // Implements the `b_A` in the `fwd` function in section C.3 Push and Pull
   // in KATch: A Fast Symbolic Verifier for NetKAT.
-  for (const auto& [modify_value, branch] :
-       node.default_branch_by_field_modification) {
+  for (const auto& [modify_value, branch] : node.DefaultModifies()) {
     add_to_output_by_field_value(modify_value,
                                  GetAllPossibleOutputPackets(branch));
   }
@@ -747,9 +880,8 @@ PacketSetHandle PacketTransformerManager::GetAllPossibleOutputPackets(
   // Implements the `b_B` in the `fwd` function in section C.3 Push and Pull
   // in KATch: A Fast Symbolic Verifier for NetKAT.
   absl::flat_hash_set<int> branch_modify_values;
-  for (const auto& [match_value, branch_by_modify] :
-       node.modify_branch_by_field_match) {
-    for (const auto& [modify_value, branch] : branch_by_modify) {
+  for (const DecisionNode::Match& match : node.Matches()) {
+    for (const auto& [modify_value, branch] : match.modifies) {
       branch_modify_values.insert(modify_value);
       add_to_output_by_field_value(modify_value,
                                    GetAllPossibleOutputPackets(branch));
@@ -761,8 +893,9 @@ PacketSetHandle PacketTransformerManager::GetAllPossibleOutputPackets(
   //  Implements the `b_C` in the `fwd` function in section C.3 Push and Pull
   //  in KATch: A Fast Symbolic Verifier for NetKAT.
   for (int modify_value : branch_modify_values) {
-    if (!node.modify_branch_by_field_match.contains(modify_value) &&
-        !node.default_branch_by_field_modification.contains(modify_value)) {
+    if (!node.FindMatch(modify_value).has_value() &&
+        !DecisionNode::ContainsModifyValue(node.DefaultModifies(),
+                                           modify_value)) {
       add_to_output_by_field_value(modify_value, default_output);
     }
   }
@@ -770,7 +903,7 @@ PacketSetHandle PacketTransformerManager::GetAllPossibleOutputPackets(
   // Case 4: Output packets that got matched on an explicit branch, but did
   // not get modified. Implements the `b_D` in the `fwd` function in section
   // C.3 Push and Pull in KATch: A Fast Symbolic Verifier for NetKAT.
-  for (auto& [match_value, unused] : node.modify_branch_by_field_match) {
+  for (const auto& [match_value, unused_end_offset] : node.matches) {
     if (!branch_modify_values.contains(match_value)) {
       add_to_output_by_field_value(match_value, PacketSetManager().EmptySet());
     }
@@ -822,8 +955,7 @@ PacketTransformerManager::GetAllInputPacketsThatProduceAnyOutput(
   // Implements the `d'` in the `bwd` function in section C.3 Push and Pull in
   // KATch: A Fast Symbolic Verifier for NetKAT.
   PacketSetHandle default_branch_output_packets;
-  for (const auto& [modify_value, branch] :
-       node.default_branch_by_field_modification) {
+  for (const auto& [modify_value, branch] : node.DefaultModifies()) {
     default_branch_output_packets =
         packet_set_manager_.Or(default_branch_output_packets,
                                GetAllInputPacketsThatProduceAnyOutput(branch));
@@ -833,23 +965,21 @@ PacketTransformerManager::GetAllInputPacketsThatProduceAnyOutput(
   // Implements the `b_A` in the `bwd` function in section C.3 Push and Pull
   // in KATch: A Fast Symbolic Verifier for NetKAT.
   absl::flat_hash_map<int, PacketSetHandle> branch_by_field_value_map;
-  for (const auto& [match_value, branch_by_modify] :
-       node.modify_branch_by_field_match) {
+  for (const DecisionNode::Match& match : node.Matches()) {
     PacketSetHandle union_of_branches;
-    for (const auto& [modify_value, branch] : branch_by_modify) {
+    for (const auto& [modify_value, branch] : match.modifies) {
       union_of_branches = packet_set_manager_.Or(
           union_of_branches, GetAllInputPacketsThatProduceAnyOutput(branch));
     }
-    branch_by_field_value_map[match_value] = union_of_branches;
+    branch_by_field_value_map[match.value] = union_of_branches;
   }
 
   // Case 3: Input packets that do not get matched on an explicit branch, but
   // do get modified.
   //  Implements the `b_B` in the `bwd` function in section C.3 Push and Pull
   //  in KATch: A Fast Symbolic Verifier for NetKAT.
-  for (const auto& [modify_value, unused] :
-       node.default_branch_by_field_modification) {
-    if (!node.modify_branch_by_field_match.contains(modify_value)) {
+  for (const auto& [modify_value, unused_branch] : node.DefaultModifies()) {
+    if (!node.FindMatch(modify_value).has_value()) {
       branch_by_field_value_map[modify_value] = default_branch_output_packets;
     }
   }
@@ -897,7 +1027,7 @@ std::string PacketTransformerManager::ToString(const DecisionNode& node) const {
 
   auto pretty_print_map =
       [&](absl::string_view field,
-          const absl::btree_map<int, PacketTransformerHandle>& map) {
+          absl::Span<const DecisionNode::ModifyEntry> map) {
         for (const auto& [value, branch] : map) {
           absl::StrAppendFormat(&result, "    %s := %d -> %v\n", field, value,
                                 branch);
@@ -910,12 +1040,12 @@ std::string PacketTransformerManager::ToString(const DecisionNode& node) const {
       absl::CEscape(
           packet_set_manager_.field_manager_.GetFieldName(node.field)));
 
-  for (const auto& [value, modify_map] : node.modify_branch_by_field_match) {
-    absl::StrAppendFormat(&result, "  %s == %d:\n", field, value);
-    pretty_print_map(field, modify_map);
+  for (const DecisionNode::Match& match : node.Matches()) {
+    absl::StrAppendFormat(&result, "  %s == %d:\n", field, match.value);
+    pretty_print_map(field, match.modifies);
   }
   absl::StrAppendFormat(&result, "  %s == *:\n", field);
-  pretty_print_map(field, node.default_branch_by_field_modification);
+  pretty_print_map(field, node.DefaultModifies());
   PacketTransformerHandle fallthrough = node.default_branch;
   absl::StrAppendFormat(&result, "  %s == * -> %v\n", field, fallthrough);
   if (!IsAccept(fallthrough) && !IsDeny(fallthrough))
@@ -937,7 +1067,7 @@ std::string PacketTransformerManager::ToString(
 
   auto pretty_print_map =
       [&](absl::string_view field,
-          const absl::btree_map<int, PacketTransformerHandle>& map) {
+          absl::Span<const DecisionNode::ModifyEntry> map) {
         for (const auto& [value, branch] : map) {
           absl::StrAppendFormat(&result, "    %s := %d -> %v\n", field, value,
                                 branch);
@@ -959,12 +1089,12 @@ std::string PacketTransformerManager::ToString(
         "%v:'%s'", node.field,
         absl::CEscape(
             packet_set_manager_.field_manager_.GetFieldName(node.field)));
-    for (const auto& [value, modify_map] : node.modify_branch_by_field_match) {
-      absl::StrAppendFormat(&result, "  %s == %d:\n", field, value);
-      pretty_print_map(field, modify_map);
+    for (const DecisionNode::Match& match : node.Matches()) {
+      absl::StrAppendFormat(&result, "  %s == %d:\n", field, match.value);
+      pretty_print_map(field, match.modifies);
     }
     absl::StrAppendFormat(&result, "  %s == *:\n", field);
-    pretty_print_map(field, node.default_branch_by_field_modification);
+    pretty_print_map(field, node.DefaultModifies());
     PacketTransformerHandle fallthrough = node.default_branch;
     absl::StrAppendFormat(&result, "  %s == * -> %v\n", field, fallthrough);
     if (IsAccept(fallthrough) || IsDeny(fallthrough)) continue;
@@ -1014,13 +1144,14 @@ std::string PacketTransformerManager::ToDot(
         packet_set_manager_.field_manager_.GetFieldName(node.field);
     absl::StrAppendFormat(&result, "  %d [label=\"%s\"]\n",
                           transformer.node_index_, field);
-    for (const auto& [value, modify_map] : node.modify_branch_by_field_match) {
-      if (modify_map.empty()) {
+    for (const DecisionNode::Match& match : node.Matches()) {
+      int value = match.value;
+      if (match.modifies.empty()) {
         absl::StrAppendFormat(&result, "  %d -> %d [label=\"%s==%s\"]\n",
                               transformer.node_index_, SentinelNodeIndex::kDeny,
                               field, absl::StrCat(value));
       }
-      for (const auto& [new_value, branch] : modify_map) {
+      for (const auto& [new_value, branch] : match.modifies) {
         absl::StrAppendFormat(&result,
                               "  %d -> %d [label=\"%s==%s; %s:=%d\"]\n",
                               transformer.node_index_, branch.node_index_,
@@ -1031,8 +1162,7 @@ std::string PacketTransformerManager::ToDot(
       }
     }
 
-    for (const auto& [new_value, branch] :
-         node.default_branch_by_field_modification) {
+    for (const auto& [new_value, branch] : node.DefaultModifies()) {
       absl::StrAppendFormat(
           &result, "  %d -> %d [label=\"%s:=%d\" style=dashed]\n",
           transformer.node_index_, branch.node_index_, field, new_value);
@@ -1061,13 +1191,18 @@ absl::Status PacketTransformerManager::CheckInternalInvariants() const {
     RET_CHECK(node_ptr == &nodes_[transformer.node_index_]);
   }
   for (int i = 0; i < nodes_.size(); ++i) {
-    const DecisionNode& node = nodes_[i];
-    // Look up both by pointer and by value (exercising the transparent
-    // functors used by `NodeToTransformer`).
-    auto it = transformer_by_node_.find(&node);
+    auto it = transformer_by_node_.find(&nodes_[i]);
     RET_CHECK(it != transformer_by_node_.end());
     RET_CHECK(it->second == PacketTransformerHandle(i));
-    it = transformer_by_node_.find(node);
+  }
+
+  // Invariant: `NodeHash` and `NodeEq` treat a builder and its flattened
+  // node identically, as required for transparent unique table lookups.
+  for (int i = 0; i < nodes_.size(); ++i) {
+    DecisionNodeBuilder builder = ToBuilder(nodes_[i]);
+    RET_CHECK(NodeHash()(builder) == NodeHash()(&nodes_[i]));
+    RET_CHECK(NodeEq()(&nodes_[i], builder));
+    auto it = transformer_by_node_.find(builder);
     RET_CHECK(it != transformer_by_node_.end());
     RET_CHECK(it->second == PacketTransformerHandle(i));
   }
@@ -1075,11 +1210,39 @@ absl::Status PacketTransformerManager::CheckInternalInvariants() const {
   // Node Invariants.
   for (int i = 0; i < nodes_.size(); ++i) {
     const DecisionNode& node = nodes_[i];
-    // Invariant: `modify_branch_by_field_match` or
-    // `default_branch_by_field_modification` is non-empty.
+    // Invariant: `matches` or `DefaultModifies()` is non-empty.
     // Maintained by `NodeToTransformer`.
-    RET_CHECK(!node.modify_branch_by_field_match.empty() ||
-              !node.default_branch_by_field_modification.empty());
+    RET_CHECK(!node.matches.empty() || !node.modifies.empty());
+
+    // Invariants of the flat encoding: match values strictly increase, end
+    // offsets are monotone and bounded, and each ModifyEntry range is sorted
+    // by strictly increasing modify value.
+    uint32_t previous_end_offset = 0;
+    for (const auto& [match_value, end_offset] : node.matches) {
+      RET_CHECK(end_offset >= previous_end_offset) << ":\n" << ToString(node);
+      RET_CHECK(end_offset <= node.modifies.size()) << ":\n" << ToString(node);
+      previous_end_offset = end_offset;
+    }
+    for (size_t j = 1; j < node.matches.size(); ++j) {
+      RET_CHECK(node.matches[j - 1].first < node.matches[j].first)
+          << ":\n"
+          << ToString(node);
+    }
+    auto is_strictly_sorted_by_value =
+        [](absl::Span<const DecisionNode::ModifyEntry> entries) {
+          for (size_t j = 1; j < entries.size(); ++j) {
+            if (entries[j - 1].first >= entries[j].first) return false;
+          }
+          return true;
+        };
+    for (const DecisionNode::Match& match : node.Matches()) {
+      RET_CHECK(is_strictly_sorted_by_value(match.modifies))
+          << ":\n"
+          << ToString(node);
+    }
+    RET_CHECK(is_strictly_sorted_by_value(node.DefaultModifies()))
+        << ":\n"
+        << ToString(node);
 
     // Invariant: node field is strictly smaller than sub-node fields.
     RET_CHECK(IsAccept(node.default_branch) || IsDeny(node.default_branch) ||
@@ -1087,12 +1250,11 @@ absl::Status PacketTransformerManager::CheckInternalInvariants() const {
         << ":\n"
         << ToString(node);
 
-    for (const auto& [match_value, branch_by_modify] :
-         node.modify_branch_by_field_match) {
-      for (const auto& [modify_value, branch] : branch_by_modify) {
+    for (const DecisionNode::Match& match : node.Matches()) {
+      for (const auto& [modify_value, branch] : match.modifies) {
         // Invariant: Modify branches are not Deny unless `modify_value ==
-        // match_value`.
-        RET_CHECK(!IsDeny(branch) || modify_value == match_value)
+        // match.value`.
+        RET_CHECK(!IsDeny(branch) || modify_value == match.value)
             << ":\n"
             << ToString(node);
 
@@ -1104,8 +1266,7 @@ absl::Status PacketTransformerManager::CheckInternalInvariants() const {
       }
     }
 
-    for (const auto& [match_value, branch] :
-         node.default_branch_by_field_modification) {
+    for (const auto& [modify_value, branch] : node.DefaultModifies()) {
       // Invariant: Default modify branches are not Deny.
       RET_CHECK(!IsDeny(branch));
 

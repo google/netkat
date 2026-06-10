@@ -71,14 +71,9 @@ class PacketTransformerManagerTestPeer {
     const PacketTransformerManager::DecisionNode& node =
         from.GetNodeOrDie(transformer);
     fields.insert(node.field);
-    for (const auto& [match_value, branch_by_modify] :
-         node.modify_branch_by_field_match) {
-      for (const auto& [modify_value, branch] : branch_by_modify) {
-        CollectFields(from, branch, visited, fields);
-      }
-    }
-    for (const auto& [modify_value, branch] :
-         node.default_branch_by_field_modification) {
+    // All match and default modify entries live in the node's flat `modifies`
+    // array, so one pass visits every branch.
+    for (const auto& [modify_value, branch] : node.modifies) {
       CollectFields(from, branch, visited, fields);
     }
     CollectFields(from, node.default_branch, visited, fields);
@@ -100,22 +95,20 @@ class PacketTransformerManagerTestPeer {
 
     const PacketTransformerManager::DecisionNode& node =
         from.GetNodeOrDie(transformer);
-    PacketTransformerManager::DecisionNode copy{
+    PacketTransformerManager::DecisionNodeBuilder copy{
         .field = field_translation.at(node.field),
     };
-    for (const auto& [match_value, branch_by_modify] :
-         node.modify_branch_by_field_match) {
+    for (const auto& match : node.Matches()) {
       // `operator[]` keeps entries with empty branch maps, which are
-      // meaningful: they deny packets matching `match_value`.
+      // meaningful: they deny packets matching `match.value`.
       auto& copy_branch_by_modify =
-          copy.modify_branch_by_field_match[match_value];
-      for (const auto& [modify_value, branch] : branch_by_modify) {
+          copy.modify_branch_by_field_match[match.value];
+      for (const auto& [modify_value, branch] : match.modifies) {
         copy_branch_by_modify[modify_value] =
             Copy(from, branch, to, field_translation, copy_by_original);
       }
     }
-    for (const auto& [modify_value, branch] :
-         node.default_branch_by_field_modification) {
+    for (const auto& [modify_value, branch] : node.DefaultModifies()) {
       copy.default_branch_by_field_modification[modify_value] =
           Copy(from, branch, to, field_translation, copy_by_original);
     }
