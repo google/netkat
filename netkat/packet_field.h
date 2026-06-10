@@ -78,6 +78,11 @@ class [[nodiscard]] PacketFieldHandle {
   // 2^16 ~= 65k fields.
   uint16_t index_;
   explicit PacketFieldHandle(uint16_t index) : index_(index) {}
+
+  // `PacketSetManager` and `PacketTransformerManager` organize their node
+  // storage by field, using `index_` to address the per-field data structures.
+  friend class PacketSetManager;
+  friend class PacketTransformerManager;
 };
 
 // Protect against regressions in the memory layout, as it affects performance.

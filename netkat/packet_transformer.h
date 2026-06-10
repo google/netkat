@@ -39,12 +39,15 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/container/btree_map.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/hash/hash.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
@@ -147,10 +150,13 @@ class PacketTransformerManager {
   // The class is move-only: not copyable, but movable.
   // `PacketSetHandles` and `PacketTransformerHandles` returned by this class
   // are not invalidated on move.
+  // Moves are implemented manually (in the cc file) because the unique tables
+  // reference `nodes_` through `nodes_location_`, which must be repointed at
+  // the new `nodes_` member on move.
   PacketTransformerManager(const PacketTransformerManager&) = delete;
   PacketTransformerManager& operator=(const PacketTransformerManager&) = delete;
-  PacketTransformerManager(PacketTransformerManager&&) = default;
-  PacketTransformerManager& operator=(PacketTransformerManager&&) = default;
+  PacketTransformerManager(PacketTransformerManager&&);
+  PacketTransformerManager& operator=(PacketTransformerManager&&);
 
   // Returns the `PacketSetManager` used by this object to compile
   // predicates.
@@ -424,12 +430,61 @@ class PacketTransformerManager {
   // expensive relocations.
   PagedStableVector<DecisionNode, kPageSize> nodes_;
 
-  // A so called "unique table" to ensure each node is only added to `nodes_`
-  // once, and thus has a unique `PacketTransformerHandle::node_index`.
+  // The location of `nodes_`, behind a level of indirection that remains
+  // stable when the manager object is moved: the unique tables below hash and
+  // compare node indices by dereferencing into `nodes_`, and their
+  // hasher/equality functors would otherwise dangle on move. Move operations
+  // repoint the location at the new manager's `nodes_` member.
+  std::unique_ptr<const PagedStableVector<DecisionNode, kPageSize>*>
+      nodes_location_ = std::make_unique<
+          const PagedStableVector<DecisionNode, kPageSize>*>(&nodes_);
+
+  // Hasher and equality for unique table entries, which are indices into
+  // `nodes_`. Hashing/comparing the *node* (rather than the index) is what
+  // makes the tables deduplicate by node content.
+  // The `DecisionNode` overloads enable heterogeneous lookup, so that a
+  // candidate node can be probed before it is added to `nodes_`.
+  struct InternedNodeHash {
+    using is_transparent = void;
+    const PagedStableVector<DecisionNode, kPageSize>* const* nodes;
+    size_t operator()(uint32_t node_index) const {
+      return absl::HashOf((**nodes)[node_index]);
+    }
+    size_t operator()(const DecisionNode& node) const {
+      return absl::HashOf(node);
+    }
+  };
+  struct InternedNodeEq {
+    using is_transparent = void;
+    const PagedStableVector<DecisionNode, kPageSize>* const* nodes;
+    bool operator()(uint32_t a, uint32_t b) const {
+      return (**nodes)[a] == (**nodes)[b];
+    }
+    bool operator()(uint32_t a, const DecisionNode& b) const {
+      return (**nodes)[a] == b;
+    }
+    bool operator()(const DecisionNode& a, uint32_t b) const {
+      return (**nodes)[b] == a;
+    }
+  };
+  using UniqueNodeTable =
+      absl::flat_hash_set<uint32_t, InternedNodeHash, InternedNodeEq>;
+
+  // So called "unique tables" to ensure each node is only added to `nodes_`
+  // once, and thus has a unique `PacketTransformerHandle::node_index`. One
+  // table per packet field: a node's entry lives in the table of the field it
+  // branches on. Splitting by field keeps the tables, and thus probe
+  // sequences, small, and storing indices (instead of node copies) keeps each
+  // node stored exactly once, in `nodes_`.
   //
-  // INVARIANT: `transformer_by_node_[n] = s` iff `nodes_[s.node_index_] == n`.
-  absl::flat_hash_map<DecisionNode, PacketTransformerHandle>
-      transformer_by_node_;
+  // INVARIANT: `unique_table_by_field_[f]` contains `i` iff
+  // `nodes_[i].field.index_ == f`. Every valid node index is contained in
+  // exactly one table.
+  std::vector<UniqueNodeTable> unique_table_by_field_;
+
+  // Returns the unique table for nodes branching on `field`, creating it (and
+  // any tables for smaller fields) if it does not exist yet.
+  UniqueNodeTable& GetOrCreateUniqueTable(PacketFieldHandle field);
 
   // A map of a given `PolicyProto` to a `PacketTransformerHandle`.
   //
