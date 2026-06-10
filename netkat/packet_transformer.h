@@ -383,7 +383,33 @@ class PacketTransformerManager {
 
     template <typename H>
     friend H AbslHashValue(H h, const ProtoHashKey& key) {
-      return H::combine(std::move(h), key.lhs_child, key.rhs_child);
+      return H::combine(std::move(h), key.policy_case, key.lhs_child,
+                        key.rhs_child);
+    }
+  };
+
+  // Transparent hash and equality functors for the unique table
+  // (`transformer_by_node_`), which is keyed by stable `DecisionNode*`
+  // pointers into `nodes_` so that each node is stored only once (rather than
+  // twice: once in `nodes_` and once as a map key). Lookups work directly
+  // with a not-yet-interned `DecisionNode` value. Both functors are
+  // stateless: keys are pointers, and the pages holding the nodes are stable
+  // across moves of the manager.
+  struct NodeHash {
+    using is_transparent = void;
+    size_t operator()(const DecisionNode* node) const;
+    size_t operator()(const DecisionNode& node) const;
+  };
+  struct NodeEq {
+    using is_transparent = void;
+    bool operator()(const DecisionNode* a, const DecisionNode* b) const {
+      return a == b || *a == *b;
+    }
+    bool operator()(const DecisionNode* a, const DecisionNode& b) const {
+      return *a == b;
+    }
+    bool operator()(const DecisionNode& a, const DecisionNode* b) const {
+      return a == *b;
     }
   };
 
@@ -404,17 +430,16 @@ class PacketTransformerManager {
   // enough to avoid excessive memory overhead.
   static constexpr size_t kPageSize = (1 << 26) / sizeof(DecisionNode);
 
-  // Helper functions to deal with DecisionNodes directly.
-  // TODO(dilo): Is there a convenient way to either avoid these or avoid making
-  // copies of the nodes?
-  PacketTransformerHandle Union(DecisionNode left, DecisionNode right);
-  PacketTransformerHandle Sequence(DecisionNode left, DecisionNode right);
-  PacketTransformerHandle Difference(DecisionNode left, DecisionNode right);
-
-  // Internal helper function to get a map of possible modification values to
-  // branches for a given input value at `node`.
-  absl::btree_map<int, PacketTransformerHandle> GetMapAtValue(
-      const DecisionNode& node, int value);
+  // Shared implementation of `Union` and `Difference`, which differ only in
+  // their base cases and the operation applied to corresponding branches:
+  // combines `left` and `right` by applying `combiner` — which must be the
+  // handle-level operation itself, e.g. `Union` — to corresponding branches.
+  // Both operands must be Accept or decision nodes (i.e., the base cases must
+  // already have been handled).
+  template <typename Combiner>
+  PacketTransformerHandle PointwiseCombine(PacketTransformerHandle left,
+                                           PacketTransformerHandle right,
+                                           Combiner&& combiner);
 
   // The decision nodes forming the BDD-style DAG representation of packets.
   // `PacketTransformerHandle::node_index_` indexes into this vector.
@@ -426,9 +451,13 @@ class PacketTransformerManager {
 
   // A so called "unique table" to ensure each node is only added to `nodes_`
   // once, and thus has a unique `PacketTransformerHandle::node_index`.
+  // Keyed by pointers into `nodes_` (stable, see `PagedStableVector`), so
+  // nodes are not stored twice. The transparent `NodeHash`/`NodeEq` functors
+  // support lookup by node value, see their documentation.
   //
-  // INVARIANT: `transformer_by_node_[n] = s` iff `nodes_[s.node_index_] == n`.
-  absl::flat_hash_map<DecisionNode, PacketTransformerHandle>
+  // INVARIANT: `transformer_by_node_[p] = s` iff `p == &nodes_[s.node_index_]`.
+  absl::flat_hash_map<const DecisionNode*, PacketTransformerHandle, NodeHash,
+                      NodeEq>
       transformer_by_node_;
 
   // A map of a given `PolicyProto` to a `PacketTransformerHandle`.
