@@ -383,7 +383,33 @@ class PacketTransformerManager {
 
     template <typename H>
     friend H AbslHashValue(H h, const ProtoHashKey& key) {
-      return H::combine(std::move(h), key.lhs_child, key.rhs_child);
+      return H::combine(std::move(h), key.policy_case, key.lhs_child,
+                        key.rhs_child);
+    }
+  };
+
+  // Transparent hash and equality functors for the unique table
+  // (`transformer_by_node_`), which is keyed by stable `DecisionNode*`
+  // pointers into `nodes_` so that each node is stored only once (rather than
+  // twice: once in `nodes_` and once as a map key). Lookups work directly
+  // with a not-yet-interned `DecisionNode` value. Both functors are
+  // stateless: keys are pointers, and the pages holding the nodes are stable
+  // across moves of the manager.
+  struct NodeHash {
+    using is_transparent = void;
+    size_t operator()(const DecisionNode* node) const;
+    size_t operator()(const DecisionNode& node) const;
+  };
+  struct NodeEq {
+    using is_transparent = void;
+    bool operator()(const DecisionNode* a, const DecisionNode* b) const {
+      return a == b || *a == *b;
+    }
+    bool operator()(const DecisionNode* a, const DecisionNode& b) const {
+      return *a == b;
+    }
+    bool operator()(const DecisionNode& a, const DecisionNode* b) const {
+      return a == *b;
     }
   };
 
@@ -425,9 +451,13 @@ class PacketTransformerManager {
 
   // A so called "unique table" to ensure each node is only added to `nodes_`
   // once, and thus has a unique `PacketTransformerHandle::node_index`.
+  // Keyed by pointers into `nodes_` (stable, see `PagedStableVector`), so
+  // nodes are not stored twice. The transparent `NodeHash`/`NodeEq` functors
+  // support lookup by node value, see their documentation.
   //
-  // INVARIANT: `transformer_by_node_[n] = s` iff `nodes_[s.node_index_] == n`.
-  absl::flat_hash_map<DecisionNode, PacketTransformerHandle>
+  // INVARIANT: `transformer_by_node_[p] = s` iff `p == &nodes_[s.node_index_]`.
+  absl::flat_hash_map<const DecisionNode*, PacketTransformerHandle, NodeHash,
+                      NodeEq>
       transformer_by_node_;
 
   // A map of a given `PolicyProto` to a `PacketTransformerHandle`.

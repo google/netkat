@@ -29,6 +29,7 @@
 #include "absl/container/fixed_array.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/hash/hash.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
@@ -76,6 +77,16 @@ PacketTransformerManager::GetNodeOrDie(
     PacketTransformerHandle transformer) const {
   CHECK_LT(transformer.node_index_, nodes_.size());  // Crash ok
   return nodes_[transformer.node_index_];
+}
+
+size_t PacketTransformerManager::NodeHash::operator()(
+    const DecisionNode* node) const {
+  return absl::HashOf(*node);
+}
+
+size_t PacketTransformerManager::NodeHash::operator()(
+    const DecisionNode& node) const {
+  return absl::HashOf(node);
 }
 
 // Canonicalizes a decision node and returns a transformer.
@@ -153,16 +164,20 @@ PacketTransformerHandle PacketTransformerManager::NodeToTransformer(
       node.default_branch_by_field_modification.empty())
     return node.default_branch;
 
-  auto [it, inserted] = transformer_by_node_.try_emplace(
-      node, PacketTransformerHandle(nodes_.size()));
-  if (inserted) {
-    nodes_.push_back(std::move(node));
-    LOG_IF(DFATAL, nodes_.size() > SentinelNodeIndex::kMinSentinel)
-        << "Internal invariant violated: Proper and sentinel node indices must "
-           "be disjoint. This indicates that we allocated more nodes than are "
-           "supported (> 2^32 - 2).";
+  // Look up the node by value via the transparent `NodeHash`/`NodeEq`
+  // functors; only new nodes get stored (exactly once, in `nodes_`).
+  if (auto it = transformer_by_node_.find(node);
+      it != transformer_by_node_.end()) {
+    return it->second;
   }
-  return it->second;
+  PacketTransformerHandle transformer(nodes_.size());
+  nodes_.push_back(std::move(node));
+  transformer_by_node_.insert({&nodes_[transformer.node_index_], transformer});
+  LOG_IF(DFATAL, nodes_.size() > SentinelNodeIndex::kMinSentinel)
+      << "Internal invariant violated: Proper and sentinel node indices must "
+         "be disjoint. This indicates that we allocated more nodes than are "
+         "supported (> 2^32 - 2).";
+  return transformer;
 }
 
 bool PacketTransformerManager::IsDeny(
@@ -1040,15 +1055,19 @@ absl::Status PacketTransformerManager::CheckInternalInvariants() const {
   // Invariant: Proper and sentinel node indices are disjoint.
   RET_CHECK(nodes_.size() <= SentinelNodeIndex::kMinSentinel);
 
-  // Invariant: `transformer_by_node_[n] = s` iff `nodes_[s.node_index_] ==
-  // n`.
-  for (const auto& [node, transformer] : transformer_by_node_) {
+  // Invariant: `transformer_by_node_[p] = s` iff `p == &nodes_[s.node_index_]`.
+  for (const auto& [node_ptr, transformer] : transformer_by_node_) {
     RET_CHECK(transformer.node_index_ < nodes_.size());
-    RET_CHECK(nodes_[transformer.node_index_] == node);
+    RET_CHECK(node_ptr == &nodes_[transformer.node_index_]);
   }
   for (int i = 0; i < nodes_.size(); ++i) {
     const DecisionNode& node = nodes_[i];
-    auto it = transformer_by_node_.find(node);
+    // Look up both by pointer and by value (exercising the transparent
+    // functors used by `NodeToTransformer`).
+    auto it = transformer_by_node_.find(&node);
+    RET_CHECK(it != transformer_by_node_.end());
+    RET_CHECK(it->second == PacketTransformerHandle(i));
+    it = transformer_by_node_.find(node);
     RET_CHECK(it != transformer_by_node_.end());
     RET_CHECK(it->second == PacketTransformerHandle(i));
   }
