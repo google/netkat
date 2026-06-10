@@ -61,6 +61,27 @@ enum SentinelNodeIndex : uint32_t {
 PacketTransformerHandle::PacketTransformerHandle()
     : node_index_(SentinelNodeIndex::kDeny) {}
 
+PacketTransformerManager::PacketTransformerManager(
+    PacketTransformerManager&& other)
+    : nodes_(std::move(other.nodes_)),
+      nodes_location_(std::move(other.nodes_location_)),
+      unique_table_by_field_(std::move(other.unique_table_by_field_)),
+      transformer_by_hash_(std::move(other.transformer_by_hash_)),
+      packet_set_manager_(std::move(other.packet_set_manager_)) {
+  *nodes_location_ = &nodes_;
+}
+
+PacketTransformerManager& PacketTransformerManager::operator=(
+    PacketTransformerManager&& other) {
+  nodes_ = std::move(other.nodes_);
+  nodes_location_ = std::move(other.nodes_location_);
+  unique_table_by_field_ = std::move(other.unique_table_by_field_);
+  transformer_by_hash_ = std::move(other.transformer_by_hash_);
+  packet_set_manager_ = std::move(other.packet_set_manager_);
+  *nodes_location_ = &nodes_;
+  return *this;
+}
+
 std::string PacketTransformerHandle::ToString() const {
   if (node_index_ == SentinelNodeIndex::kDeny) {
     return "PacketTransformerHandle<deny>";
@@ -172,16 +193,33 @@ PacketTransformerHandle PacketTransformerManager::NodeToTransformer(
       node.default_branch_by_field_modification.empty())
     return node.default_branch;
 
-  auto [it, inserted] = transformer_by_node_.try_emplace(
-      node, PacketTransformerHandle(nodes_.size()));
-  if (inserted) {
-    nodes_.push_back(std::move(node));
-    LOG_IF(DFATAL, nodes_.size() > SentinelNodeIndex::kMinSentinel)
-        << "Internal invariant violated: Proper and sentinel node indices must "
-           "be disjoint. This indicates that we allocated more nodes than are "
-           "supported (> 2^32 - 2).";
+  // Probe the unique table by node content first (heterogeneous lookup): the
+  // common case is that an equal node has already been interned, and probing
+  // with the candidate node avoids touching `nodes_` in that case.
+  UniqueNodeTable& unique_table = GetOrCreateUniqueTable(node.field);
+  if (auto it = unique_table.find(node); it != unique_table.end()) {
+    return PacketTransformerHandle(*it);
   }
-  return it->second;
+  uint32_t node_index = nodes_.size();
+  nodes_.push_back(std::move(node));
+  unique_table.insert(node_index);
+  LOG_IF(DFATAL, nodes_.size() > SentinelNodeIndex::kMinSentinel)
+      << "Internal invariant violated: Proper and sentinel node indices must "
+         "be disjoint. This indicates that we allocated more nodes than are "
+         "supported (> 2^32 - 2).";
+  return PacketTransformerHandle(node_index);
+}
+
+PacketTransformerManager::UniqueNodeTable&
+PacketTransformerManager::GetOrCreateUniqueTable(PacketFieldHandle field) {
+  if (field.index_ >= unique_table_by_field_.size()) {
+    unique_table_by_field_.resize(
+        field.index_ + 1,
+        UniqueNodeTable(/*bucket_count=*/0,
+                        InternedNodeHash{nodes_location_.get()},
+                        InternedNodeEq{nodes_location_.get()}));
+  }
+  return unique_table_by_field_[field.index_];
 }
 
 bool PacketTransformerManager::IsDeny(
@@ -1104,17 +1142,29 @@ absl::Status PacketTransformerManager::CheckInternalInvariants() const {
   // Invariant: Proper and sentinel node indices are disjoint.
   RET_CHECK(nodes_.size() <= SentinelNodeIndex::kMinSentinel);
 
-  // Invariant: `transformer_by_node_[n] = s` iff `nodes_[s.node_index_] ==
-  // n`.
-  for (const auto& [node, transformer] : transformer_by_node_) {
-    RET_CHECK(transformer.node_index_ < nodes_.size());
-    RET_CHECK(nodes_[transformer.node_index_] == node);
+  // Invariant: `unique_table_by_field_[f]` contains `i` iff
+  // `nodes_[i].field.index_ == f`. Every valid node index is in exactly one
+  // table, and no two interned nodes are equal.
+  size_t total_table_size = 0;
+  for (size_t f = 0; f < unique_table_by_field_.size(); ++f) {
+    const UniqueNodeTable& unique_table = unique_table_by_field_[f];
+    total_table_size += unique_table.size();
+    for (uint32_t node_index : unique_table) {
+      RET_CHECK(node_index < nodes_.size());
+      RET_CHECK(nodes_[node_index].field.index_ == f);
+    }
   }
-  for (int i = 0; i < nodes_.size(); ++i) {
+  RET_CHECK(total_table_size == nodes_.size());
+  for (uint32_t i = 0; i < nodes_.size(); ++i) {
     const DecisionNode& node = nodes_[i];
-    auto it = transformer_by_node_.find(node);
-    RET_CHECK(it != transformer_by_node_.end());
-    RET_CHECK(it->second == PacketTransformerHandle(i));
+    RET_CHECK(node.field.index_ < unique_table_by_field_.size());
+    const UniqueNodeTable& unique_table =
+        unique_table_by_field_[node.field.index_];
+    // Looking up `i` probes by node content; finding exactly `i` proves that
+    // no other interned node has the same content.
+    auto it = unique_table.find(i);
+    RET_CHECK(it != unique_table.end());
+    RET_CHECK(*it == i);
   }
 
   // Node Invariants.
