@@ -37,17 +37,21 @@
 #ifndef GOOGLE_NETKAT_NETKAT_PACKET_TRANSFORMER_H_
 #define GOOGLE_NETKAT_NETKAT_PACKET_TRANSFORMER_H_
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 
 #include "absl/container/btree_map.h"
+#include "absl/container/fixed_array.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "netkat/netkat.pb.h"
 #include "netkat/packet.h"
 #include "netkat/packet_field.h"
@@ -306,7 +310,21 @@ class PacketTransformerManager {
   //     non-deterministically set field -> value_d_1 then branch_d_1
   //     non-deterministically set field -> value_d_2 then branch_d_2
   //     non-deterministically LEAVE field UNMODIFIED then default_branch
+  //
+  // CHOICE OF DATA STRUCTURE:
+  // Logically, a node is a map of maps, match value -> (modify value ->
+  // branch), plus a map of default modifications, modify value -> branch. We
+  // store all of this in two flat, sorted arrays to optimize memory layout
+  // (contiguous, compact, flat), exploiting that nodes are immutable once
+  // interned. This makes the hashing, equality comparison, and copying done
+  // by the unique table (`transformer_by_node_`) cheap scans over contiguous
+  // memory, and shrinks node storage. A mutation-friendly map-based
+  // representation exists separately as `DecisionNodeBuilder`, used only
+  // transiently while constructing nodes.
   struct DecisionNode {
+    // A single "set field to `first`, then continue with `second`" entry.
+    using ModifyEntry = std::pair<int, PacketTransformerHandle>;
+
     // The packet field whose value this decision node branches on.
     //
     // INVARIANTS:
@@ -315,53 +333,216 @@ class PacketTransformerManager {
     // * Interned by `field_manager_`.
     PacketFieldHandle field;
 
-    // The "if" branches of the decision node, "keyed" by the value they branch
-    // on. Each element of the map is a (match_value, Map)-pair encoding
-    // "if (field == match_value) then non-deterministically choose a
-    // (modify_value, branch) pair from `Map`, modify field to modify_value and
-    // follow branch".
-    //
-    // INVARIANTS:
-    // 1. Maintained by `NodeToTransformer`: `modify_branch_by_field_match` and
-    //    `default_branch_by_field_modification` below are not both empty.
-    //    (If they were both empty, the decision node gets replaced by
-    //    `default_branch`.)
-    // 2. For every v, v', and b such that (v,(v',b)) is in
-    //    `modify_branch_by_field_match`, either v == v' or b is not Deny.
-    absl::btree_map<int, absl::btree_map<int, PacketTransformerHandle>>
-        modify_branch_by_field_match;
-
-    // The "else" branch of this decision node, "keyed" by the value they modify
-    // the field to (or not keyed at all for the `default_branch`).
-    //
-    // INVARIANTS:
-    // 1. For every v and b such that (v,b) is in
-    //    `default_branch_by_field_modification`, b is not Deny.
-    absl::btree_map<int, PacketTransformerHandle>
-        default_branch_by_field_modification;
+    // The "leave field unmodified" consequent of the "else" branch.
     PacketTransformerHandle default_branch;
 
-    // Protect against regressions in memory layout, as it affects performance.
-    static_assert(sizeof(modify_branch_by_field_match) == 24);
-    static_assert(sizeof(default_branch_by_field_modification) == 24);
+    // The "if" branches of the decision node. `matches[i]` is a
+    // (match_value, end_offset) pair encoding "if (field == match_value) then
+    // non-deterministically choose a ModifyEntry from `MatchModifies(i)`,
+    // modify field to its modify value and follow its branch". The end offsets
+    // delimit the per-match ranges of `modifies`: `MatchModifies(i)` is
+    // `modifies[matches[i-1].end_offset, matches[i].end_offset)`.
+    // A match with an empty ModifyEntry range denies all packets whose field
+    // equals its match value.
+    //
+    // INVARIANTS:
+    // 1. Maintained by `NodeToTransformer`: `matches` and `DefaultModifies()`
+    //    are not both empty. (If they were both empty, the decision node gets
+    //    replaced by `default_branch`.)
+    // 2. For every entry (v', b) in `MatchModifies(i)` with match value v,
+    //    either v == v' or b is not Deny.
+    // 3. Sorted by strictly increasing match value; end offsets are
+    //    non-decreasing and bounded by `modifies.size()`.
+    absl::FixedArray<std::pair<int, uint32_t>,
+                     /*use_heap_allocation_above_size=*/0>
+        matches;
+
+    // The ModifyEntry ranges of all matches, in match order, followed by the
+    // "else" modifications (see `DefaultModifies()`): entries encoding "if no
+    // match value applies, non-deterministically set field -> entry.first and
+    // follow entry.second".
+    //
+    // INVARIANTS:
+    // 1. Each per-match range and the default range is sorted by strictly
+    //    increasing modify value, without duplicates.
+    // 2. For every entry (v, b) in `DefaultModifies()`, b is not Deny.
+    absl::FixedArray<ModifyEntry, /*use_heap_allocation_above_size=*/0>
+        modifies;
+
+    // The ModifyEntry range of `matches[i]`.
+    absl::Span<const ModifyEntry> MatchModifies(size_t i) const {
+      uint32_t begin = i == 0 ? 0 : matches[i - 1].second;
+      return absl::MakeConstSpan(modifies.data() + begin,
+                                 matches[i].second - begin);
+    }
+
+    // A single "if (field == value)" branch: the match value together with
+    // its ModifyEntry range.
+    struct Match {
+      int value;
+      absl::Span<const ModifyEntry> modifies;
+    };
+
+    // Iterates the "if" branches as `Match` views, in order of strictly
+    // increasing match value. Allows range-for loops over the branches
+    // without manual index bookkeeping.
+    class MatchIterator {
+     public:
+      MatchIterator(const DecisionNode* node, size_t index)
+          : node_(node), index_(index) {}
+      Match operator*() const {
+        return {node_->matches[index_].first, node_->MatchModifies(index_)};
+      }
+      MatchIterator& operator++() {
+        ++index_;
+        return *this;
+      }
+      friend bool operator==(const MatchIterator& a,
+                             const MatchIterator& b) = default;
+
+     private:
+      const DecisionNode* node_;
+      size_t index_;
+    };
+    struct MatchRange {
+      const DecisionNode* node;
+      MatchIterator begin() const { return {node, 0}; }
+      MatchIterator end() const { return {node, node->matches.size()}; }
+    };
+    MatchRange Matches() const { return {this}; }
+
+    // The ModifyEntry range of the "else" branch.
+    absl::Span<const ModifyEntry> DefaultModifies() const {
+      uint32_t begin = matches.empty() ? 0 : matches.back().second;
+      return absl::MakeConstSpan(modifies.data() + begin,
+                                 modifies.size() - begin);
+    }
+
+    // Returns the index into `matches` with the given match value, if any.
+    std::optional<size_t> FindMatch(int match_value) const {
+      auto it = std::lower_bound(
+          matches.begin(), matches.end(), match_value,
+          [](const auto& match, int value) { return match.first < value; });
+      if (it == matches.end() || it->first != match_value) return std::nullopt;
+      return it - matches.begin();
+    }
+
+    // Returns true iff `entries` (sorted by modify value) contains an entry
+    // with the given modify value.
+    static bool ContainsModifyValue(absl::Span<const ModifyEntry> entries,
+                                    int modify_value) {
+      auto it = std::lower_bound(entries.begin(), entries.end(), modify_value,
+                                 [](const ModifyEntry& entry, int value) {
+                                   return entry.first < value;
+                                 });
+      return it != entries.end() && it->first == modify_value;
+    }
 
     friend auto operator<=>(const DecisionNode& a,
                             const DecisionNode& b) = default;
 
-    // Hashing, see https://abseil.io/docs/cpp/guides/hash.
-    template <typename H>
-    friend H AbslHashValue(H h, const DecisionNode& node) {
-      return H::combine(std::move(h), node.field, node.default_branch,
-                        node.default_branch_by_field_modification,
-                        node.modify_branch_by_field_match);
-    }
+    // NOTE: Hashing is deliberately NOT defined on this struct. The unique
+    // table must hash flat nodes and `DecisionNodeBuilder`s identically, so
+    // there is a single hash definition for both: `NodeHash`.
   };
 
   // Protect against regressions in memory layout, as it affects performance.
-  // TODO(dilo): Is this still important with this simpler data structure, or
-  // should we remove it until we optimize?
-  static_assert(sizeof(DecisionNode) == 64);
+  static_assert(sizeof(DecisionNode) == 40);
   static_assert(alignof(DecisionNode) == 8);
+
+  // A mutable, map-based representation of a `DecisionNode`, used only
+  // transiently while constructing nodes (by the combinators and the golden
+  // test runner's canonicalizing copy). Finished builders are canonicalized,
+  // flattened into `DecisionNode`s, and interned by `NodeToTransformer`. The
+  // members mirror `DecisionNode`; see there for semantics and invariants.
+  struct DecisionNodeBuilder {
+    PacketFieldHandle field;
+
+    // Match value -> (modify value -> branch). See `DecisionNode::matches`.
+    absl::btree_map<int, absl::btree_map<int, PacketTransformerHandle>>
+        modify_branch_by_field_match;
+
+    // Modify value -> branch. See `DecisionNode::DefaultModifies()`.
+    absl::btree_map<int, PacketTransformerHandle>
+        default_branch_by_field_modification;
+    PacketTransformerHandle default_branch;
+  };
+
+  // Invokes `match(match_value, end_offset)` for each match header and then
+  // `modify(modify_value, branch)` for each modify entry of the given node or
+  // builder, in the canonical flat order of `DecisionNode::matches` and
+  // `DecisionNode::modifies`. Stops and returns false as soon as a callback
+  // returns false; returns true if all elements were visited.
+  //
+  // This is the single definition of a node's flat element sequence:
+  // `Flatten`, `NodeHash`, and `NodeEq` are all written against it, which
+  // keeps the two node representations consistent by construction.
+  template <typename MatchFn, typename ModifyFn>
+  static bool ForEachFlatEntry(const DecisionNode& node, MatchFn&& match,
+                               ModifyFn&& modify);
+  template <typename MatchFn, typename ModifyFn>
+  static bool ForEachFlatEntry(const DecisionNodeBuilder& builder,
+                               MatchFn&& match, ModifyFn&& modify);
+
+  // Transparent hash and equality functors for the unique table
+  // (`transformer_by_node_`), which is keyed by stable `DecisionNode*`
+  // pointers into `nodes_` (so each node is stored only once). Lookups work
+  // directly with a `DecisionNodeBuilder` — without flattening it — keeping
+  // the hot path of `NodeToTransformer`, re-deriving a node that already
+  // exists, free of allocations; flattening only happens for genuinely new
+  // nodes. Both functors are stateless: keys are pointers, and the pages
+  // holding the nodes are stable across moves of the manager.
+  //
+  // INVARIANT: A builder and its flattened node are treated identically:
+  // `NodeHash()(b) == NodeHash()(&Flatten(b))` and `NodeEq()(&Flatten(b), b)`.
+  // Maintained by defining both functors in terms of `ForEachFlatEntry`;
+  // checked by `CheckInternalInvariants`.
+  struct NodeHash {
+    using is_transparent = void;
+    size_t operator()(const DecisionNode* node) const;
+    size_t operator()(const DecisionNodeBuilder& builder) const;
+
+   private:
+    // Adapter implementing both overloads: hashes the canonical flat element
+    // sequence (via `ForEachFlatEntry`) in a single streaming pass, so flat
+    // nodes and builders with the same logical content hash identically.
+    template <typename NodeOrBuilder>
+    struct FlatSequenceView {
+      const NodeOrBuilder& node;
+
+      // Hashing, see https://abseil.io/docs/cpp/guides/hash.
+      template <typename H>
+      friend H AbslHashValue(H h, const FlatSequenceView& view) {
+        size_t num_matches = 0;
+        size_t num_modifies = 0;
+        h = H::combine(std::move(h), view.node.field,
+                       view.node.default_branch);
+        ForEachFlatEntry(
+            view.node,
+            [&](int match_value, uint32_t end_offset) {
+              h = H::combine(std::move(h), match_value, end_offset);
+              ++num_matches;
+              return true;
+            },
+            [&](int modify_value, PacketTransformerHandle branch) {
+              h = H::combine(std::move(h), modify_value, branch);
+              ++num_modifies;
+              return true;
+            });
+        return H::combine(std::move(h), num_matches, num_modifies);
+      }
+    };
+  };
+  struct NodeEq {
+    using is_transparent = void;
+    bool operator()(const DecisionNode* a, const DecisionNode* b) const {
+      return a == b || *a == *b;
+    }
+    bool operator()(const DecisionNode* a, const DecisionNodeBuilder& b) const;
+    bool operator()(const DecisionNodeBuilder& a, const DecisionNode* b) const {
+      return (*this)(b, a);
+    }
+  };
 
   // A key for efficiently hashing a `PolicyProto` to a
   // `PacketTransformerHandle`. This works as a recursive hash, such that we
@@ -383,11 +564,12 @@ class PacketTransformerManager {
 
     template <typename H>
     friend H AbslHashValue(H h, const ProtoHashKey& key) {
-      return H::combine(std::move(h), key.lhs_child, key.rhs_child);
+      return H::combine(std::move(h), key.policy_case, key.lhs_child,
+                        key.rhs_child);
     }
   };
 
-  PacketTransformerHandle NodeToTransformer(DecisionNode&& node);
+  PacketTransformerHandle NodeToTransformer(DecisionNodeBuilder&& node);
 
   // Returns the `DecisionNode` corresponding to the given
   // `PacketTransformerHandle`, or crashes if the `transformer` is
@@ -404,17 +586,22 @@ class PacketTransformerManager {
   // enough to avoid excessive memory overhead.
   static constexpr size_t kPageSize = (1 << 26) / sizeof(DecisionNode);
 
-  // Helper functions to deal with DecisionNodes directly.
-  // TODO(dilo): Is there a convenient way to either avoid these or avoid making
-  // copies of the nodes?
-  PacketTransformerHandle Union(DecisionNode left, DecisionNode right);
-  PacketTransformerHandle Sequence(DecisionNode left, DecisionNode right);
-  PacketTransformerHandle Difference(DecisionNode left, DecisionNode right);
+  // Shared implementation of `Union` and `Difference`, which differ only in
+  // their base cases and the operation applied to corresponding branches:
+  // combines `left` and `right` by applying `combiner` — which must be the
+  // handle-level operation itself, e.g. `Union` — to corresponding branches.
+  // Both operands must be Accept or decision nodes (i.e., the base cases must
+  // already have been handled).
+  template <typename Combiner>
+  PacketTransformerHandle PointwiseCombine(PacketTransformerHandle left,
+                                           PacketTransformerHandle right,
+                                           Combiner&& combiner);
 
-  // Internal helper function to get a map of possible modification values to
-  // branches for a given input value at `node`.
-  absl::btree_map<int, PacketTransformerHandle> GetMapAtValue(
-      const DecisionNode& node, int value);
+  // Conversions between the interned (flat) and builder (map-based)
+  // representations of decision nodes. `ToBuilder` is only used by
+  // `CheckInternalInvariants`, to validate `NodeHash`/`NodeEq` consistency.
+  static DecisionNode Flatten(DecisionNodeBuilder&& builder);
+  static DecisionNodeBuilder ToBuilder(const DecisionNode& node);
 
   // The decision nodes forming the BDD-style DAG representation of packets.
   // `PacketTransformerHandle::node_index_` indexes into this vector.
@@ -426,9 +613,14 @@ class PacketTransformerManager {
 
   // A so called "unique table" to ensure each node is only added to `nodes_`
   // once, and thus has a unique `PacketTransformerHandle::node_index`.
+  // Keyed by pointers into `nodes_` (stable, see `PagedStableVector`), so
+  // nodes are not stored twice. The transparent `NodeHash`/`NodeEq` functors
+  // support lookup by `DecisionNodeBuilder` without flattening, see their
+  // documentation.
   //
-  // INVARIANT: `transformer_by_node_[n] = s` iff `nodes_[s.node_index_] == n`.
-  absl::flat_hash_map<DecisionNode, PacketTransformerHandle>
+  // INVARIANT: `transformer_by_node_[p] = s` iff `p == &nodes_[s.node_index_]`.
+  absl::flat_hash_map<const DecisionNode*, PacketTransformerHandle, NodeHash,
+                      NodeEq>
       transformer_by_node_;
 
   // A map of a given `PolicyProto` to a `PacketTransformerHandle`.

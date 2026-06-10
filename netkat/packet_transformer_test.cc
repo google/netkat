@@ -968,9 +968,8 @@ class PacketTransformerManagerTestPeer {
                                                                       value);
     };
     // Case 1: Output from explicit match+modify branches.
-    for (const auto& [match_value, branch_by_modify_value] :
-         node.modify_branch_by_field_match) {
-      for (const auto& [modify_value, branch] : branch_by_modify_value) {
+    for (const auto& match : node.Matches()) {
+      for (const auto& [modify_value, branch] : match.modifies) {
         add_to_output(
             and_fn(match_fn(field, modify_value),
                    GetAllPossibleOutputPacketsReferenceImplementation(branch)));
@@ -978,8 +977,7 @@ class PacketTransformerManagerTestPeer {
     }
 
     // Case 2: Output from default-modify branches.
-    for (const auto& [modify_value, branch] :
-         node.default_branch_by_field_modification) {
+    for (const auto& [modify_value, branch] : node.DefaultModifies()) {
       add_to_output(
           and_fn(match_fn(field, modify_value),
                  GetAllPossibleOutputPacketsReferenceImplementation(branch)));
@@ -995,13 +993,11 @@ class PacketTransformerManagerTestPeer {
     //    output.field != match_value for all explicit match branches by (0)
     // 2. output.field != modify_value for all default-modify branches
     PacketSetHandle fallthrough_output = PacketSetManager().FullSet();
-    for (const auto& [match_value, unused] :
-         node.modify_branch_by_field_match) {
+    for (const auto& [match_value, unused_end_offset] : node.matches) {
       fallthrough_output =
           and_fn(fallthrough_output, not_fn(match_fn(field, match_value)));
     }
-    for (const auto& [modify_value, unused] :
-         node.default_branch_by_field_modification) {
+    for (const auto& [modify_value, unused_branch] : node.DefaultModifies()) {
       fallthrough_output =
           and_fn(fallthrough_output, not_fn(match_fn(field, modify_value)));
     }

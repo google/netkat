@@ -18,6 +18,7 @@
 #include "benchmark/benchmark.h"
 #include "netkat/netkat.pb.h"
 #include "netkat/netkat_proto_constructors.h"
+#include "netkat/packet_set.h"
 #include "netkat/packet_transformer.h"
 
 namespace netkat {
@@ -98,6 +99,31 @@ void BM_FirstTimeCompileOverlappingPolicy(benchmark::State& state) {
   }
 }
 BENCHMARK(BM_FirstTimeCompileOverlappingPolicy);
+
+// Benchmarks the read-path operations that the analysis engine is built on:
+// pushing/pulling packet sets through an already-compiled transformer.
+// After the first iteration all nodes exist, so steady-state iterations
+// exercise DAG traversal and unique-table hits rather than first-time node
+// creation.
+void BM_PushAndPullFullSetThroughPolicy(benchmark::State& state) {
+  PacketTransformerManager manager;
+  PolicyProto policy = CreateFixedArbitraryPolicyProto(0);
+  // NOTE: Without memoization of the recursive transformer operations,
+  // Push/Pull cost grows exponentially with policy size; keep the number of
+  // unioned sub-policies small so the benchmark stays tractable.
+  for (int i = 1; i < 2; ++i) {
+    policy = UnionProto(
+        policy, SequenceProto(CreateFixedArbitraryPolicyProto(i),
+                              CreateFixedArbitraryPolicyProto(i + 8)));
+  }
+  PacketTransformerHandle transformer = manager.Compile(policy);
+  PacketSetHandle full_set = manager.GetPacketSetManager().FullSet();
+  for (auto s : state) {
+    benchmark::DoNotOptimize(manager.Push(full_set, transformer));
+    benchmark::DoNotOptimize(manager.Pull(transformer, full_set));
+  }
+}
+BENCHMARK(BM_PushAndPullFullSetThroughPolicy);
 
 // Benchmarks the cost of compiling a policy, with overlapping substructures,
 // that has already been compiled once before. Excludes the initial cost of
