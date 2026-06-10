@@ -25,7 +25,8 @@ namespace {
 
 // A small, but otherwise random page size used throughout the tests.
 // Using a small page size is useful for exercising the page replacement logic.
-static constexpr int kSmallPageSize = 3;
+// Must be a power of two, as required by `PagedStableVector`.
+static constexpr int kSmallPageSize = 4;
 
 void PushBackInreasesSize(std::vector<std::string> elements) {
   PagedStableVector<std::string, kSmallPageSize> vector;

@@ -16,11 +16,10 @@
 // only clients (`PacketSetManager`/`PacketTransformerManager`): indexed reads
 // of decision nodes during BDD traversal, and appends of new nodes.
 //
-// The benchmarks are instantiated with a power-of-two and a non-power-of-two
-// page size to quantify the cost of `operator[]`'s index arithmetic: division
-// by a non-power-of-two constant compiles to a multiply sequence rather than a
-// shift. A flat `std::vector` (no paging, no pointer stability) serves as the
-// lower-bound reference.
+// A flat `std::vector` (no paging, no pointer stability) serves as the
+// reference: it bounds read performance from above (no double indirection,
+// perfect contiguity) and append performance from below (it must relocate all
+// elements whenever it grows beyond its capacity).
 
 #include <cstddef>
 #include <cstdint>
@@ -40,14 +39,8 @@ struct FakeNode {
 };
 static_assert(sizeof(FakeNode) == 24);
 
-// The page size of `PacketSetManager::nodes_` at the time of writing:
-// a 64 MiB byte budget divided by the node size, yielding a non-power-of-two
-// number of elements per page.
-constexpr size_t kNonPow2PageSize = (size_t{1} << 26) / sizeof(FakeNode);
-static_assert((kNonPow2PageSize & (kNonPow2PageSize - 1)) != 0);
-
-// A power-of-two page size of comparable magnitude (~48 MiB worth of nodes).
-constexpr size_t kPow2PageSize = size_t{1} << 21;
+// The page size of `PacketSetManager::nodes_`: 2^21 nodes, or 48 MiB.
+constexpr size_t kPageSize = size_t{1} << 21;
 
 template <class Vector>
 Vector MakeFilledVector(size_t size) {
@@ -113,20 +106,16 @@ void BM_RandomRead(benchmark::State& state) {
 constexpr size_t kSmall = size_t{1} << 18;
 constexpr size_t kLarge = size_t{1} << 22;
 
-using NonPow2Vector = PagedStableVector<FakeNode, kNonPow2PageSize>;
-using Pow2Vector = PagedStableVector<FakeNode, kPow2PageSize>;
+using PagedVector = PagedStableVector<FakeNode, kPageSize>;
 using FlatVector = std::vector<FakeNode>;
 
-BENCHMARK_TEMPLATE(BM_PushBack, NonPow2Vector)->Arg(kSmall)->Arg(kLarge);
-BENCHMARK_TEMPLATE(BM_PushBack, Pow2Vector)->Arg(kSmall)->Arg(kLarge);
+BENCHMARK_TEMPLATE(BM_PushBack, PagedVector)->Arg(kSmall)->Arg(kLarge);
 BENCHMARK_TEMPLATE(BM_PushBack, FlatVector)->Arg(kSmall)->Arg(kLarge);
 
-BENCHMARK_TEMPLATE(BM_SequentialRead, NonPow2Vector)->Arg(kSmall)->Arg(kLarge);
-BENCHMARK_TEMPLATE(BM_SequentialRead, Pow2Vector)->Arg(kSmall)->Arg(kLarge);
+BENCHMARK_TEMPLATE(BM_SequentialRead, PagedVector)->Arg(kSmall)->Arg(kLarge);
 BENCHMARK_TEMPLATE(BM_SequentialRead, FlatVector)->Arg(kSmall)->Arg(kLarge);
 
-BENCHMARK_TEMPLATE(BM_RandomRead, NonPow2Vector)->Arg(kSmall)->Arg(kLarge);
-BENCHMARK_TEMPLATE(BM_RandomRead, Pow2Vector)->Arg(kSmall)->Arg(kLarge);
+BENCHMARK_TEMPLATE(BM_RandomRead, PagedVector)->Arg(kSmall)->Arg(kLarge);
 BENCHMARK_TEMPLATE(BM_RandomRead, FlatVector)->Arg(kSmall)->Arg(kLarge);
 
 }  // namespace

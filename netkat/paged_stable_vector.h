@@ -19,6 +19,7 @@
 #ifndef GOOGLE_NETKAT_NETKAT_PAGED_STABLE_VECTOR_H_
 #define GOOGLE_NETKAT_NETKAT_PAGED_STABLE_VECTOR_H_
 
+#include <bit>
 #include <cstddef>
 #include <utility>
 #include <vector>
@@ -36,28 +37,32 @@ namespace netkat {
 // significant for very large vectors in performance-sensitive applications.
 //
 // The API of this class is kept just large enough to cover our use cases.
-//
-// PERFORMANCE: Prefer a power-of-two `PageSize` so that the index arithmetic
-// in `operator[]` compiles to shifts and masks rather than multiply sequences.
 template <class T, size_t PageSize>
 class PagedStableVector {
  public:
+  // Index arithmetic (`operator[]`, `size()`) is on our clients' hot paths.
+  // Requiring a power-of-two `PageSize` guarantees it compiles to shifts and
+  // masks rather than multiply sequences.
+  static_assert(std::has_single_bit(PageSize),
+                "PageSize must be a power of two");
+
   PagedStableVector() = default;
 
-  size_t size() const { return size_; }
+  size_t size() const {
+    return data_.empty() ? 0
+                         : (data_.size() - 1) * PageSize + data_.back().size();
+  }
 
   template <class Value>
   void push_back(Value&& value) {
     ReserveSpaceForNextElement();
     data_.back().push_back(std::forward<Value>(value));
-    ++size_;
   }
 
   template <class... Args>
   void emplace_back(Args&&... value) {
     ReserveSpaceForNextElement();
     data_.back().emplace_back(std::forward<Args>(value)...);
-    ++size_;
   }
 
   T& operator[](size_t index) {
@@ -78,10 +83,6 @@ class PagedStableVector {
   }
 
   std::vector<std::vector<T>> data_;
-
-  // Tracked explicitly (rather than computed from `data_`) since clients call
-  // `size()` on every element insertion.
-  size_t size_ = 0;
 };
 
 }  // namespace netkat
