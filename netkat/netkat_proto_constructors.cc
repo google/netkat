@@ -71,6 +71,13 @@ PredicateProto XorProto(PredicateProto left, PredicateProto right) {
   *xor_op.mutable_right() = std::move(right);
   return proto;
 }
+PredicateProto PullProto(PolicyProto left, PredicateProto right) {
+  PredicateProto proto;
+  PredicateProto::Pull& pull = *proto.mutable_pull_op();
+  *pull.mutable_left() = std::move(left);
+  *pull.mutable_right() = std::move(right);
+  return proto;
+}
 
 // -- Basic Policy constructors ------------------------------------------------
 
@@ -130,6 +137,10 @@ std::string AsShorthandString(PredicateProto predicate) {
   switch (predicate.predicate_case()) {
     case PredicateProto::kBoolConstant:
       return predicate.bool_constant().value() ? "true" : "false";
+    case PredicateProto::kPullOp:
+      return absl::StrFormat("pull(%s, %s)",
+                             AsShorthandString(predicate.pull_op().left()),
+                             AsShorthandString(predicate.pull_op().right()));
     case PredicateProto::kMatch:
       return absl::StrFormat("@%s==%d", predicate.match().field(),
                              predicate.match().value());
