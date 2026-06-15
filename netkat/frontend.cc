@@ -14,6 +14,10 @@ namespace netkat {
 // Recursively checks whether `predicate_proto` is valid.
 absl::Status RecursivelyCheckIsValid(const PredicateProto& predicate_proto) {
   switch (predicate_proto.predicate_case()) {
+    case PredicateProto::kPullOp:
+      // TODO: anthonyroy - Implement Pull validation once frontend compiler
+      // supports it.
+      return absl::UnimplementedError("Pull predicate is not implemented yet");
     case PredicateProto::PREDICATE_NOT_SET:
       return absl::InvalidArgumentError("Unset Predicate case is invalid");
     case PredicateProto::kMatch:

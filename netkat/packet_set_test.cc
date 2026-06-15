@@ -30,8 +30,10 @@
 #include "gtest/gtest.h"
 #include "gutil/status_matchers.h"  // IWYU pragma: keep
 #include "netkat/evaluator.h"
+#include "netkat/gtest_utils.h"
 #include "netkat/netkat_proto_constructors.h"
 #include "netkat/packet.h"
+#include "netkat/packet_transformer.h"
 #include "re2/re2.h"
 
 namespace netkat {
@@ -40,8 +42,8 @@ namespace netkat {
 // test cases. This also enables better pretty printing for debugging, see
 // `PrintTo`.
 PacketSetManager& Manager() {
-  static absl::NoDestructor<PacketSetManager> manager;
-  return *manager;
+  static absl::NoDestructor<PacketTransformerManager> transformer;
+  return transformer->GetPacketSetManager();
 }
 
 // The default `PacketSetHandle` pretty printer sucks! It does not have access
@@ -55,6 +57,9 @@ void PrintTo(PacketSetHandle packet, std::ostream* os) {
 
 namespace {
 
+// TODO: anthonyroy - Revert CompilationPreservesSemantics to
+// ArbitraryValidPredicateProto once Pull is implemented in the evaluator.
+using ::netkat::netkat_test::ArbitraryValidPredicateProtoWithoutPull;
 using ::testing::Ge;
 using ::testing::Pair;
 using ::testing::SizeIs;
@@ -141,7 +146,9 @@ void CompilationPreservesSemantics(const PredicateProto& pred,
   EXPECT_EQ(Manager().Contains(Manager().Compile(pred), packet),
             Evaluate(pred, packet));
 }
-FUZZ_TEST(PacketSetManagerTest, CompilationPreservesSemantics);
+FUZZ_TEST(PacketSetManagerTest, CompilationPreservesSemantics)
+    .WithDomains(ArbitraryValidPredicateProtoWithoutPull(),
+                 fuzztest::Arbitrary<Packet>());
 
 void GetConcretePacketsReturnsNonEmptyListForNonEmptySet(
     const PredicateProto& pred) {

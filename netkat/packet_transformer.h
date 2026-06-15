@@ -16,8 +16,8 @@
 // File: packet_transformer.h
 // -----------------------------------------------------------------------------
 //
-// Defines `PacketTransformerHandle` and its companion class
-// `PacketTransformerManager` following the manager-class pattern described in
+// Defines `PacketTransformerManager`, the companion class to
+// `PacketTransformerHandle` following the manager-handle pattern described in
 // `manager_handle_pattern.md`. Together, they provide a compact and efficient
 // representation of record-free policies allowing for fast semantic equality
 // checks. Semantically, a `PacketTransformerHandle` represents a function that
@@ -52,79 +52,10 @@
 #include "netkat/packet.h"
 #include "netkat/packet_field.h"
 #include "netkat/packet_set.h"
+#include "netkat/packet_transformer_handle.h"
 #include "netkat/paged_stable_vector.h"
 
 namespace netkat {
-
-// A "packet transformer" is a lightweight handle (32 bits) that
-// represents a record-free policy (or functions from packets to sets of output
-// packets). Handles can only be created by a `PacketTransformerManager`
-// object, which owns the graph-based representation of the set. The
-// representation can efficiently encode typical large and even infinite sets
-// seen in practice.
-//
-// The APIs of this object are almost entirely defined as methods of the
-// companion class `PacketTransformerManager` following the
-// manager-handle pattern, see `manager_handle_pattern.md`.
-//
-// CAUTION: Each `PacketTransformerHandle` is implicitly associated with the
-// manager object that created it; using it with a different manager has
-// undefined behavior.
-//
-// This data structure enjoys the following powerful *canonicity property*: two
-// packet transformers represent the policy if and only if they have
-// the same memory representation. Since the memory representation is just 32
-// bits, semantic policy equality is cheap: O(1)!
-//
-// Compared to NetKAT policies, packet transformers have a few
-// advantages:
-// * Cheap to store, copy, hash, and compare: O(1)
-// * Cheap to check semantic equality: O(1)
-class [[nodiscard]] PacketTransformerHandle {
- public:
-  // Default constructor: the Deny policy.
-  PacketTransformerHandle();
-
-  // Two packet transformers compare equal iff they represent the same
-  // record-free policy (semantically). That is, two policies are equal iff they
-  // are semantically equivalent when Record is replaced by Accept. Comparison
-  // is O(1), thanks to interning/hash-consing.
-  friend auto operator<=>(PacketTransformerHandle a,
-                          PacketTransformerHandle b) = default;
-
-  // Hashing, see https://abseil.io/docs/cpp/guides/hash.
-  template <typename H>
-  friend H AbslHashValue(H h, PacketTransformerHandle transformer) {
-    return H::combine(std::move(h), transformer.node_index_);
-  }
-
-  // Formatting, see https://abseil.io/docs/cpp/guides/abslstringify.
-  // NOTE: These functions do not produce particularly useful output. Instead,
-  // use `PacketTransformerManager::ToString(transformer)` whenever
-  // possible.
-  template <typename Sink>
-  friend void AbslStringify(Sink& sink, PacketTransformerHandle transformer) {
-    absl::Format(&sink, "%s", transformer.ToString());
-  }
-  std::string ToString() const;
-
- private:
-  // An index into the `nodes_` vector of the `PacketTransformerManager`
-  // object associated with this `PacketTransformerHandle`. The semantics of
-  // this packet transformer is entirely determined by the node
-  // `nodes_[node_index_]`. The index is otherwise arbitrary and meaningless.
-  //
-  // We use a 32-bit index as a tradeoff between minimizing memory usage and
-  // maximizing the number of `PacketTransformerHandle`s that can be created,
-  // both aspects that impact how well we scale to large NetKAT models.
-  uint32_t node_index_;
-  explicit PacketTransformerHandle(uint32_t node_index)
-      : node_index_(node_index) {}
-  friend class PacketTransformerManager;
-};
-
-// Protect against regressions in the memory layout, as it affects performance.
-static_assert(sizeof(PacketTransformerHandle) <= 4);
 
 // An "arena" in which `PacketTransformerHandle`s can be created and
 // manipulated, following the manager-handle pattern (see
@@ -138,23 +69,25 @@ static_assert(sizeof(PacketTransformerHandle) <= 4);
 // `PacketTransformerManager` object with a different manager is
 // undefined behavior. `PacketSetHandles` and `PacketTransformerHandles`
 // returned by this class are not invalidated on move.
+
 class PacketTransformerManager {
  public:
-  PacketTransformerManager() = default;
-  explicit PacketTransformerManager(PacketSetManager&& manager)
-      : packet_set_manager_(std::move(manager)) {};
+  PacketTransformerManager();
 
   // The class is move-only: not copyable, but movable.
   // `PacketSetHandles` and `PacketTransformerHandles` returned by this class
   // are not invalidated on move.
   PacketTransformerManager(const PacketTransformerManager&) = delete;
   PacketTransformerManager& operator=(const PacketTransformerManager&) = delete;
-  PacketTransformerManager(PacketTransformerManager&&) = default;
-  PacketTransformerManager& operator=(PacketTransformerManager&&) = default;
+  PacketTransformerManager(PacketTransformerManager&& other);
+  PacketTransformerManager& operator=(PacketTransformerManager&& other);
 
   // Returns the `PacketSetManager` used by this object to compile
   // predicates.
   PacketSetManager& GetPacketSetManager() { return packet_set_manager_; }
+  const PacketSetManager& GetPacketSetManager() const {
+    return packet_set_manager_;
+  }
 
   // Returns true iff this transformer represents the Deny policy.
   bool IsDeny(PacketTransformerHandle transformer) const;
