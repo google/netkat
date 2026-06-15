@@ -34,6 +34,10 @@
 namespace netkat {
 namespace {
 
+// TODO: anthonyroy - Revert to ArbitraryValidPredicateProto once Pull is
+// implemented.
+using ::netkat::netkat_test::ArbitraryValidPredicateProtoWithoutPull;
+
 using ::gutil::EqualsProto;
 using ::gutil::IsOk;
 using ::gutil::StatusIs;
@@ -153,7 +157,7 @@ void RuleWithFilterIsInvalid(PredicateProto predicate) {
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 FUZZ_TEST(NetkatTableTest, RuleWithFilterIsInvalid)
-    .WithDomains(netkat_test::ArbitraryValidPredicateProto());
+    .WithDomains(ArbitraryValidPredicateProtoWithoutPull());
 
 void RuleWithDropActionIsValid(PredicateProto match) {
   ASSERT_OK_AND_ASSIGN(Predicate pred, Predicate::FromProto(match));
@@ -162,7 +166,7 @@ void RuleWithDropActionIsValid(PredicateProto match) {
   EXPECT_THAT(table.AddRule(/*priority=*/10, pred, Policy::Deny()), IsOk());
 }
 FUZZ_TEST(NetkatTableTest, RuleWithDropActionIsValid)
-    .WithDomains(netkat_test::ArbitraryValidPredicateProto());
+    .WithDomains(ArbitraryValidPredicateProtoWithoutPull());
 
 TEST(NetkatTable, NonDeterministicRuleRejected) {
   NetkatTable table;

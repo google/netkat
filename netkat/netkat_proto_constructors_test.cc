@@ -79,6 +79,15 @@ void XorProtoReturnsXor(PredicateProto left, PredicateProto right) {
 }
 FUZZ_TEST(XorProtoTest, XorProtoReturnsXor);
 
+void PullProtoReturnsPull(PolicyProto left, PredicateProto right) {
+  PredicateProto pull_proto;
+  PredicateProto::Pull& pull = *pull_proto.mutable_pull_op();
+  *pull.mutable_left() = left;
+  *pull.mutable_right() = right;
+  EXPECT_THAT(PullProto(left, right), EqualsProto(pull_proto));
+}
+FUZZ_TEST(PullProtoTest, PullProtoReturnsPull);
+
 // -- Basic Policy constructors ------------------------------------------------
 
 void FilterProtoReturnsFilter(PredicateProto filter) {
@@ -196,6 +205,12 @@ TEST(AsShorthandStringTest, UnionIsOkay) {
 TEST(AsShorthandStringTest, NegationIsOkay) {
   EXPECT_EQ(AsShorthandString(NotProto(OrProto(TrueProto(), FalseProto()))),
             "!(true || false)");
+}
+
+TEST(AsShorthandStringTest, PullIsCorrect) {
+  EXPECT_EQ(AsShorthandString(PullProto(ModificationProto("field", 2),
+                                        MatchProto("field", 1))),
+            "pull(@field:=2, @field==1)");
 }
 
 TEST(AsShorthandStringTest, ModifyIsCorrect) {

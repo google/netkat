@@ -62,6 +62,7 @@ message PredicateProto {
     Or or_op = 4;
     Not not_op = 5;
     Xor xor_op = 6;
+    Pull pull_op = 7;
   }
 
   // A boolean constant, i.e. true or false. Equivalent to Accept/Deny.
@@ -98,6 +99,12 @@ message PredicateProto {
   // Boolean exclusive Or of two predicates, i.e. a (+) b.
   message Xor {
     PredicateProto left = 1;
+    PredicateProto right = 2;
+  }
+
+  // Pull policy into predicate, i.e. pull(left, right)
+  message Pull {
+    PolicyProto left = 1;
     PredicateProto right = 2;
   }
 }

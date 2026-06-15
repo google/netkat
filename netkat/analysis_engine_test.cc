@@ -30,6 +30,10 @@ namespace {
 using ::gutil::IsOk;
 using ::testing::Not;
 
+// TODO: anthonyroy - Revert to ArbitraryValidPredicateProto once Pull is
+// implemented.
+using ::netkat::netkat_test::ArbitraryValidPredicateProtoWithoutPull;
+
 // We include only a single `CheckEquivalent` test as a smoke test since the
 // function is implemented in terms of `PacketSetManager`, which is tested
 // thoroughly in its own unit tests.
@@ -167,7 +171,7 @@ void DenyPacketsAreAlwaysDropped(PredicateProto predicate_proto) {
   EXPECT_TRUE(analyzer.ProgramDropsAllPackets(Policy::Accept(), predicate));
 }
 FUZZ_TEST(AnalysisEngineTest, DenyPacketsAreAlwaysDropped)
-    .WithDomains(netkat_test::ArbitraryValidPredicateProto());
+    .WithDomains(ArbitraryValidPredicateProtoWithoutPull());
 
 void DenyProgramProgramDropsAllPackets(PredicateProto predicate_proto) {
   AnalysisEngine analyzer;
@@ -178,7 +182,7 @@ void DenyProgramProgramDropsAllPackets(PredicateProto predicate_proto) {
   EXPECT_TRUE(analyzer.ProgramDropsAllPackets(Policy::Deny(), predicate));
 }
 FUZZ_TEST(AnalysisEngineTest, DenyProgramProgramDropsAllPackets)
-    .WithDomains(netkat_test::ArbitraryValidPredicateProto());
+    .WithDomains(ArbitraryValidPredicateProtoWithoutPull());
 
 TEST(AnalysisEngineTest, PartialMatchingProgramForwardsSomePackets) {
   AnalysisEngine analyzer;
@@ -216,7 +220,7 @@ void DenyProgramAlwaysProducesNoOutput(PredicateProto predicate_proto) {
       /*output_packets=*/Predicate::False()));
 }
 FUZZ_TEST(AnalysisEngineTest, DenyProgramAlwaysProducesNoOutput)
-    .WithDomains(netkat_test::ArbitraryValidPredicateProto());
+    .WithDomains(ArbitraryValidPredicateProtoWithoutPull());
 
 TEST(CheckInputProducesExactOutputTest, AcceptProgramReflectsInputPacket) {
   AnalysisEngine analyzer;
