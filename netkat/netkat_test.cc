@@ -66,6 +66,11 @@ TEST(NetkatProtoTest, PredicateOneOfFieldNamesDontRequireUnderscores) {
       LOG(INFO) << "bool_constant: " << bool_constant;
       break;
     }
+    case PredicateProto::kPullOp: {
+      const PredicateProto::Pull& pull_op = predicate.pull_op();
+      LOG(INFO) << "pull_op: " << pull_op;
+      break;
+    }
     case PredicateProto::PREDICATE_NOT_SET:
       break;
   }

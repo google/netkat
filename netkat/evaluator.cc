@@ -23,6 +23,9 @@ namespace netkat {
 
 bool Evaluate(const PredicateProto& predicate, const Packet& packet) {
   switch (predicate.predicate_case()) {
+    case PredicateProto::kPullOp:
+      // TODO: anthonyroy - Implement Pull in the evaluator.
+      LOG(FATAL) << "Pull evaluation not implemented";
     case PredicateProto::kBoolConstant:
       return predicate.bool_constant().value();
     case PredicateProto::kNotOp:

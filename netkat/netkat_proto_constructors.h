@@ -38,6 +38,7 @@ PredicateProto AndProto(PredicateProto left, PredicateProto right);
 PredicateProto OrProto(PredicateProto left, PredicateProto right);
 PredicateProto NotProto(PredicateProto negand);
 PredicateProto XorProto(PredicateProto left, PredicateProto right);
+PredicateProto PullProto(PolicyProto left, PredicateProto right);
 
 // -- Basic Policy constructors ------------------------------------------------
 
@@ -61,6 +62,7 @@ PolicyProto AcceptProto();
 //   Predicate Or -> '||'
 //   Predicate Not -> '!'
 //   Predicate Xor -> '(+)'
+//   Predicate Pull -> 'pull(left, right)'
 //   Policy Sequence -> ';'
 //   Policy Or -> '+'
 //   Iterate -> '*'

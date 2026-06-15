@@ -70,6 +70,9 @@ PredicateProto InvalidPredicateProto(PredicateProto predicate_proto) {
     case PredicateProto::kBoolConstant:
       predicate_proto.Clear();
       break;
+    case PredicateProto::kPullOp:
+      predicate_proto.mutable_pull_op()->clear_right();
+      break;
   }
   return predicate_proto;
 }
@@ -125,6 +128,15 @@ void XorToProtoIsCorrect(Predicate lhs, Predicate rhs) {
 FUZZ_TEST(FrontEndTest, XorToProtoIsCorrect)
     .WithDomains(/*lhs=*/AtomicPredicateDomain(),
                  /*rhs=*/AtomicPredicateDomain());
+
+void PullToProtoIsCorrect(Policy policy, Predicate predicate) {
+  Predicate pull_pred = Pull(policy, predicate);
+  EXPECT_THAT(pull_pred.ToProto(),
+              EqualsProto(PullProto(policy.ToProto(), predicate.ToProto())));
+}
+FUZZ_TEST(FrontEndTest, PullToProtoIsCorrect)
+    .WithDomains(/*policy=*/AtomicDupFreePolicyDomain(),
+                 /*predicate=*/AtomicPredicateDomain());
 
 void OperationOrderIsPreserved(Predicate a, Predicate b, Predicate c) {
   Predicate abc = !(a || b) && c || a;
