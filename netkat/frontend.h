@@ -113,6 +113,7 @@ class Predicate {
   // Match operation for a Predicate. See below for the full definition. We
   // utilize friend association to ensure program construction is well-formed.
   friend Predicate Match(absl::string_view, int);
+  friend Predicate Pull(class Policy, Predicate);
 
  private:
   // Hide default proto construction to hinder building of ill-formed programs.
@@ -220,6 +221,17 @@ class Policy {
   // The underlying IR that has been built thus far.
   PolicyProto policy_;
 };
+
+// Pulls a `predicate` back through a `policy`.
+//
+// Semantically, `Pull(policy, predicate)` is a predicate that matches an input
+// packet if and only if processing that packet with `policy` can yield at
+// least one output packet that satisfies `predicate`.
+//
+// For example, `Pull(Modify("f", 1), Match("f", 1))` is equivalent to `True`,
+// because modifying "f" to 1 will always produce a packet that matches "f==1".
+// Conversely, `Pull(Modify("f", 2), Match("f", 1))` is equivalent to `False`.
+Predicate Pull(Policy policy, Predicate predicate);
 
 // Returns a policy that filters packets by `predicate`.
 Policy Filter(Predicate predicate);

@@ -12,15 +12,6 @@ using ::fuzztest::Just;
 using ::fuzztest::Map;
 using ::fuzztest::OneOf;
 
-namespace {
-
-template <typename T>
-bool FieldTypeIs(const google::protobuf::FieldDescriptor* field) {
-  return field->message_type() == T::descriptor();
-};
-
-}  // namespace
-
 fuzztest::Domain<PredicateProto> ArbitraryValidPredicateProto() {
   return fuzztest::Arbitrary<PredicateProto>()
       // The domain will recursively set all fields. This ensures
@@ -31,7 +22,27 @@ fuzztest::Domain<PredicateProto> ArbitraryValidPredicateProto() {
       .WithProtobufFields(
           FieldTypeIs<PredicateProto::Match>,
           fuzztest::Arbitrary<PredicateProto::Match>().WithStringFieldAlwaysSet(
-              "field", fuzztest::String().WithMinSize(1)));
+              "field", fuzztest::String().WithMinSize(1)))
+      // The domain will ensure all PolicyProto::Modification::field will be
+      // non-empty (needed for Pull).
+      .WithProtobufFields(FieldTypeIs<PolicyProto::Modification>,
+                          fuzztest::Arbitrary<PolicyProto::Modification>()
+                              .WithStringFieldAlwaysSet(
+                                  "field", fuzztest::String().WithMinSize(1)));
+}
+
+fuzztest::Domain<PredicateProto> ArbitraryValidPredicateProtoWithoutPull() {
+  return fuzztest::Arbitrary<PredicateProto>()
+      // The domain will recursively set all fields. This ensures
+      // PredicateProto will have its members PredicateProto set.
+      .WithFieldsAlwaysSet()
+      // The domain will ensure all PredicateProto::Match::field will be
+      // non-empty.
+      .WithProtobufFields(
+          FieldTypeIs<PredicateProto::Match>,
+          fuzztest::Arbitrary<PredicateProto::Match>().WithStringFieldAlwaysSet(
+              "field", fuzztest::String().WithMinSize(1)))
+      .WithFieldsUnset(FieldTypeIs<PredicateProto::Pull>);
 }
 
 fuzztest::Domain<PolicyProto> ArbitraryValidPolicyProto() {
@@ -47,6 +58,21 @@ fuzztest::Domain<PolicyProto> ArbitraryValidPolicyProto() {
                                   "field", fuzztest::String().WithMinSize(1)))
       .WithProtobufFields(FieldTypeIs<PredicateProto>,
                           ArbitraryValidPredicateProto());
+}
+
+fuzztest::Domain<PolicyProto> ArbitraryValidPolicyProtoWithoutPull() {
+  return fuzztest::Arbitrary<PolicyProto>()
+      // The domain will recursively set all fields. This ensures
+      // PolicyProto will have its members PolicyProto set.
+      .WithFieldsAlwaysSet()
+      // The domain will ensure all PolicyProto::Modification::field will be
+      // non-empty.
+      .WithProtobufFields(FieldTypeIs<PolicyProto::Modification>,
+                          fuzztest::Arbitrary<PolicyProto::Modification>()
+                              .WithStringFieldAlwaysSet(
+                                  "field", fuzztest::String().WithMinSize(1)))
+      .WithProtobufFields(FieldTypeIs<PredicateProto>,
+                          ArbitraryValidPredicateProtoWithoutPull());
 }
 
 fuzztest::Domain<Predicate> AtomicPredicateDomain() {

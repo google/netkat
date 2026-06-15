@@ -30,10 +30,12 @@
 #include "gtest/gtest.h"
 #include "gutil/status_matchers.h"  // IWYU pragma: keep
 #include "netkat/evaluator.h"
+#include "netkat/gtest_utils.h"
 #include "netkat/netkat.pb.h"
 #include "netkat/netkat_proto_constructors.h"
 #include "netkat/packet.h"
 #include "netkat/packet_set.h"
+#include "netkat/packet_transformer_handle.h"
 #include "re2/re2.h"
 
 namespace netkat {
@@ -59,6 +61,25 @@ void PrintTo(const PacketTransformerHandle& transformer, std::ostream* os) {
 namespace {
 
 using ::fuzztest::Arbitrary;
+using ::fuzztest::ElementOf;
+using ::netkat::netkat_test::ArbitraryValidPolicyProtoWithoutPull;
+using ::netkat::netkat_test::FieldTypeIs;
+
+fuzztest::Domain<PredicateProto> PredicateWithRestrictedFields() {
+  return fuzztest::Arbitrary<PredicateProto>()
+      .WithFieldsAlwaysSet()
+      .WithStringFields(ElementOf<std::string>({"f", "g"}))
+      .WithInt32Fields(ElementOf<int32_t>({1, 2, 3}));
+}
+
+fuzztest::Domain<PolicyProto> PolicyWithRestrictedFields() {
+  auto predicate_domain = PredicateWithRestrictedFields();
+  return fuzztest::Arbitrary<PolicyProto>()
+      .WithFieldsAlwaysSet()
+      .WithStringFields(ElementOf<std::string>({"f", "g"}))
+      .WithInt32Fields(ElementOf<int32_t>({1, 2, 3}))
+      .WithProtobufFields(FieldTypeIs<PredicateProto>, predicate_domain);
+}
 using ::fuzztest::ElementOf;
 using ::testing::ContainerEq;
 using ::testing::IsEmpty;
@@ -114,6 +135,35 @@ TEST(PacketTransformerManagerTest, AbslHashValueWorks) {
   EXPECT_EQ(set.size(), 2);
 }
 
+TEST(PacketTransformerManagerTest, MoveConstructorPreservesState) {
+  PacketTransformerManager manager1;
+  PacketTransformerHandle h1 = manager1.Compile(ModificationProto("f", 1));
+  PacketTransformerHandle h2 = manager1.Compile(ModificationProto("f", 2));
+
+  PacketTransformerManager manager2 = std::move(manager1);
+
+  EXPECT_THAT(manager2.ToString(h1), StartsWith("PacketTransformerHandle"));
+  EXPECT_THAT(manager2.ToString(h2), StartsWith("PacketTransformerHandle"));
+
+  EXPECT_EQ(manager2.Compile(ModificationProto("f", 1)), h1);
+  EXPECT_EQ(manager2.Compile(ModificationProto("f", 2)), h2);
+}
+
+TEST(PacketTransformerManagerTest, MoveAssignmentPreservesState) {
+  PacketTransformerManager manager1;
+  PacketTransformerHandle h1 = manager1.Compile(ModificationProto("f", 1));
+  PacketTransformerHandle h2 = manager1.Compile(ModificationProto("f", 2));
+
+  PacketTransformerManager manager2;
+  manager2 = std::move(manager1);
+
+  EXPECT_THAT(manager2.ToString(h1), StartsWith("PacketTransformerHandle"));
+  EXPECT_THAT(manager2.ToString(h2), StartsWith("PacketTransformerHandle"));
+
+  EXPECT_EQ(manager2.Compile(ModificationProto("f", 1)), h1);
+  EXPECT_EQ(manager2.Compile(ModificationProto("f", 2)), h2);
+}
+
 TEST(PacketTransformerManagerTest, EmptyPolicyCompilesToDeny) {
   EXPECT_TRUE(Manager().IsDeny(Manager().Compile(PolicyProto())));
 }
@@ -128,13 +178,6 @@ void CompileIsSameAsOfCompiledPacketSetHandle(PredicateProto predicate) {
   PacketSetHandle set_1 = Manager().GetPacketSetManager().Compile(predicate);
   EXPECT_EQ(Manager().Compile(FilterProto(predicate)),
             Manager().FromPacketSetHandle(set_1));
-
-  // Using a newly constructed PacketSetManager.
-  PacketSetManager packet_set_manager;
-  PacketSetHandle set_2 = packet_set_manager.Compile(predicate);
-  PacketTransformerManager manager(std::move(packet_set_manager));
-  EXPECT_EQ(manager.Compile(FilterProto(predicate)),
-            manager.FromPacketSetHandle(set_2));
 }
 FUZZ_TEST(PacketTransformerManagerTest,
           CompileIsSameAsOfCompiledPacketSetHandle);
@@ -442,7 +485,8 @@ void RunIsSameAsEvaluate(PolicyProto policy, Packet packet) {
               ContainerEq(Evaluate(policy, packet)));
   EXPECT_EQ(packet, original_packet);
 }
-FUZZ_TEST(PacketTransformerManagerTest, RunIsSameAsEvaluate);
+FUZZ_TEST(PacketTransformerManagerTest, RunIsSameAsEvaluate)
+    .WithDomains(ArbitraryValidPolicyProtoWithoutPull(), Arbitrary<Packet>());
 
 TEST(PacketTransformerManagerTest, SimpleSequenceRunTest1) {
   // !(once=1) ; a:=1 ; once:=1
@@ -843,17 +887,7 @@ void PacketsFromRunAreInPushPacketSet(PredicateProto predicate,
   }
 }
 FUZZ_TEST(PacketTransformerManagerTest, PacketsFromRunAreInPushPacketSet)
-    // We restrict to two field names and three field value  to increases the
-    // likelihood for coverage for predicates/policies that match/modify the
-    // same field several times.
-    .WithDomains(Arbitrary<PredicateProto>()
-                     .WithFieldsAlwaysSet()
-                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
-                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})),
-                 Arbitrary<PolicyProto>()
-                     .WithFieldsAlwaysSet()
-                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
-                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})));
+    .WithDomains(PredicateWithRestrictedFields(), PolicyWithRestrictedFields());
 
 void PulledPacketGetsRunThroughTransformerBelongsToInputPacketSet(
     PredicateProto predicate, PolicyProto policy) {
@@ -882,17 +916,7 @@ void PulledPacketGetsRunThroughTransformerBelongsToInputPacketSet(
 }
 FUZZ_TEST(PacketTransformerManagerTest,
           PulledPacketGetsRunThroughTransformerBelongsToInputPacketSet)
-    // We restrict to two field names and three field value  to increases the
-    // likelihood for coverage for policies that modify the same field several
-    // times.
-    .WithDomains(Arbitrary<PredicateProto>()
-                     .WithFieldsAlwaysSet()
-                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
-                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})),
-                 Arbitrary<PolicyProto>()
-                     .WithFieldsAlwaysSet()
-                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
-                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})));
+    .WithDomains(PredicateWithRestrictedFields(), PolicyWithRestrictedFields());
 
 void PushOnFilterIsSameAsAnd(PredicateProto left, PredicateProto right) {
   PacketSetHandle left_set = Manager().GetPacketSetManager().Compile(left);
@@ -901,17 +925,8 @@ void PushOnFilterIsSameAsAnd(PredicateProto left, PredicateProto right) {
             Manager().GetPacketSetManager().And(left_set, right_set));
 }
 FUZZ_TEST(PacketTransformerManagerTest, PushOnFilterIsSameAsAnd)
-    // We restrict to two field names and three field value  to increases the
-    // likelihood for coverage for policies that modify the same field several
-    // times.
-    .WithDomains(Arbitrary<PredicateProto>()
-                     .WithFieldsAlwaysSet()
-                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
-                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})),
-                 Arbitrary<PredicateProto>()
-                     .WithFieldsAlwaysSet()
-                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
-                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})));
+    .WithDomains(PredicateWithRestrictedFields(),
+                 PredicateWithRestrictedFields());
 
 void PushAndPullRoundTrippingHoldsForFullSet(PolicyProto policy) {
   PacketTransformerHandle transformer = Manager().Compile(policy);
@@ -922,13 +937,7 @@ void PushAndPullRoundTrippingHoldsForFullSet(PolicyProto policy) {
             Manager().Pull(transformer, Manager().Push(full_set, transformer)));
 }
 FUZZ_TEST(PacketTransformerManagerTest, PushAndPullRoundTrippingHoldsForFullSet)
-    // We restrict to two field names and three field value  to increases the
-    // likelihood for coverage for policies that modify the same field several
-    // times.
-    .WithDomains(Arbitrary<PolicyProto>()
-                     .WithFieldsAlwaysSet()
-                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
-                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})));
+    .WithDomains(PolicyWithRestrictedFields());
 
 }  // namespace
 
@@ -942,9 +951,9 @@ class PacketTransformerManagerTestPeer {
   PacketSetHandle GetAllPossibleOutputPacketsReferenceImplementation(
       PacketTransformerHandle transformer) {
     if (packet_transformer_manager_->IsAccept(transformer))
-      return PacketSetManager().FullSet();
+      return packet_transformer_manager_->GetPacketSetManager().FullSet();
     if (packet_transformer_manager_->IsDeny(transformer))
-      return PacketSetManager().EmptySet();
+      return packet_transformer_manager_->GetPacketSetManager().EmptySet();
     const PacketTransformerManager::DecisionNode& node =
         packet_transformer_manager_->GetNodeOrDie(transformer);
     const std::string field = packet_transformer_manager_->GetPacketSetManager()
@@ -994,7 +1003,8 @@ class PacketTransformerManagerTestPeer {
     // 1. input.field != match_value for all explicit match branches, thus
     //    output.field != match_value for all explicit match branches by (0)
     // 2. output.field != modify_value for all default-modify branches
-    PacketSetHandle fallthrough_output = PacketSetManager().FullSet();
+    PacketSetHandle fallthrough_output =
+        packet_transformer_manager_->GetPacketSetManager().FullSet();
     for (const auto& [match_value, unused] :
          node.modify_branch_by_field_match) {
       fallthrough_output =
@@ -1027,12 +1037,16 @@ void GetAllPossibleOutputPacketsIsSameAsReferenceImplementation(
 }
 FUZZ_TEST(PacketTransformerManagerTest,
           GetAllPossibleOutputPacketsIsSameAsReferenceImplementation)
-    // We restrict to two field names and three field value  to increases the
-    // likelihood for coverage for policies that modify the same field several
-    // times.
-    .WithDomains(Arbitrary<PolicyProto>()
-                     .WithFieldsAlwaysSet()
-                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
-                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})));
+    .WithDomains(PolicyWithRestrictedFields());
+
+void CompilePullIsCorrect(PolicyProto policy, PredicateProto predicate) {
+  EXPECT_EQ(
+      Manager().GetPacketSetManager().Compile(PullProto(policy, predicate)),
+      Manager().Pull(Manager().Compile(policy),
+                     Manager().GetPacketSetManager().Compile(predicate)));
+}
+FUZZ_TEST(PacketTransformerManagerTest, CompilePullIsCorrect)
+    .WithDomains(PolicyWithRestrictedFields(), PredicateWithRestrictedFields());
+
 }  // namespace
 }  // namespace netkat
