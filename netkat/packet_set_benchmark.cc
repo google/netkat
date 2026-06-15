@@ -19,6 +19,7 @@
 #include "netkat/netkat.pb.h"
 #include "netkat/netkat_proto_constructors.h"
 #include "netkat/packet_set.h"
+#include "netkat/packet_transformer.h"
 
 namespace netkat {
 // Create an arbitrary fixed policy with some relative complexity. In this
@@ -56,7 +57,8 @@ void BM_FirstTimeCompileNonOverlappingPredicate(benchmark::State& state) {
   PredicateProto policy = OrProto(sub_policy1, sub_policy2);
 
   for (auto s : state) {
-    PacketSetManager manager;
+    PacketTransformerManager transformer;
+    PacketSetManager& manager = transformer.GetPacketSetManager();
     PacketSetHandle handle = manager.Compile(policy);
     benchmark::DoNotOptimize(handle);
   }
@@ -75,7 +77,8 @@ void BM_ReCompileNonOverlappingPredicate(benchmark::State& state) {
                CreateFixedArbitraryPredicateProto(/*id_suffix=*/4));
   PredicateProto policy = OrProto(sub_policy1, sub_policy2);
 
-  PacketSetManager manager;
+  PacketTransformerManager transformer;
+  PacketSetManager& manager = transformer.GetPacketSetManager();
   PacketSetHandle handle = manager.Compile(policy);
   for (auto s : state) {
     handle = manager.Compile(policy);
@@ -94,7 +97,8 @@ void BM_FirstTimeCompileOverlappingPredicate(benchmark::State& state) {
   PredicateProto policy = OrProto(sub_policy1, sub_policy2);
 
   for (auto s : state) {
-    PacketSetManager manager;
+    PacketTransformerManager transformer;
+    PacketSetManager& manager = transformer.GetPacketSetManager();
     PacketSetHandle handle = manager.Compile(policy);
     benchmark::DoNotOptimize(handle);
   }
@@ -111,7 +115,8 @@ void BM_ReCompileOverlappingPredicate(benchmark::State& state) {
                                         CreateFixedArbitraryPredicateProto());
   PredicateProto policy = OrProto(sub_policy1, sub_policy2);
 
-  PacketSetManager manager;
+  PacketTransformerManager transformer;
+  PacketSetManager& manager = transformer.GetPacketSetManager();
   PacketSetHandle handle = manager.Compile(policy);
   for (auto s : state) {
     handle = manager.Compile(policy);
