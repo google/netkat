@@ -131,18 +131,20 @@ static_assert(sizeof(PacketSetHandle) <= 4);
 // CAUTION: Using a `PacketSetHandle` returned by one `PacketSetManager`
 // object with a different manager is undefined behavior.
 //
+// This class is not constructible or movable publicly. It must be managed
+// by a `PacketTransformerManager` (which owns a `PacketSetManager` by value).
+// This restriction ensures that the `PacketSetManager` always has a valid
+// `PacketTransformerManager` context, which is required to compile `Pull`
+// operations (as they include a policy).
+//
 // TODO(b/398303840): Persistent use of an `PacketSetManager` object can
 // incur unbounded memory growth. Consider adding some garbage collection
 // mechanism.
 class PacketSetManager {
  public:
-  PacketSetManager() = default;
-
-  // The class is move-only: not copyable, but movable.
+  // The class is move-only: not copyable.
   PacketSetManager(const PacketSetManager&) = delete;
   PacketSetManager& operator=(const PacketSetManager&) = delete;
-  PacketSetManager(PacketSetManager&&) = default;
-  PacketSetManager& operator=(PacketSetManager&&) = default;
 
   // Returns true iff this packet set represents the empty set of packets.
   bool IsEmptySet(PacketSetHandle packet_set) const;
@@ -371,6 +373,12 @@ class PacketSetManager {
 
   // INVARIANT: All `DecisionNode` fields are interned by this manager.
   PacketFieldManager field_manager_;
+
+  explicit PacketSetManager(class PacketTransformerManager& transformer);
+  PacketSetManager(PacketSetManager&&) = default;
+  PacketSetManager& operator=(PacketSetManager&&) = default;
+
+  class PacketTransformerManager* transformer_ = nullptr;
 
   // Allow `PacketTransformerManager` to access private methods.
   friend class PacketTransformerManager;

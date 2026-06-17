@@ -71,6 +71,30 @@ std::string PacketTransformerHandle::ToString() const {
   }
 }
 
+PacketTransformerManager::PacketTransformerManager()
+    : packet_set_manager_(*this) {}
+
+PacketTransformerManager::PacketTransformerManager(
+    PacketTransformerManager&& other)
+    : nodes_(std::move(other.nodes_)),
+      transformer_by_node_(std::move(other.transformer_by_node_)),
+      transformer_by_hash_(std::move(other.transformer_by_hash_)),
+      packet_set_manager_(std::move(other.packet_set_manager_)) {
+  packet_set_manager_.transformer_ = this;
+}
+
+PacketTransformerManager& PacketTransformerManager::operator=(
+    PacketTransformerManager&& other) {
+  if (this != &other) {
+    nodes_ = std::move(other.nodes_);
+    transformer_by_node_ = std::move(other.transformer_by_node_);
+    transformer_by_hash_ = std::move(other.transformer_by_hash_);
+    packet_set_manager_ = std::move(other.packet_set_manager_);
+    packet_set_manager_.transformer_ = this;
+  }
+  return *this;
+}
+
 const PacketTransformerManager::DecisionNode&
 PacketTransformerManager::GetNodeOrDie(
     PacketTransformerHandle transformer) const {
@@ -771,8 +795,8 @@ PacketTransformerHandle PacketTransformerManager::Iterate(
 
 PacketSetHandle PacketTransformerManager::GetAllPossibleOutputPackets(
     PacketTransformerHandle transformer) {
-  if (IsAccept(transformer)) return PacketSetManager().FullSet();
-  if (IsDeny(transformer)) return PacketSetManager().EmptySet();
+  if (IsAccept(transformer)) return packet_set_manager_.FullSet();
+  if (IsDeny(transformer)) return packet_set_manager_.EmptySet();
 
   const DecisionNode& node = GetNodeOrDie(transformer);
   PacketSetHandle default_output =
@@ -821,7 +845,7 @@ PacketSetHandle PacketTransformerManager::GetAllPossibleOutputPackets(
   // C.3 Push and Pull in KATch: A Fast Symbolic Verifier for NetKAT.
   for (auto& [match_value, unused] : node.modify_branch_by_field_match) {
     if (!branch_modify_values.contains(match_value)) {
-      add_to_output_by_field_value(match_value, PacketSetManager().EmptySet());
+      add_to_output_by_field_value(match_value, packet_set_manager_.EmptySet());
     }
   }
 
@@ -862,8 +886,8 @@ PacketSetHandle PacketTransformerManager::Push(
 PacketSetHandle
 PacketTransformerManager::GetAllInputPacketsThatProduceAnyOutput(
     PacketTransformerHandle transformer) {
-  if (IsAccept(transformer)) return PacketSetManager().FullSet();
-  if (IsDeny(transformer)) return PacketSetManager().EmptySet();
+  if (IsAccept(transformer)) return packet_set_manager_.FullSet();
+  if (IsDeny(transformer)) return packet_set_manager_.EmptySet();
 
   const DecisionNode& node = GetNodeOrDie(transformer);
 

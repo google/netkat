@@ -32,6 +32,7 @@
 #include "netkat/evaluator.h"
 #include "netkat/netkat_proto_constructors.h"
 #include "netkat/packet.h"
+#include "netkat/packet_transformer.h"
 #include "re2/re2.h"
 
 namespace netkat {
@@ -40,8 +41,8 @@ namespace netkat {
 // test cases. This also enables better pretty printing for debugging, see
 // `PrintTo`.
 PacketSetManager& Manager() {
-  static absl::NoDestructor<PacketSetManager> manager;
-  return *manager;
+  static absl::NoDestructor<PacketTransformerManager> transformer;
+  return transformer->GetPacketSetManager();
 }
 
 // The default `PacketSetHandle` pretty printer sucks! It does not have access

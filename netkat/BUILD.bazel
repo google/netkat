@@ -77,7 +77,6 @@ cc_library(
     deps = [
         ":frontend",
         ":netkat_cc_proto",
-        ":packet_set",
         ":packet_transformer",
         "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/log:check",
@@ -119,37 +118,16 @@ cc_test(
     ],
 )
 
-cc_library(
-    name = "packet_set",
-    srcs = ["packet_set.cc"],
-    hdrs = ["packet_set.h"],
-    deps = [
-        ":netkat_cc_proto",
-        ":packet",
-        ":packet_field",
-        ":paged_stable_vector",
-        "@com_google_absl//absl/algorithm:container",
-        "@com_google_absl//absl/container:fixed_array",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_gutil//gutil:status",
-    ],
-)
-
 cc_test(
     name = "packet_set_test",
     srcs = ["packet_set_test.cc"],
     shard_count = 8,
     deps = [
         ":evaluator",
+        ":gtest_utils",
         ":netkat_proto_constructors",
         ":packet",
-        ":packet_set",
+        ":packet_transformer",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -168,7 +146,7 @@ cc_binary(
     deps = [
         ":netkat_cc_proto",
         ":netkat_proto_constructors",
-        ":packet_set",
+        ":packet_transformer",
         "@com_google_absl//absl/strings",
         "@com_google_benchmark//:benchmark_main",
     ],
@@ -181,7 +159,7 @@ cc_test(
     linkstatic = True,
     deps = [
         ":netkat_proto_constructors",
-        ":packet_set",
+        ":packet_transformer",
     ],
 )
 
@@ -229,6 +207,7 @@ cc_test(
     shard_count = 8,
     deps = [
         ":evaluator",
+        ":gtest_utils",
         ":netkat_cc_proto",
         ":netkat_proto_constructors",
         ":packet",
@@ -303,7 +282,6 @@ cc_library(
     hdrs = ["counter_example.h"],
     deps = [
         ":packet",
-        ":packet_set",
         ":packet_transformer",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:check",
@@ -336,7 +314,6 @@ cc_library(
         ":counter_example",
         ":frontend",
         ":packet",
-        ":packet_set",
         ":packet_transformer",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/status",
@@ -362,13 +339,18 @@ cc_test(
 
 cc_library(
     name = "packet_transformer",
-    srcs = ["packet_transformer.cc"],
-    hdrs = ["packet_transformer.h"],
+    srcs = [
+        "packet_set.cc",
+        "packet_transformer.cc",
+    ],
+    hdrs = [
+        "packet_set.h",
+        "packet_transformer.h",
+    ],
     deps = [
         ":netkat_cc_proto",
         ":packet",
         ":packet_field",
-        ":packet_set",
         ":paged_stable_vector",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:btree",
@@ -403,10 +385,10 @@ cc_test(
     shard_count = 5,
     deps = [
         ":evaluator",
+        ":gtest_utils",
         ":netkat_cc_proto",
         ":netkat_proto_constructors",
         ":packet",
-        ":packet_set",
         ":packet_transformer",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/container:flat_hash_map",

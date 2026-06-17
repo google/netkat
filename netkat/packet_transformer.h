@@ -138,23 +138,25 @@ static_assert(sizeof(PacketTransformerHandle) <= 4);
 // `PacketTransformerManager` object with a different manager is
 // undefined behavior. `PacketSetHandles` and `PacketTransformerHandles`
 // returned by this class are not invalidated on move.
+
 class PacketTransformerManager {
  public:
-  PacketTransformerManager() = default;
-  explicit PacketTransformerManager(PacketSetManager&& manager)
-      : packet_set_manager_(std::move(manager)) {};
+  PacketTransformerManager();
 
   // The class is move-only: not copyable, but movable.
   // `PacketSetHandles` and `PacketTransformerHandles` returned by this class
   // are not invalidated on move.
   PacketTransformerManager(const PacketTransformerManager&) = delete;
   PacketTransformerManager& operator=(const PacketTransformerManager&) = delete;
-  PacketTransformerManager(PacketTransformerManager&&) = default;
-  PacketTransformerManager& operator=(PacketTransformerManager&&) = default;
+  PacketTransformerManager(PacketTransformerManager&& other);
+  PacketTransformerManager& operator=(PacketTransformerManager&& other);
 
   // Returns the `PacketSetManager` used by this object to compile
   // predicates.
   PacketSetManager& GetPacketSetManager() { return packet_set_manager_; }
+  const PacketSetManager& GetPacketSetManager() const {
+    return packet_set_manager_;
+  }
 
   // Returns true iff this transformer represents the Deny policy.
   bool IsDeny(PacketTransformerHandle transformer) const;

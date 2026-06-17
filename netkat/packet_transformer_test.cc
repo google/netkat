@@ -114,6 +114,28 @@ TEST(PacketTransformerManagerTest, AbslHashValueWorks) {
   EXPECT_EQ(set.size(), 2);
 }
 
+TEST(PacketTransformerManagerTest, MoveConstructorPreservesState) {
+  PacketTransformerManager manager1;
+  PacketTransformerHandle h1 = manager1.Compile(ModificationProto("f", 1));
+  PacketTransformerHandle h2 = manager1.Compile(ModificationProto("f", 2));
+
+  PacketTransformerManager manager2 = std::move(manager1);
+  EXPECT_EQ(manager2.Compile(ModificationProto("f", 1)), h1);
+  EXPECT_EQ(manager2.Compile(ModificationProto("f", 2)), h2);
+}
+
+TEST(PacketTransformerManagerTest, MoveAssignmentPreservesState) {
+  PacketTransformerManager manager1;
+  PacketTransformerHandle h1 = manager1.Compile(ModificationProto("f", 1));
+  PacketTransformerHandle h2 = manager1.Compile(ModificationProto("f", 2));
+
+  PacketTransformerManager manager2;
+  // Test move assignment operator specifically (requires two statements).
+  manager2 = std::move(manager1);
+  EXPECT_EQ(manager2.Compile(ModificationProto("f", 1)), h1);
+  EXPECT_EQ(manager2.Compile(ModificationProto("f", 2)), h2);
+}
+
 TEST(PacketTransformerManagerTest, EmptyPolicyCompilesToDeny) {
   EXPECT_TRUE(Manager().IsDeny(Manager().Compile(PolicyProto())));
 }
@@ -128,13 +150,6 @@ void CompileIsSameAsOfCompiledPacketSetHandle(PredicateProto predicate) {
   PacketSetHandle set_1 = Manager().GetPacketSetManager().Compile(predicate);
   EXPECT_EQ(Manager().Compile(FilterProto(predicate)),
             Manager().FromPacketSetHandle(set_1));
-
-  // Using a newly constructed PacketSetManager.
-  PacketSetManager packet_set_manager;
-  PacketSetHandle set_2 = packet_set_manager.Compile(predicate);
-  PacketTransformerManager manager(std::move(packet_set_manager));
-  EXPECT_EQ(manager.Compile(FilterProto(predicate)),
-            manager.FromPacketSetHandle(set_2));
 }
 FUZZ_TEST(PacketTransformerManagerTest,
           CompileIsSameAsOfCompiledPacketSetHandle);
@@ -942,9 +957,9 @@ class PacketTransformerManagerTestPeer {
   PacketSetHandle GetAllPossibleOutputPacketsReferenceImplementation(
       PacketTransformerHandle transformer) {
     if (packet_transformer_manager_->IsAccept(transformer))
-      return PacketSetManager().FullSet();
+      return packet_transformer_manager_->GetPacketSetManager().FullSet();
     if (packet_transformer_manager_->IsDeny(transformer))
-      return PacketSetManager().EmptySet();
+      return packet_transformer_manager_->GetPacketSetManager().EmptySet();
     const PacketTransformerManager::DecisionNode& node =
         packet_transformer_manager_->GetNodeOrDie(transformer);
     const std::string field = packet_transformer_manager_->GetPacketSetManager()
@@ -994,7 +1009,8 @@ class PacketTransformerManagerTestPeer {
     // 1. input.field != match_value for all explicit match branches, thus
     //    output.field != match_value for all explicit match branches by (0)
     // 2. output.field != modify_value for all default-modify branches
-    PacketSetHandle fallthrough_output = PacketSetManager().FullSet();
+    PacketSetHandle fallthrough_output =
+        packet_transformer_manager_->GetPacketSetManager().FullSet();
     for (const auto& [match_value, unused] :
          node.modify_branch_by_field_match) {
       fallthrough_output =

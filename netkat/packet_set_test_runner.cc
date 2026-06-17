@@ -22,6 +22,7 @@
 
 #include "netkat/netkat_proto_constructors.h"
 #include "netkat/packet_set.h"
+#include "netkat/packet_transformer.h"
 
 namespace netkat {
 namespace {
@@ -84,7 +85,8 @@ std::vector<TestCase> TestCases() {
 void main() {
   // This test needs a deterministic field interning order, and thus must start
   // from a fresh manager.
-  PacketSetManager manager;
+  PacketTransformerManager transformer;
+  PacketSetManager& manager = transformer.GetPacketSetManager();
   for (const TestCase& test_case : TestCases()) {
     netkat::PacketSetHandle packet_set = manager.Compile(test_case.predicate);
     std::cout << kBanner << "Test case: " << test_case.description << std::endl

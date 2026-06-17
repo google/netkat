@@ -63,6 +63,9 @@ std::string PacketSetHandle::ToString() const {
   }
 }
 
+PacketSetManager::PacketSetManager(PacketTransformerManager& transformer)
+    : transformer_(&transformer) {}
+
 PacketSetHandle PacketSetManager::EmptySet() const {
   return PacketSetHandle(SentinelNodeIndex::kEmptySet);
 }
