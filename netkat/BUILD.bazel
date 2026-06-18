@@ -415,6 +415,19 @@ cc_binary(
     ],
 )
 
+cc_binary(
+    name = "scale_benchmark",
+    testonly = True,
+    srcs = ["scale_benchmark.cc"],
+    deps = [
+        ":frontend",
+        ":netkat_cc_proto",
+        ":packet_set",
+        ":packet_transformer",
+        "@com_google_benchmark//:benchmark_main",
+    ],
+)
+
 # go/golden-test-with-coverage
 cc_test(
     name = "packet_transformer_test_runner",
