@@ -70,6 +70,16 @@ class NetkatTable {
     const Policy* existing_policy;
   };
 
+  // A rule to be added to the table.
+  struct Rule {
+    // The priority the rule is being added for.
+    int priority;
+    // The predicate that the rule will match against.
+    Predicate match;
+    // The policy that the rule will apply to any matching packets.
+    Policy action;
+  };
+
   // A functor that represents some constraint to be applied or evaluated
   // against a pending rule of the table. The constraint must return either an
   // error detailing the cause of the violation or OK if there is none.
@@ -131,6 +141,7 @@ class NetkatTable {
   // TODO(anthonyroy): Consider a more API-friendly way to disallow `action`
   // from being more restrictive than `match`.
   absl::Status AddRule(int priority, Predicate match, Policy action);
+  absl::Status AddRule(Rule rule);
 
   // Returns a unified policy representing all rules in the NetkatTable. The
   // returned policy will emulate a priority based match-action table of a

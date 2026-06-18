@@ -106,6 +106,34 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "table_builder",
+    srcs = ["table_builder.cc"],
+    hdrs = ["table_builder.h"],
+    deps = [
+        ":table",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@com_google_gutil//gutil:proto",
+    ],
+)
+
+cc_test(
+    name = "table_builder_test",
+    srcs = ["table_builder_test.cc"],
+    deps = [
+        ":analysis_engine",
+        ":frontend",
+        ":table",
+        ":table_builder",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "netkat_test",
     srcs = ["netkat_test.cc"],

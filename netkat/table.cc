@@ -206,6 +206,10 @@ absl::Status NetkatTable::AddRule(int priority, Predicate match,
   return absl::OkStatus();
 }
 
+absl::Status NetkatTable::AddRule(Rule rule) {
+  return AddRule(rule.priority, std::move(rule.match), std::move(rule.action));
+}
+
 Policy NetkatTable::GetPolicy() const& {
   return GetPolicyInternal(rules_,
                            accept_default_ ? Policy::Accept() : Policy::Deny());
