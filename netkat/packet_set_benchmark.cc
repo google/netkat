@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstdint>
 #include <optional>
+#include <utility>
 
 #include "absl/strings/str_cat.h"
 #include "benchmark/benchmark.h"
@@ -124,5 +126,83 @@ void BM_ReCompileOverlappingPredicate(benchmark::State& state) {
   }
 }
 BENCHMARK(BM_ReCompileOverlappingPredicate);
+
+// -- Large-scale benchmarks ---------------------------------------------------
+//
+// The benchmarks above build BDDs of only tens of nodes, so they cannot detect
+// effects that only manifest at scale (node arena performance, unique-table
+// pressure, algorithmic complexity of the set operations). The benchmarks
+// below operate on sets of pseudo-random members of a 16^5 ~= 1M element
+// space, encoded over 5 hex-digit fields. Random sets have incompressible
+// BDDs, so node counts scale with set size, mimicking large real-world NetKAT
+// models.
+
+constexpr int kNumDigits = 5;
+
+// The `i`-th pseudo-random member of the space, under the given `seed`.
+// Distinct `i` mostly yield distinct members; collisions just shrink the set.
+uint32_t Member(uint32_t i, uint32_t seed) {
+  uint64_t state = (i + seed) * 6364136223846793005ULL + 1442695040888963407ULL;
+  return static_cast<uint32_t>(state >> 33) & ((1u << (4 * kNumDigits)) - 1);
+}
+
+// Matches exactly the packets whose digit fields encode `member`.
+PredicateProto MemberPredicate(uint32_t member) {
+  PredicateProto pred = MatchProto("f0", member & 15);
+  for (int d = 1; d < kNumDigits; ++d) {
+    pred = AndProto(std::move(pred),
+                    MatchProto(absl::StrCat("f", d), (member >> (4 * d)) & 15));
+  }
+  return pred;
+}
+
+// A balanced Or-tree over members [lo, hi) -- balanced to keep proto/compile
+// recursion depth logarithmic.
+PredicateProto RandomSetPredicate(uint32_t lo, uint32_t hi, uint32_t seed) {
+  if (hi - lo == 1) return MemberPredicate(Member(lo, seed));
+  uint32_t mid = lo + (hi - lo) / 2;
+  return OrProto(RandomSetPredicate(lo, mid, seed),
+                 RandomSetPredicate(mid, hi, seed));
+}
+
+// Benchmarks first-time compilation of a large random set, dominated by node
+// creation: unique-table hashing and arena appends.
+void BM_CompileLargeRandomSet(benchmark::State& state) {
+  PredicateProto pred = RandomSetPredicate(0, state.range(0), /*seed=*/1);
+  for (auto s : state) {
+    PacketSetManager manager;
+    PacketSetHandle set = manager.Compile(pred);
+    benchmark::DoNotOptimize(set);
+  }
+}
+BENCHMARK(BM_CompileLargeRandomSet)->Arg(1 << 12)->Arg(1 << 15);
+
+// Benchmarks `Not` of a large random set: a full traversal that copies every
+// node of the operand (no complement edges yet, see b/382380335).
+void BM_NotOfLargeRandomSet(benchmark::State& state) {
+  PacketSetManager manager;
+  PacketSetHandle set =
+      manager.Compile(RandomSetPredicate(0, state.range(0), /*seed=*/1));
+  for (auto s : state) {
+    PacketSetHandle result = manager.Not(set);
+    benchmark::DoNotOptimize(result);
+  }
+}
+BENCHMARK(BM_NotOfLargeRandomSet)->Arg(1 << 12)->Arg(1 << 15);
+
+// Benchmarks `Xor` of two large random sets: a compound operation (two `And`s,
+// several `Not`s) that traverses both operands and creates many nodes.
+void BM_XorOfLargeRandomSets(benchmark::State& state) {
+  PacketSetManager manager;
+  PacketSetHandle lhs =
+      manager.Compile(RandomSetPredicate(0, state.range(0), /*seed=*/1));
+  PacketSetHandle rhs =
+      manager.Compile(RandomSetPredicate(0, state.range(0), /*seed=*/2));
+  for (auto s : state) {
+    PacketSetHandle result = manager.Xor(lhs, rhs);
+    benchmark::DoNotOptimize(result);
+  }
+}
+BENCHMARK(BM_XorOfLargeRandomSets)->Arg(1 << 12)->Arg(1 << 15);
 
 }  // namespace netkat

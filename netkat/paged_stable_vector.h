@@ -19,6 +19,7 @@
 #ifndef GOOGLE_NETKAT_NETKAT_PAGED_STABLE_VECTOR_H_
 #define GOOGLE_NETKAT_NETKAT_PAGED_STABLE_VECTOR_H_
 
+#include <bit>
 #include <cstddef>
 #include <utility>
 #include <vector>
@@ -39,6 +40,12 @@ namespace netkat {
 template <class T, size_t PageSize>
 class PagedStableVector {
  public:
+  // Index arithmetic (`operator[]`, `size()`) is on our clients' hot paths.
+  // Requiring a power-of-two `PageSize` guarantees it compiles to shifts and
+  // masks rather than multiply sequences.
+  static_assert(std::has_single_bit(PageSize),
+                "PageSize must be a power of two");
+
   PagedStableVector() = default;
 
   size_t size() const {
@@ -48,13 +55,13 @@ class PagedStableVector {
 
   template <class Value>
   void push_back(Value&& value) {
-    if (size() % PageSize == 0) data_.emplace_back().reserve(PageSize);
+    ReserveSpaceForNextElement();
     data_.back().push_back(std::forward<Value>(value));
   }
 
   template <class... Args>
   void emplace_back(Args&&... value) {
-    if (size() % PageSize == 0) data_.emplace_back().reserve(PageSize);
+    ReserveSpaceForNextElement();
     data_.back().emplace_back(std::forward<Args>(value)...);
   }
 
@@ -66,6 +73,15 @@ class PagedStableVector {
   }
 
  private:
+  void ReserveSpaceForNextElement() {
+    if (data_.empty() || data_.back().size() == PageSize) {
+      // Reserving each page upfront is what guarantees pointer stability: a
+      // page never grows beyond its initial capacity, so its elements are
+      // never relocated.
+      data_.emplace_back().reserve(PageSize);
+    }
+  }
+
   std::vector<std::vector<T>> data_;
 };
 

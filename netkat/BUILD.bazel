@@ -379,6 +379,16 @@ cc_test(
     ],
 )
 
+cc_binary(
+    name = "paged_stable_vector_benchmark",
+    testonly = True,
+    srcs = ["paged_stable_vector_benchmark.cc"],
+    deps = [
+        ":paged_stable_vector",
+        "@com_google_benchmark//:benchmark_main",
+    ],
+)
+
 cc_test(
     name = "packet_transformer_test",
     srcs = ["packet_transformer_test.cc"],
