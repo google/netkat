@@ -371,6 +371,13 @@ class PacketSetManager {
   // already exists.
   absl::flat_hash_map<ProtoHashKey, PacketSetHandle> packet_set_by_hash_;
 
+  // A memoization table for the `And` operation.
+  // Maps a pair of (normalized) argument handles to their computed intersection
+  // handle.
+  absl::flat_hash_map<std::pair<PacketSetHandle, PacketSetHandle>,
+                      PacketSetHandle>
+      and_cache_;
+
   // INVARIANT: All `DecisionNode` fields are interned by this manager.
   PacketFieldManager field_manager_;
 

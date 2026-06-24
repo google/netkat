@@ -14,6 +14,7 @@
 
 #include "netkat/packet_set.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <queue>
@@ -279,9 +280,13 @@ PacketSetHandle PacketSetManager::And(PacketSetHandle left,
   if (IsEmptySet(left) || IsFullSet(right) || left == right) return left;
   if (IsEmptySet(right) || IsFullSet(left)) return right;
 
-  // TODO(b/382379263): Before computing the result recursively, Look up if the
-  // result has previously been computed using a memoization table. This can
-  // reduce the number of nodes we need to visit exponentially.
+  // Normalize keys to leverage commutativity.
+  std::pair<PacketSetHandle, PacketSetHandle> cache_key =
+      std::make_pair(std::min(left, right), std::max(left, right));
+  auto it = and_cache_.find(cache_key);
+  if (it != and_cache_.end()) {
+    return it->second;
+  }
 
   // Compute result the hard way.
   const DecisionNode* left_node = &GetNodeOrDie(left);
@@ -305,14 +310,14 @@ PacketSetHandle PacketSetManager::And(PacketSetHandle left,
       if (branch == default_branch) continue;
       branch_by_field_value[num_branches++] = std::make_pair(value, branch);
     }
-    return NodeToPacket(DecisionNode{
-        .field = left_node->field,
-        .default_branch = default_branch,
-        .branch_by_field_value{
-            branch_by_field_value.begin(),
-            branch_by_field_value.begin() + num_branches,
-        },
-    });
+    return and_cache_[cache_key] = NodeToPacket(DecisionNode{
+               .field = left_node->field,
+               .default_branch = default_branch,
+               .branch_by_field_value{
+                   branch_by_field_value.begin(),
+                   branch_by_field_value.begin() + num_branches,
+               },
+           });
   }
 
   // Case 2: left_node->field == right_node->field: branch on shared field.
@@ -354,14 +359,14 @@ PacketSetHandle PacketSetManager::And(PacketSetHandle left,
     auto [right_value, right_branch] = *right_it;
     add_branch(right_value, And(left_node->default_branch, right_branch));
   }
-  return NodeToPacket(DecisionNode{
-      .field = left_node->field,
-      .default_branch = default_branch,
-      .branch_by_field_value{
-          branch_by_field_value.begin(),
-          branch_by_field_value.begin() + num_branches,
-      },
-  });
+  return and_cache_[cache_key] = NodeToPacket(DecisionNode{
+             .field = left_node->field,
+             .default_branch = default_branch,
+             .branch_by_field_value{
+                 branch_by_field_value.begin(),
+                 branch_by_field_value.begin() + num_branches,
+             },
+         });
 }
 
 PacketSetHandle PacketSetManager::Or(PacketSetHandle left,
