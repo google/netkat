@@ -46,8 +46,10 @@ PolicyProto ModificationProto(absl::string_view field, int value);
 PolicyProto RecordProto();
 PolicyProto SequenceProto(PolicyProto left, PolicyProto right);
 PolicyProto UnionProto(PolicyProto left, PolicyProto right);
+PolicyProto IntersectionProto(PolicyProto left, PolicyProto right);
 PolicyProto IterateProto(PolicyProto iterable);
 PolicyProto DifferenceProto(PolicyProto left, PolicyProto right);
+PolicyProto SymmetricDifferenceProto(PolicyProto left, PolicyProto right);
 
 // -- Derived Policy constructors ----------------------------------------------
 
@@ -63,8 +65,10 @@ PolicyProto AcceptProto();
 //   Predicate Xor -> '(+)'
 //   Policy Sequence -> ';'
 //   Policy Or -> '+'
+//   Policy Intersection -> '∩'
 //   Iterate -> '*'
 //   Difference -> '-'
+//   SymmetricDifference -> '(+)'
 //   Record -> 'record'
 //   Match -> '@field==value'
 //   Modify -> '@field:=value'

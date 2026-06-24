@@ -109,6 +109,12 @@ TEST(NetkatProtoTest, PolicyOneOfFieldNamesDontRequireUnderscores) {
       LOG(INFO) << "difference: " << difference_op;
       break;
     }
+    case PolicyProto::kSymmetricDifferenceOp: {
+      const PolicyProto::SymmetricDifference& symmetric_difference_op =
+          policy.symmetric_difference_op();
+      LOG(INFO) << "symmetric_difference: " << symmetric_difference_op;
+      break;
+    }
     case PolicyProto::POLICY_NOT_SET:
       break;
   }

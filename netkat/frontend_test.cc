@@ -173,6 +173,9 @@ void ExpectFromProtoToFailWithInvalidPolicyProto(PolicyProto policy_proto) {
     case PolicyProto::kDifferenceOp:
       policy_proto.mutable_difference_op()->clear_left();
       break;
+    case PolicyProto::kSymmetricDifferenceOp:
+      policy_proto.mutable_symmetric_difference_op()->clear_left();
+      break;
       // Unset policy is invalid.
     case PolicyProto::POLICY_NOT_SET:
       break;
@@ -217,6 +220,15 @@ void DifferenceToProtoIsCorrect(Policy left, Policy right) {
               EqualsProto(DifferenceProto(left.ToProto(), right.ToProto())));
 }
 FUZZ_TEST(FrontEndTest, DifferenceToProtoIsCorrect)
+    .WithDomains(/*policy=*/AtomicDupFreePolicyDomain(),
+                 /*policy=*/AtomicDupFreePolicyDomain());
+
+void SymmetricDifferenceToProtoIsCorrect(Policy left, Policy right) {
+  EXPECT_THAT(
+      SymmetricDifference(left, right).ToProto(),
+      EqualsProto(SymmetricDifferenceProto(left.ToProto(), right.ToProto())));
+}
+FUZZ_TEST(FrontEndTest, SymmetricDifferenceToProtoIsCorrect)
     .WithDomains(/*policy=*/AtomicDupFreePolicyDomain(),
                  /*policy=*/AtomicDupFreePolicyDomain());
 

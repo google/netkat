@@ -107,6 +107,13 @@ PolicyProto UnionProto(PolicyProto left, PolicyProto right) {
   return policy;
 }
 
+PolicyProto IntersectionProto(PolicyProto left, PolicyProto right) {
+  PolicyProto policy;
+  *policy.mutable_intersection_op()->mutable_left() = std::move(left);
+  *policy.mutable_intersection_op()->mutable_right() = std::move(right);
+  return policy;
+}
+
 PolicyProto IterateProto(PolicyProto iterable) {
   PolicyProto policy;
   *policy.mutable_iterate_op()->mutable_iterable() = std::move(iterable);
@@ -117,6 +124,13 @@ PolicyProto DifferenceProto(PolicyProto left, PolicyProto right) {
   PolicyProto policy;
   *policy.mutable_difference_op()->mutable_left() = std::move(left);
   *policy.mutable_difference_op()->mutable_right() = std::move(right);
+  return policy;
+}
+
+PolicyProto SymmetricDifferenceProto(PolicyProto left, PolicyProto right) {
+  PolicyProto policy;
+  *policy.mutable_symmetric_difference_op()->mutable_left() = std::move(left);
+  *policy.mutable_symmetric_difference_op()->mutable_right() = std::move(right);
   return policy;
 }
 
@@ -169,6 +183,10 @@ std::string AsShorthandString(PolicyProto policy) {
       return absl::StrFormat("(%s + %s)",
                              AsShorthandString(policy.union_op().left()),
                              AsShorthandString(policy.union_op().right()));
+    case PolicyProto::kIntersectionOp:
+      return absl::StrFormat(
+          "(%s ∩ %s)", AsShorthandString(policy.intersection_op().left()),
+          AsShorthandString(policy.intersection_op().right()));
     case PolicyProto::kIterateOp:
       return absl::StrFormat("(%s)*",
                              AsShorthandString(policy.iterate_op().iterable()));
@@ -176,6 +194,11 @@ std::string AsShorthandString(PolicyProto policy) {
       return absl::StrFormat("(%s - %s)",
                              AsShorthandString(policy.difference_op().left()),
                              AsShorthandString(policy.difference_op().right()));
+    case PolicyProto::kSymmetricDifferenceOp:
+      return absl::StrFormat(
+          "(%s (+) %s)",
+          AsShorthandString(policy.symmetric_difference_op().left()),
+          AsShorthandString(policy.symmetric_difference_op().right()));
     case PolicyProto::POLICY_NOT_SET:
       return "deny";
   }

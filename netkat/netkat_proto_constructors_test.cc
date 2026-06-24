@@ -119,6 +119,14 @@ void UnionProtoReturnsUnion(PolicyProto left, PolicyProto right) {
 }
 FUZZ_TEST(PolicyProtoTest, UnionProtoReturnsUnion);
 
+void IntersectionProtoReturnsIntersection(PolicyProto left, PolicyProto right) {
+  PolicyProto expected_policy;
+  *expected_policy.mutable_intersection_op()->mutable_left() = left;
+  *expected_policy.mutable_intersection_op()->mutable_right() = right;
+  EXPECT_THAT(IntersectionProto(left, right), EqualsProto(expected_policy));
+}
+FUZZ_TEST(PolicyProtoTest, IntersectionProtoReturnsIntersection);
+
 void IterateProtoReturnsIterate(PolicyProto iterable) {
   PolicyProto expected_policy;
   *expected_policy.mutable_iterate_op()->mutable_iterable() = iterable;
@@ -135,6 +143,17 @@ void DifferenceProtoReturnsDifference(PolicyProto left, PolicyProto right) {
   EXPECT_THAT(DifferenceProto(left, right), EqualsProto(expected_policy));
 }
 FUZZ_TEST(PolicyProtoTest, DifferenceProtoReturnsDifference);
+
+void SymmetricDifferenceProtoReturnsSymmetricDifference(PolicyProto left,
+                                                        PolicyProto right) {
+  PolicyProto expected_policy;
+  *expected_policy.mutable_symmetric_difference_op()->mutable_left() = left;
+  *expected_policy.mutable_symmetric_difference_op()->mutable_right() = right;
+
+  EXPECT_THAT(SymmetricDifferenceProto(left, right),
+              EqualsProto(expected_policy));
+}
+FUZZ_TEST(PolicyProtoTest, SymmetricDifferenceProtoReturnsSymmetricDifference);
 
 // -- Derived Policy tests -----------------------------------------------------
 

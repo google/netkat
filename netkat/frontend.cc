@@ -136,6 +136,16 @@ absl::Status RecursivelyCheckIsValid(const PolicyProto& policy_proto) {
               .SetPrepend()
           << "PolicyProto::DifferenceOp::right is invalid: ";
       return absl::OkStatus();
+    case PolicyProto::kSymmetricDifferenceOp:
+      RETURN_IF_ERROR(RecursivelyCheckIsValid(
+                          policy_proto.symmetric_difference_op().left()))
+              .SetPrepend()
+          << "PolicyProto::SymmetricDifferenceOp::left is invalid: ";
+      RETURN_IF_ERROR(RecursivelyCheckIsValid(
+                          policy_proto.symmetric_difference_op().right()))
+              .SetPrepend()
+          << "PolicyProto::SymmetricDifferenceOp::right is invalid: ";
+      return absl::OkStatus();
     case PolicyProto::POLICY_NOT_SET:
       return absl::InvalidArgumentError("Unset Policy case is invalid");
   }
@@ -192,6 +202,11 @@ Policy Filter(Predicate predicate) {
 Policy Difference(Policy left, Policy right) {
   return Policy(
       DifferenceProto(std::move(left).ToProto(), std::move(right).ToProto()));
+}
+
+Policy SymmetricDifference(Policy left, Policy right) {
+  return Policy(SymmetricDifferenceProto(std::move(left).ToProto(),
+                                         std::move(right).ToProto()));
 }
 
 Policy Policy::Accept() { return Filter(Predicate::True()); }
