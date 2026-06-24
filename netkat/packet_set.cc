@@ -231,6 +231,11 @@ PacketSetHandle PacketSetManager::Not(PacketSetHandle negand) {
   if (IsEmptySet(negand)) return FullSet();
   if (IsFullSet(negand)) return EmptySet();
 
+  auto it = not_cache_.find(negand);
+  if (it != not_cache_.end()) {
+    return it->second;
+  }
+
   // Compute result the hard way.
   const DecisionNode& negand_node = GetNodeOrDie(negand);
   DecisionNode result_node{
@@ -248,7 +253,7 @@ PacketSetHandle PacketSetManager::Not(PacketSetHandle negand) {
         std::make_pair(value, negated_branch);
   }
 
-  return NodeToPacket(std::move(result_node));
+  return not_cache_[negand] = NodeToPacket(std::move(result_node));
 }
 
 PacketSetHandle PacketSetManager::And(PacketSetHandle left,

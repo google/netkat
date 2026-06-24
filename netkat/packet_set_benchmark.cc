@@ -216,4 +216,49 @@ void BM_ReCompileAndWithHighOverlappingPredicate(benchmark::State& state) {
 }
 BENCHMARK(BM_ReCompileAndWithHighOverlappingPredicate);
 
+// Benchmarks the cost of applying NOT to the same packet set multiple times.
+// This heavily exercises the `not_cache_`.
+void BM_NotOnSamePacketSet(benchmark::State& state) {
+  PredicateProto proto = CreateFixedArbitraryPredicateProto();
+  PacketTransformerManager transformer;
+  PacketSetManager& manager = transformer.GetPacketSetManager();
+  PacketSetHandle handle = manager.Compile(proto);
+
+  for (auto s : state) {
+    PacketSetHandle negated = manager.Not(handle);
+    benchmark::DoNotOptimize(negated);
+  }
+}
+BENCHMARK(BM_NotOnSamePacketSet);
+
+// Benchmarks Or operations that share operands. Since Or is implemented via
+// And and Not, sharing operands means we repeatedly call Not on the same
+// BDD handles, exercising the `not_cache_`.
+void BM_OrOperationsSharingOperands(benchmark::State& state) {
+  PredicateProto proto1 = CreateFixedArbitraryPredicateProto(/*id_suffix=*/1);
+  PredicateProto google::protobuf =
+      CreateFixedArbitraryPredicateProto(/*id_suffix=*/2);
+  PredicateProto proto3 = CreateFixedArbitraryPredicateProto(/*id_suffix=*/3);
+
+  for (auto s : state) {
+    PacketTransformerManager transformer;
+    PacketSetManager& manager = transformer.GetPacketSetManager();
+    PacketSetHandle h1 = manager.Compile(proto1);
+    PacketSetHandle h2 = manager.Compile(google::protobuf);
+    PacketSetHandle h3 = manager.Compile(proto3);
+
+    // Or(h1, h2) calls Not(h1), Not(h2), And, Not
+    PacketSetHandle or1 = manager.Or(h1, h2);
+    // Or(h1, h3) calls Not(h1) [cache hit!], Not(h3), And, Not
+    PacketSetHandle or2 = manager.Or(h1, h3);
+    // Or(h2, h3) calls Not(h2) [cache hit!], Not(h3) [cache hit!], And, Not
+    PacketSetHandle or3 = manager.Or(h2, h3);
+
+    benchmark::DoNotOptimize(or1);
+    benchmark::DoNotOptimize(or2);
+    benchmark::DoNotOptimize(or3);
+  }
+}
+BENCHMARK(BM_OrOperationsSharingOperands);
+
 }  // namespace netkat
