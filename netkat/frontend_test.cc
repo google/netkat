@@ -70,6 +70,9 @@ PredicateProto InvalidPredicateProto(PredicateProto predicate_proto) {
     case PredicateProto::kBoolConstant:
       predicate_proto.Clear();
       break;
+    case PredicateProto::kPullOp:
+      predicate_proto.mutable_pull_op()->clear_pred();
+      break;
   }
   return predicate_proto;
 }

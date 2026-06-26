@@ -12,16 +12,8 @@ using ::fuzztest::Just;
 using ::fuzztest::Map;
 using ::fuzztest::OneOf;
 
-namespace {
-
-template <typename T>
-bool FieldTypeIs(const google::protobuf::FieldDescriptor* field) {
-  return field->message_type() == T::descriptor();
-};
-
-}  // namespace
-
 fuzztest::Domain<PredicateProto> ArbitraryValidPredicateProto() {
+  // TODO: anthonyroy - Remove WithFieldsUnset once Pull is implemented.
   return fuzztest::Arbitrary<PredicateProto>()
       // The domain will recursively set all fields. This ensures
       // PredicateProto will have its members PredicateProto set.
@@ -31,7 +23,8 @@ fuzztest::Domain<PredicateProto> ArbitraryValidPredicateProto() {
       .WithProtobufFields(
           FieldTypeIs<PredicateProto::Match>,
           fuzztest::Arbitrary<PredicateProto::Match>().WithStringFieldAlwaysSet(
-              "field", fuzztest::String().WithMinSize(1)));
+              "field", fuzztest::String().WithMinSize(1)))
+      .WithFieldsUnset(FieldTypeIs<PredicateProto::Pull>);
 }
 
 fuzztest::Domain<PolicyProto> ArbitraryValidPolicyProto() {

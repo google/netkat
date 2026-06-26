@@ -23,9 +23,15 @@
 #define GOOGLE_NETKAT_NETKAT_GTEST_UTILS_H_
 
 #include "fuzztest/fuzztest.h"
+#include "google/protobuf/descriptor.h"
 #include "netkat/frontend.h"
 
 namespace netkat::netkat_test {
+
+template <typename T>
+bool FieldTypeIs(const google::protobuf::FieldDescriptor* field) {
+  return field->message_type() == T::descriptor();
+}
 
 // Returns a FUZZ_TEST domain for an arbitrary valid PredicateProto.
 // See netkat::Predicate::FromProto for the definition of a valid

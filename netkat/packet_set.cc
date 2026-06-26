@@ -198,6 +198,10 @@ std::string PacketSetManager::ToDot(PacketSetHandle packet_set) const {
 PacketSetHandle PacketSetManager::Compile(const PredicateProto& pred) {
   ProtoHashKey key = {.predicate_case = pred.predicate_case()};
   switch (pred.predicate_case()) {
+    case PredicateProto::kPullOp: {
+      // TODO: anthonyroy - Implement Pull compilation.
+      LOG(FATAL) << "Pull compilation not implemented yet";
+    }
     case PredicateProto::kBoolConstant: {
       return pred.bool_constant().value() ? FullSet() : EmptySet();
     }

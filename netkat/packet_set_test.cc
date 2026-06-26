@@ -30,6 +30,7 @@
 #include "gtest/gtest.h"
 #include "gutil/status_matchers.h"  // IWYU pragma: keep
 #include "netkat/evaluator.h"
+#include "netkat/gtest_utils.h"
 #include "netkat/netkat_proto_constructors.h"
 #include "netkat/packet.h"
 #include "netkat/packet_transformer.h"
@@ -56,6 +57,8 @@ void PrintTo(PacketSetHandle packet, std::ostream* os) {
 
 namespace {
 
+using ::netkat::netkat_test::ArbitraryValidPredicateProto;
+using ::netkat::netkat_test::FieldTypeIs;
 using ::testing::Ge;
 using ::testing::Pair;
 using ::testing::SizeIs;
@@ -123,26 +126,32 @@ void AndCompilesToAnd(const PredicateProto& left, const PredicateProto& right) {
   EXPECT_EQ(Manager().Compile(AndProto(left, right)),
             Manager().And(Manager().Compile(left), Manager().Compile(right)));
 }
-FUZZ_TEST(PacketSetManagerTest, AndCompilesToAnd);
+FUZZ_TEST(PacketSetManagerTest, AndCompilesToAnd)
+    .WithDomains(ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 void OrCompilesToOr(const PredicateProto& left, const PredicateProto& right) {
   EXPECT_EQ(Manager().Compile(OrProto(left, right)),
             Manager().Or(Manager().Compile(left), Manager().Compile(right)));
 }
-FUZZ_TEST(PacketSetManagerTest, OrCompilesToOr);
+FUZZ_TEST(PacketSetManagerTest, OrCompilesToOr)
+    .WithDomains(ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 void NotCompilesToNot(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(NotProto(pred)),
             Manager().Not(Manager().Compile(pred)));
 }
-FUZZ_TEST(PacketSetManagerTest, NotCompilesToNot);
+FUZZ_TEST(PacketSetManagerTest, NotCompilesToNot)
+    .WithDomains(ArbitraryValidPredicateProto());
 
 void CompilationPreservesSemantics(const PredicateProto& pred,
                                    const Packet& packet) {
   EXPECT_EQ(Manager().Contains(Manager().Compile(pred), packet),
             Evaluate(pred, packet));
 }
-FUZZ_TEST(PacketSetManagerTest, CompilationPreservesSemantics);
+FUZZ_TEST(PacketSetManagerTest, CompilationPreservesSemantics)
+    .WithDomains(ArbitraryValidPredicateProto(), fuzztest::Arbitrary<Packet>());
 
 void GetConcretePacketsReturnsNonEmptyListForNonEmptySet(
     const PredicateProto& pred) {
@@ -152,7 +161,8 @@ void GetConcretePacketsReturnsNonEmptyListForNonEmptySet(
   }
 }
 FUZZ_TEST(PacketSetManagerTest,
-          GetConcretePacketsReturnsNonEmptyListForNonEmptySet);
+          GetConcretePacketsReturnsNonEmptyListForNonEmptySet)
+    .WithDomains(ArbitraryValidPredicateProto());
 
 void GetConcretePacketsReturnsPacketsInSet(const PredicateProto& pred) {
   PacketSetHandle packet_set = Manager().Compile(pred);
@@ -160,7 +170,8 @@ void GetConcretePacketsReturnsPacketsInSet(const PredicateProto& pred) {
     EXPECT_TRUE(Manager().Contains(packet_set, packet));
   }
 }
-FUZZ_TEST(PacketSetManagerTest, GetConcretePacketsReturnsPacketsInSet);
+FUZZ_TEST(PacketSetManagerTest, GetConcretePacketsReturnsPacketsInSet)
+    .WithDomains(ArbitraryValidPredicateProto());
 
 TEST(PacketSetManagerTest,
      PacketsFromPacketSetWithMultipleFieldsAreContainedInPacketSet) {
@@ -177,18 +188,21 @@ TEST(PacketSetManagerTest,
 void EqualPredicatesCompileToEqualPacketSetHandles(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(pred), Manager().Compile(pred));
 }
-FUZZ_TEST(PacketSetManagerTest, EqualPredicatesCompileToEqualPacketSetHandles);
+FUZZ_TEST(PacketSetManagerTest, EqualPredicatesCompileToEqualPacketSetHandles)
+    .WithDomains(ArbitraryValidPredicateProto());
 
 void NegationCompilesToDifferentPacketSetHandle(const PredicateProto& pred) {
   EXPECT_NE(Manager().Compile(pred), Manager().Compile(NotProto(pred)));
 }
-FUZZ_TEST(PacketSetManagerTest, NegationCompilesToDifferentPacketSetHandle);
+FUZZ_TEST(PacketSetManagerTest, NegationCompilesToDifferentPacketSetHandle)
+    .WithDomains(ArbitraryValidPredicateProto());
 
 void DoubleNegationCompilesToSamePacketSetHandle(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(pred),
             Manager().Compile(NotProto(NotProto(pred))));
 }
-FUZZ_TEST(PacketSetManagerTest, DoubleNegationCompilesToSamePacketSetHandle);
+FUZZ_TEST(PacketSetManagerTest, DoubleNegationCompilesToSamePacketSetHandle)
+    .WithDomains(ArbitraryValidPredicateProto());
 
 TEST(PacketSetManagerTest, TrueNotEqualsMatch) {
   EXPECT_NE(Manager().Compile(TrueProto()),
@@ -212,77 +226,93 @@ TEST(PacketSetManagerTest, NotTrueEqualsFalse) {
 void AndIsIdempotent(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(AndProto(pred, pred)), Manager().Compile(pred));
 }
-FUZZ_TEST(PacketSetManagerTest, AndIsIdempotent);
+FUZZ_TEST(PacketSetManagerTest, AndIsIdempotent)
+    .WithDomains(ArbitraryValidPredicateProto());
 
 void OrIsIdempotent(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(OrProto(pred, pred)), Manager().Compile(pred));
 }
-FUZZ_TEST(PacketSetManagerTest, OrIsIdempotent);
+FUZZ_TEST(PacketSetManagerTest, OrIsIdempotent)
+    .WithDomains(ArbitraryValidPredicateProto());
 
 void PredOrItsNegationIsTrue(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(OrProto(pred, NotProto(pred))),
             Manager().Compile(TrueProto()));
 }
-FUZZ_TEST(PacketSetManagerTest, PredOrItsNegationIsTrue);
+FUZZ_TEST(PacketSetManagerTest, PredOrItsNegationIsTrue)
+    .WithDomains(ArbitraryValidPredicateProto());
 
 void PredAndItsNegationIsFalse(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(AndProto(pred, NotProto(pred))),
             Manager().Compile(FalseProto()));
 }
-FUZZ_TEST(PacketSetManagerTest, PredAndItsNegationIsFalse);
+FUZZ_TEST(PacketSetManagerTest, PredAndItsNegationIsFalse)
+    .WithDomains(ArbitraryValidPredicateProto());
 
 void AndTrueIsIdentity(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(AndProto(pred, TrueProto())),
             Manager().Compile(pred));
 }
-FUZZ_TEST(PacketSetManagerTest, AndTrueIsIdentity);
+FUZZ_TEST(PacketSetManagerTest, AndTrueIsIdentity)
+    .WithDomains(ArbitraryValidPredicateProto());
 
 void OrFalseIsIdentity(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(OrProto(pred, FalseProto())),
             Manager().Compile(pred));
 }
-FUZZ_TEST(PacketSetManagerTest, OrFalseIsIdentity);
+FUZZ_TEST(PacketSetManagerTest, OrFalseIsIdentity)
+    .WithDomains(ArbitraryValidPredicateProto());
 
 void XorFalseIsIdentity(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(XorProto(pred, FalseProto())),
             Manager().Compile(pred));
 }
-FUZZ_TEST(PacketSetManagerTest, XorFalseIsIdentity);
+FUZZ_TEST(PacketSetManagerTest, XorFalseIsIdentity)
+    .WithDomains(ArbitraryValidPredicateProto());
 
 void AndFalseIsFalse(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(AndProto(pred, FalseProto())),
             Manager().Compile(FalseProto()));
 }
-FUZZ_TEST(PacketSetManagerTest, AndFalseIsFalse);
+FUZZ_TEST(PacketSetManagerTest, AndFalseIsFalse)
+    .WithDomains(ArbitraryValidPredicateProto());
 
 void OrTrueIsTrue(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(OrProto(pred, TrueProto())),
             Manager().Compile(TrueProto()));
 }
-FUZZ_TEST(PacketSetManagerTest, OrTrueIsTrue);
+FUZZ_TEST(PacketSetManagerTest, OrTrueIsTrue)
+    .WithDomains(ArbitraryValidPredicateProto());
 
 void XorSelfIsFalse(const PredicateProto& pred) {
   EXPECT_EQ(Manager().Compile(XorProto(pred, pred)),
             Manager().Compile(FalseProto()));
 }
-FUZZ_TEST(PacketSetManagerTest, XorSelfIsFalse);
+FUZZ_TEST(PacketSetManagerTest, XorSelfIsFalse)
+    .WithDomains(ArbitraryValidPredicateProto());
 
 void AndIsCommutative(const PredicateProto& a, const PredicateProto& b) {
   EXPECT_EQ(Manager().Compile(AndProto(a, b)),
             Manager().Compile(AndProto(b, a)));
 }
-FUZZ_TEST(PacketSetManagerTest, AndIsCommutative);
+FUZZ_TEST(PacketSetManagerTest, AndIsCommutative)
+    .WithDomains(ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 void OrIsCommutative(const PredicateProto& a, const PredicateProto& b) {
   EXPECT_EQ(Manager().Compile(OrProto(a, b)), Manager().Compile(OrProto(b, a)));
 }
-FUZZ_TEST(PacketSetManagerTest, OrIsCommutative);
+FUZZ_TEST(PacketSetManagerTest, OrIsCommutative)
+    .WithDomains(ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 void XorIsCommutative(const PredicateProto& a, const PredicateProto& b) {
   EXPECT_EQ(Manager().Compile(XorProto(a, b)),
             Manager().Compile(XorProto(b, a)));
 }
-FUZZ_TEST(PacketSetManagerTest, XorIsCommutative);
+FUZZ_TEST(PacketSetManagerTest, XorIsCommutative)
+    .WithDomains(ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 void DistributiveLawsHolds(const PredicateProto& a, const PredicateProto& b,
                            const PredicateProto& c) {
@@ -291,7 +321,9 @@ void DistributiveLawsHolds(const PredicateProto& a, const PredicateProto& b,
   EXPECT_EQ(Manager().Compile(OrProto(a, AndProto(b, c))),
             Manager().Compile(AndProto(OrProto(a, b), OrProto(a, c))));
 }
-FUZZ_TEST(PacketSetManagerTest, DistributiveLawsHolds);
+FUZZ_TEST(PacketSetManagerTest, DistributiveLawsHolds)
+    .WithDomains(ArbitraryValidPredicateProto(), ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 void DeMorgansLawsHolds(const PredicateProto& a, const PredicateProto& b) {
   EXPECT_EQ(Manager().Compile(NotProto(AndProto(a, b))),
@@ -299,35 +331,45 @@ void DeMorgansLawsHolds(const PredicateProto& a, const PredicateProto& b) {
   EXPECT_EQ(Manager().Compile(NotProto(OrProto(a, b))),
             Manager().Compile(AndProto(NotProto(a), NotProto(b))));
 }
-FUZZ_TEST(PacketSetManagerTest, DeMorgansLawsHolds);
+FUZZ_TEST(PacketSetManagerTest, DeMorgansLawsHolds)
+    .WithDomains(ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 void XorDefinition(const PredicateProto& a, const PredicateProto& b) {
   EXPECT_EQ(Manager().Compile(XorProto(a, b)),
             Manager().Compile(
                 OrProto(AndProto(NotProto(a), b), AndProto(a, NotProto(b)))));
 }
-FUZZ_TEST(PacketSetManagerTest, XorDefinition);
+FUZZ_TEST(PacketSetManagerTest, XorDefinition)
+    .WithDomains(ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 void AndIsAssociative(const PredicateProto& a, const PredicateProto& b,
                       const PredicateProto& c) {
   EXPECT_EQ(Manager().Compile(AndProto(a, AndProto(b, c))),
             Manager().Compile(AndProto(AndProto(a, b), c)));
 }
-FUZZ_TEST(PacketSetManagerTest, AndIsAssociative);
+FUZZ_TEST(PacketSetManagerTest, AndIsAssociative)
+    .WithDomains(ArbitraryValidPredicateProto(), ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 void OrIsAssociative(const PredicateProto& a, const PredicateProto& b,
                      const PredicateProto& c) {
   EXPECT_EQ(Manager().Compile(OrProto(a, OrProto(b, c))),
             Manager().Compile(OrProto(OrProto(a, b), c)));
 }
-FUZZ_TEST(PacketSetManagerTest, OrIsAssociative);
+FUZZ_TEST(PacketSetManagerTest, OrIsAssociative)
+    .WithDomains(ArbitraryValidPredicateProto(), ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 void XorIsAssociative(const PredicateProto& a, const PredicateProto& b,
                       const PredicateProto& c) {
   EXPECT_EQ(Manager().Compile(XorProto(a, XorProto(b, c))),
             Manager().Compile(XorProto(XorProto(a, b), c)));
 }
-FUZZ_TEST(PacketSetManagerTest, XorIsAssociative);
+FUZZ_TEST(PacketSetManagerTest, XorIsAssociative)
+    .WithDomains(ArbitraryValidPredicateProto(), ArbitraryValidPredicateProto(),
+                 ArbitraryValidPredicateProto());
 
 TEST(PacketSetManagerTest, ExistsOnPacketSetWithSingleFieldReturnsFullSet) {
   const std::string field = "a";
@@ -379,8 +421,9 @@ FUZZ_TEST(PacketSetManagerTest, ExistIsIdentityForNonExistentField)
     // match/modify the same field several times.
     .WithDomains(fuzztest::Arbitrary<PredicateProto>()
                      .WithFieldsAlwaysSet()
-                     .WithStringFields(fuzztest::ElementOf<std::string>(
-                         {"f", "g", "h", "i"})));
+                     .WithStringFields(
+                         fuzztest::ElementOf<std::string>({"f", "g", "h", "i"}))
+                     .WithFieldsUnset(FieldTypeIs<PredicateProto::Pull>));
 
 void ExistOnFieldRemovesPacketFieldProperty(const PredicateProto& pred,
                                             int new_value) {

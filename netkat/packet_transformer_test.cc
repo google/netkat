@@ -30,6 +30,7 @@
 #include "gtest/gtest.h"
 #include "gutil/status_matchers.h"  // IWYU pragma: keep
 #include "netkat/evaluator.h"
+#include "netkat/gtest_utils.h"
 #include "netkat/netkat.pb.h"
 #include "netkat/netkat_proto_constructors.h"
 #include "netkat/packet.h"
@@ -60,12 +61,38 @@ namespace {
 
 using ::fuzztest::Arbitrary;
 using ::fuzztest::ElementOf;
+using ::netkat::netkat_test::ArbitraryValidPolicyProto;
+using ::netkat::netkat_test::ArbitraryValidPredicateProto;
+using ::netkat::netkat_test::FieldTypeIs;
 using ::testing::ContainerEq;
 using ::testing::IsEmpty;
 using ::testing::Pair;
 using ::testing::StartsWith;
 using ::testing::Truly;
 using ::testing::UnorderedElementsAre;
+
+// A domain of predicates with a restricted set of fields and values. This is
+// useful to fuzz properties without requiring exhausting the search space.
+fuzztest::Domain<PredicateProto> PredicateWithRestrictedFields() {
+  return fuzztest::Arbitrary<PredicateProto>()
+      .WithFieldsAlwaysSet()
+      .WithStringFields(ElementOf<std::string>({"f", "g"}))
+      .WithInt32Fields(ElementOf<int32_t>({1, 2, 3}))
+      // TODO: anthonyroy - Revert once Pull compilation is implemented in the
+      // backend.
+      .WithFieldsUnset(FieldTypeIs<PredicateProto::Pull>);
+}
+
+// A domain of policies with a restricted set of fields and values. This is
+// useful to fuzz properties without requiring exhausting the search space.
+fuzztest::Domain<PolicyProto> PolicyWithRestrictedFields() {
+  auto predicate_domain = PredicateWithRestrictedFields();
+  return fuzztest::Arbitrary<PolicyProto>()
+      .WithFieldsAlwaysSet()
+      .WithStringFields(ElementOf<std::string>({"f", "g"}))
+      .WithInt32Fields(ElementOf<int32_t>({1, 2, 3}))
+      .WithProtobufFields(FieldTypeIs<PredicateProto>, predicate_domain);
+}
 
 // After executing all tests, we check once that no invariants are violated, for
 // defense in depth. Checking invariants after each test (e.g. using a fixture)
@@ -152,7 +179,8 @@ void CompileIsSameAsOfCompiledPacketSetHandle(PredicateProto predicate) {
             Manager().FromPacketSetHandle(set_1));
 }
 FUZZ_TEST(PacketTransformerManagerTest,
-          CompileIsSameAsOfCompiledPacketSetHandle);
+          CompileIsSameAsOfCompiledPacketSetHandle)
+    .WithDomains(ArbitraryValidPredicateProto());
 
 /*--- Basic compilation and method consistency checks ------------------------*/
 
@@ -168,7 +196,8 @@ void FilterCompilesToFilter(PredicateProto predicate) {
   EXPECT_EQ(Manager().Compile(FilterProto(predicate)),
             Manager().Filter(predicate));
 }
-FUZZ_TEST(PacketTransformerManagerTest, FilterCompilesToFilter);
+FUZZ_TEST(PacketTransformerManagerTest, FilterCompilesToFilter)
+    .WithDomains(ArbitraryValidPredicateProto());
 
 void ModificationCompilesToModification(std::string field, int value) {
   EXPECT_EQ(Manager().Compile(ModificationProto(field, value)),
@@ -180,27 +209,31 @@ void UnionCompilesToUnion(PolicyProto left, PolicyProto right) {
   EXPECT_EQ(Manager().Compile(UnionProto(left, right)),
             Manager().Union(Manager().Compile(left), Manager().Compile(right)));
 }
-FUZZ_TEST(PacketTransformerManagerTest, UnionCompilesToUnion);
+FUZZ_TEST(PacketTransformerManagerTest, UnionCompilesToUnion)
+    .WithDomains(ArbitraryValidPolicyProto(), ArbitraryValidPolicyProto());
 
 void SequenceCompilesToSequence(PolicyProto left, PolicyProto right) {
   EXPECT_EQ(
       Manager().Compile(SequenceProto(left, right)),
       Manager().Sequence(Manager().Compile(left), Manager().Compile(right)));
 }
-FUZZ_TEST(PacketTransformerManagerTest, SequenceCompilesToSequence);
+FUZZ_TEST(PacketTransformerManagerTest, SequenceCompilesToSequence)
+    .WithDomains(ArbitraryValidPolicyProto(), ArbitraryValidPolicyProto());
 
 void IterateCompilesToIterate(PolicyProto iterable) {
   EXPECT_EQ(Manager().Compile(IterateProto(iterable)),
             Manager().Iterate(Manager().Compile(iterable)));
 }
-FUZZ_TEST(PacketTransformerManagerTest, IterateCompilesToIterate);
+FUZZ_TEST(PacketTransformerManagerTest, IterateCompilesToIterate)
+    .WithDomains(ArbitraryValidPolicyProto());
 
 void DifferenceCompilesToDifference(PolicyProto left, PolicyProto right) {
   EXPECT_EQ(
       Manager().Compile(DifferenceProto(left, right)),
       Manager().Difference(Manager().Compile(left), Manager().Compile(right)));
 }
-FUZZ_TEST(PacketTransformerManagerTest, DifferenceCompilesToDifference);
+FUZZ_TEST(PacketTransformerManagerTest, DifferenceCompilesToDifference)
+    .WithDomains(ArbitraryValidPolicyProto(), ArbitraryValidPolicyProto());
 
 /*--- Kleene algebra axioms and equivalences ---------------------------------*/
 
@@ -208,31 +241,38 @@ void UnionIsAssociative(PolicyProto a, PolicyProto b, PolicyProto c) {
   EXPECT_EQ(Manager().Compile(UnionProto(a, UnionProto(b, c))),
             Manager().Compile(UnionProto(UnionProto(a, b), c)));
 }
-FUZZ_TEST(PacketTransformerManagerTest, UnionIsAssociative);
+FUZZ_TEST(PacketTransformerManagerTest, UnionIsAssociative)
+    .WithDomains(ArbitraryValidPolicyProto(), ArbitraryValidPolicyProto(),
+                 ArbitraryValidPolicyProto());
 
 void UnionIsCommutative(PolicyProto a, PolicyProto b) {
   EXPECT_EQ(Manager().Compile(UnionProto(a, b)),
             Manager().Compile(UnionProto(b, a)));
 }
-FUZZ_TEST(PacketTransformerManagerTest, UnionIsCommutative);
+FUZZ_TEST(PacketTransformerManagerTest, UnionIsCommutative)
+    .WithDomains(ArbitraryValidPolicyProto(), ArbitraryValidPolicyProto());
 
 void UnionDenyIsIdentity(PolicyProto policy) {
   EXPECT_EQ(Manager().Compile(UnionProto(policy, DenyProto())),
             Manager().Compile(policy));
 }
-FUZZ_TEST(PacketTransformerManagerTest, UnionDenyIsIdentity);
+FUZZ_TEST(PacketTransformerManagerTest, UnionDenyIsIdentity)
+    .WithDomains(ArbitraryValidPolicyProto());
 
 void UnionIsIdempotent(PolicyProto policy) {
   EXPECT_EQ(Manager().Compile(UnionProto(policy, policy)),
             Manager().Compile(policy));
 }
-FUZZ_TEST(PacketTransformerManagerTest, UnionIsIdempotent);
+FUZZ_TEST(PacketTransformerManagerTest, UnionIsIdempotent)
+    .WithDomains(ArbitraryValidPolicyProto());
 
 void SequenceIsAssociative(PolicyProto a, PolicyProto b, PolicyProto c) {
   EXPECT_EQ(Manager().Compile(SequenceProto(a, SequenceProto(b, c))),
             Manager().Compile(SequenceProto(SequenceProto(a, b), c)));
 }
-FUZZ_TEST(PacketTransformerManagerTest, SequenceIsAssociative);
+FUZZ_TEST(PacketTransformerManagerTest, SequenceIsAssociative)
+    .WithDomains(ArbitraryValidPolicyProto(), ArbitraryValidPolicyProto(),
+                 ArbitraryValidPolicyProto());
 
 void SequenceAcceptIsIdentity(PolicyProto policy) {
   EXPECT_EQ(Manager().Compile(SequenceProto(policy, AcceptProto())),
@@ -240,7 +280,8 @@ void SequenceAcceptIsIdentity(PolicyProto policy) {
   EXPECT_EQ(Manager().Compile(SequenceProto(AcceptProto(), policy)),
             Manager().Compile(policy));
 }
-FUZZ_TEST(PacketTransformerManagerTest, SequenceAcceptIsIdentity);
+FUZZ_TEST(PacketTransformerManagerTest, SequenceAcceptIsIdentity)
+    .WithDomains(ArbitraryValidPolicyProto());
 
 void SequenceDenyIsAlwaysDeny(PolicyProto policy) {
   EXPECT_TRUE(
@@ -248,7 +289,8 @@ void SequenceDenyIsAlwaysDeny(PolicyProto policy) {
   EXPECT_TRUE(
       Manager().IsDeny(Manager().Compile(SequenceProto(DenyProto(), policy))));
 }
-FUZZ_TEST(PacketTransformerManagerTest, SequenceDenyIsAlwaysDeny);
+FUZZ_TEST(PacketTransformerManagerTest, SequenceDenyIsAlwaysDeny)
+    .WithDomains(ArbitraryValidPolicyProto());
 
 void DistributiveLawsHold(PolicyProto a, PolicyProto b, PolicyProto c) {
   // Left distribution.
@@ -260,7 +302,9 @@ void DistributiveLawsHold(PolicyProto a, PolicyProto b, PolicyProto c) {
       Manager().Compile(SequenceProto(UnionProto(a, b), c)),
       Manager().Compile(UnionProto(SequenceProto(a, c), SequenceProto(b, c))));
 }
-FUZZ_TEST(PacketTransformerManagerTest, DistributiveLawsHold);
+FUZZ_TEST(PacketTransformerManagerTest, DistributiveLawsHold)
+    .WithDomains(ArbitraryValidPolicyProto(), ArbitraryValidPolicyProto(),
+                 ArbitraryValidPolicyProto());
 
 void IterateUnrollOnce(PolicyProto policy) {
   // Left unroll.
@@ -272,7 +316,8 @@ void IterateUnrollOnce(PolicyProto policy) {
                 AcceptProto(), SequenceProto(IterateProto(policy), policy))),
             Manager().Compile(IterateProto(policy)));
 }
-FUZZ_TEST(PacketTransformerManagerTest, IterateUnrollOnce);
+FUZZ_TEST(PacketTransformerManagerTest, IterateUnrollOnce)
+    .WithDomains(ArbitraryValidPolicyProto());
 
 // This test checks that iterate is the least-fixed point on the left and right
 // side of a sequence. I.e. that if there is a term x such that x;y (or y;x) is
@@ -294,25 +339,30 @@ void IterateIsLeastFixedPoint(PolicyProto p, PolicyProto q, PolicyProto r) {
               Manager().Compile(q));
   }
 }
-FUZZ_TEST(PacketTransformerManagerTest, IterateIsLeastFixedPoint);
+FUZZ_TEST(PacketTransformerManagerTest, IterateIsLeastFixedPoint)
+    .WithDomains(ArbitraryValidPolicyProto(), ArbitraryValidPolicyProto(),
+                 ArbitraryValidPolicyProto());
 
 void DifferenceOfPolicyAndDenyIsIdentity(PolicyProto policy) {
   EXPECT_EQ(Manager().Compile(DifferenceProto(policy, DenyProto())),
             Manager().Compile(policy));
 }
-FUZZ_TEST(PacketTransformerManagerTest, DifferenceOfPolicyAndDenyIsIdentity);
+FUZZ_TEST(PacketTransformerManagerTest, DifferenceOfPolicyAndDenyIsIdentity)
+    .WithDomains(ArbitraryValidPolicyProto());
 
 void DifferenceOfDenyAndPolicyIsAlwaysDeny(PolicyProto policy) {
   EXPECT_EQ(Manager().Compile(DifferenceProto(DenyProto(), policy)),
             Manager().Compile(DenyProto()));
 }
-FUZZ_TEST(PacketTransformerManagerTest, DifferenceOfDenyAndPolicyIsAlwaysDeny);
+FUZZ_TEST(PacketTransformerManagerTest, DifferenceOfDenyAndPolicyIsAlwaysDeny)
+    .WithDomains(ArbitraryValidPolicyProto());
 
 void DifferenceOfPolicyAndSelfIsAlwaysDeny(PolicyProto policy) {
   EXPECT_EQ(Manager().Compile(DifferenceProto(policy, policy)),
             Manager().Deny());
 }
-FUZZ_TEST(PacketTransformerManagerTest, DifferenceOfPolicyAndSelfIsAlwaysDeny);
+FUZZ_TEST(PacketTransformerManagerTest, DifferenceOfPolicyAndSelfIsAlwaysDeny)
+    .WithDomains(ArbitraryValidPolicyProto());
 
 void DifferenceIsRightDistributiveForUnion(PolicyProto a, PolicyProto b,
                                            PolicyProto c) {
@@ -320,14 +370,17 @@ void DifferenceIsRightDistributiveForUnion(PolicyProto a, PolicyProto b,
             Manager().Compile(
                 UnionProto(DifferenceProto(a, c), DifferenceProto(b, c))));
 }
-FUZZ_TEST(PacketTransformerManagerTest, DifferenceIsRightDistributiveForUnion);
+FUZZ_TEST(PacketTransformerManagerTest, DifferenceIsRightDistributiveForUnion)
+    .WithDomains(ArbitraryValidPolicyProto(), ArbitraryValidPolicyProto(),
+                 ArbitraryValidPolicyProto());
 
 void DifferenceOfPolicyIsSubsetOfSelf(PolicyProto a, PolicyProto b) {
   // (A - B is a subset of A) <==> A + (A - B) == A).
   EXPECT_EQ(Manager().Compile(UnionProto(a, DifferenceProto(a, b))),
             Manager().Compile(a));
 }
-FUZZ_TEST(PacketTransformerManagerTest, DifferenceOfPolicyIsSubsetOfSelf);
+FUZZ_TEST(PacketTransformerManagerTest, DifferenceOfPolicyIsSubsetOfSelf)
+    .WithDomains(ArbitraryValidPolicyProto(), ArbitraryValidPolicyProto());
 
 /*--- Tests with concrete protos ---------------------------------------------*/
 
@@ -457,7 +510,8 @@ void RunIsSameAsEvaluate(PolicyProto policy, Packet packet) {
               ContainerEq(Evaluate(policy, packet)));
   EXPECT_EQ(packet, original_packet);
 }
-FUZZ_TEST(PacketTransformerManagerTest, RunIsSameAsEvaluate);
+FUZZ_TEST(PacketTransformerManagerTest, RunIsSameAsEvaluate)
+    .WithDomains(ArbitraryValidPolicyProto(), Arbitrary<Packet>());
 
 TEST(PacketTransformerManagerTest, SimpleSequenceRunTest1) {
   // !(once=1) ; a:=1 ; once:=1
@@ -858,17 +912,7 @@ void PacketsFromRunAreInPushPacketSet(PredicateProto predicate,
   }
 }
 FUZZ_TEST(PacketTransformerManagerTest, PacketsFromRunAreInPushPacketSet)
-    // We restrict to two field names and three field value  to increases the
-    // likelihood for coverage for predicates/policies that match/modify the
-    // same field several times.
-    .WithDomains(Arbitrary<PredicateProto>()
-                     .WithFieldsAlwaysSet()
-                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
-                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})),
-                 Arbitrary<PolicyProto>()
-                     .WithFieldsAlwaysSet()
-                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
-                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})));
+    .WithDomains(PredicateWithRestrictedFields(), PolicyWithRestrictedFields());
 
 void PulledPacketGetsRunThroughTransformerBelongsToInputPacketSet(
     PredicateProto predicate, PolicyProto policy) {
@@ -897,17 +941,7 @@ void PulledPacketGetsRunThroughTransformerBelongsToInputPacketSet(
 }
 FUZZ_TEST(PacketTransformerManagerTest,
           PulledPacketGetsRunThroughTransformerBelongsToInputPacketSet)
-    // We restrict to two field names and three field value  to increases the
-    // likelihood for coverage for policies that modify the same field several
-    // times.
-    .WithDomains(Arbitrary<PredicateProto>()
-                     .WithFieldsAlwaysSet()
-                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
-                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})),
-                 Arbitrary<PolicyProto>()
-                     .WithFieldsAlwaysSet()
-                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
-                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})));
+    .WithDomains(PredicateWithRestrictedFields(), PolicyWithRestrictedFields());
 
 void PushOnFilterIsSameAsAnd(PredicateProto left, PredicateProto right) {
   PacketSetHandle left_set = Manager().GetPacketSetManager().Compile(left);
@@ -916,17 +950,8 @@ void PushOnFilterIsSameAsAnd(PredicateProto left, PredicateProto right) {
             Manager().GetPacketSetManager().And(left_set, right_set));
 }
 FUZZ_TEST(PacketTransformerManagerTest, PushOnFilterIsSameAsAnd)
-    // We restrict to two field names and three field value  to increases the
-    // likelihood for coverage for policies that modify the same field several
-    // times.
-    .WithDomains(Arbitrary<PredicateProto>()
-                     .WithFieldsAlwaysSet()
-                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
-                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})),
-                 Arbitrary<PredicateProto>()
-                     .WithFieldsAlwaysSet()
-                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
-                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})));
+    .WithDomains(PredicateWithRestrictedFields(),
+                 PredicateWithRestrictedFields());
 
 void PushAndPullRoundTrippingHoldsForFullSet(PolicyProto policy) {
   PacketTransformerHandle transformer = Manager().Compile(policy);
@@ -937,13 +962,7 @@ void PushAndPullRoundTrippingHoldsForFullSet(PolicyProto policy) {
             Manager().Pull(transformer, Manager().Push(full_set, transformer)));
 }
 FUZZ_TEST(PacketTransformerManagerTest, PushAndPullRoundTrippingHoldsForFullSet)
-    // We restrict to two field names and three field value  to increases the
-    // likelihood for coverage for policies that modify the same field several
-    // times.
-    .WithDomains(Arbitrary<PolicyProto>()
-                     .WithFieldsAlwaysSet()
-                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
-                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})));
+    .WithDomains(PolicyWithRestrictedFields());
 
 }  // namespace
 
@@ -1043,12 +1062,7 @@ void GetAllPossibleOutputPacketsIsSameAsReferenceImplementation(
 }
 FUZZ_TEST(PacketTransformerManagerTest,
           GetAllPossibleOutputPacketsIsSameAsReferenceImplementation)
-    // We restrict to two field names and three field value  to increases the
-    // likelihood for coverage for policies that modify the same field several
-    // times.
-    .WithDomains(Arbitrary<PolicyProto>()
-                     .WithFieldsAlwaysSet()
-                     .WithStringFields(ElementOf<std::string>({"f", "g"}))
-                     .WithInt32Fields(ElementOf<int32_t>({1, 2, 3})));
+    .WithDomains(PolicyWithRestrictedFields());
+
 }  // namespace
 }  // namespace netkat
