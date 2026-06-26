@@ -44,33 +44,6 @@
 
 namespace netkat {
 
-// The Deny and Accept transformers are not decision nodes, and thus we cannot
-// associate an index into the `nodes_` vector with them. Instead, we represent
-// them using sentinel values, chosen maximally to avoid collisions with proper
-// indices.
-enum SentinelNodeIndex : uint32_t {
-  // Encodes the Deny transformer.
-  kDeny = std::numeric_limits<uint32_t>::max(),
-  // Encodes the Accept transformer.
-  kAccept = std::numeric_limits<uint32_t>::max() - 1,
-  // The minimum sentinel node index.
-  // Smaller values are reserved for proper indices into the `nodes_` vector.
-  kMinSentinel = kAccept,
-};
-
-PacketTransformerHandle::PacketTransformerHandle()
-    : node_index_(SentinelNodeIndex::kDeny) {}
-
-std::string PacketTransformerHandle::ToString() const {
-  if (node_index_ == SentinelNodeIndex::kDeny) {
-    return "PacketTransformerHandle<deny>";
-  } else if (node_index_ == SentinelNodeIndex::kAccept) {
-    return "PacketTransformerHandle<accept>";
-  } else {
-    return absl::StrFormat("PacketTransformerHandle<%d>", node_index_);
-  }
-}
-
 PacketTransformerManager::PacketTransformerManager()
     : packet_set_manager_(*this) {}
 
@@ -200,7 +173,7 @@ PacketTransformerHandle PacketTransformerManager::NodeToTransformer(
       node, PacketTransformerHandle(nodes_.size()));
   if (inserted) {
     nodes_.push_back(std::move(node));
-    LOG_IF(DFATAL, nodes_.size() > SentinelNodeIndex::kMinSentinel)
+    LOG_IF(DFATAL, nodes_.size() > PacketTransformerHandle::kMinSentinel)
         << "Internal invariant violated: Proper and sentinel node indices must "
            "be disjoint. This indicates that we allocated more nodes than are "
            "supported (> 2^32 - 2).";
@@ -346,11 +319,11 @@ PacketTransformerHandle PacketTransformerManager::Compile(
 }
 
 PacketTransformerHandle PacketTransformerManager::Deny() const {
-  return PacketTransformerHandle(SentinelNodeIndex::kDeny);
+  return PacketTransformerHandle(PacketTransformerHandle::kDeny);
 }
 
 PacketTransformerHandle PacketTransformerManager::Accept() const {
-  return PacketTransformerHandle(SentinelNodeIndex::kAccept);
+  return PacketTransformerHandle(PacketTransformerHandle::kAccept);
 }
 
 PacketTransformerHandle PacketTransformerManager::FromPacketSetHandle(
@@ -1058,20 +1031,20 @@ std::string PacketTransformerManager::ToDot(
 
   if (IsAccept(transformer)) {
     absl::StrAppendFormat(&result, "  %d [label=\"T\" shape=box]\n",
-                          SentinelNodeIndex::kAccept);
+                          PacketTransformerHandle::kAccept);
     absl::StrAppend(&result, "}\n");
     return result;
   }
   if (IsDeny(transformer)) {
     absl::StrAppendFormat(&result, "  %d [label=\"F\" shape=box]\n",
-                          SentinelNodeIndex::kDeny);
+                          PacketTransformerHandle::kDeny);
     absl::StrAppend(&result, "}\n");
     return result;
   }
   absl::StrAppendFormat(&result, "  %d [label=\"T\" shape=box]\n",
-                        SentinelNodeIndex::kAccept);
+                        PacketTransformerHandle::kAccept);
   absl::StrAppendFormat(&result, "  %d [label=\"F\" shape=box]\n",
-                        SentinelNodeIndex::kDeny);
+                        PacketTransformerHandle::kDeny);
   std::queue<PacketTransformerHandle> work_list;
   work_list.push(transformer);
   absl::flat_hash_set<PacketTransformerHandle> visited = {transformer};
@@ -1089,9 +1062,9 @@ std::string PacketTransformerManager::ToDot(
                           transformer.node_index_, field);
     for (const auto& [value, modify_map] : node.modify_branch_by_field_match) {
       if (modify_map.empty()) {
-        absl::StrAppendFormat(&result, "  %d -> %d [label=\"%s==%s\"]\n",
-                              transformer.node_index_, SentinelNodeIndex::kDeny,
-                              field, absl::StrCat(value));
+        absl::StrAppendFormat(
+            &result, "  %d -> %d [label=\"%s==%s\"]\n", transformer.node_index_,
+            PacketTransformerHandle::kDeny, field, absl::StrCat(value));
       }
       for (const auto& [new_value, branch] : modify_map) {
         absl::StrAppendFormat(&result,
@@ -1126,7 +1099,7 @@ std::string PacketTransformerManager::ToDot(
 
 absl::Status PacketTransformerManager::CheckInternalInvariants() const {
   // Invariant: Proper and sentinel node indices are disjoint.
-  RET_CHECK(nodes_.size() <= SentinelNodeIndex::kMinSentinel);
+  RET_CHECK(nodes_.size() <= PacketTransformerHandle::kMinSentinel);
 
   // Invariant: `transformer_by_node_[n] = s` iff `nodes_[s.node_index_] ==
   // n`.

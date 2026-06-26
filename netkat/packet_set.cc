@@ -37,42 +37,15 @@
 
 namespace netkat {
 
-// The empty and full set of packets are not decision nodes, and thus we cannot
-// associate an index into the `nodes_` vector with them. Instead, we represent
-// them using sentinel values, chosen maximally to avoid collisions with proper
-// indices.
-enum SentinelNodeIndex : uint32_t {
-  // Encodes the empty set of packets.
-  kEmptySet = std::numeric_limits<uint32_t>::max(),
-  // Encodes the full set of packets.
-  kFullSet = std::numeric_limits<uint32_t>::max() - 1,
-  // The minimum sentinel node index.
-  // Smaller values are reserved for proper indices into the `nodes_` vector.
-  kMinSentinel = kFullSet,
-};
-
-PacketSetHandle::PacketSetHandle()
-    : node_index_(SentinelNodeIndex::kEmptySet) {}
-
-std::string PacketSetHandle::ToString() const {
-  if (node_index_ == SentinelNodeIndex::kEmptySet) {
-    return "PacketSetHandle<empty>";
-  } else if (node_index_ == SentinelNodeIndex::kFullSet) {
-    return "PacketSetHandle<full>";
-  } else {
-    return absl::StrFormat("PacketSetHandle<%d>", node_index_);
-  }
-}
-
 PacketSetManager::PacketSetManager(PacketTransformerManager& transformer)
     : transformer_(&transformer) {}
 
 PacketSetHandle PacketSetManager::EmptySet() const {
-  return PacketSetHandle(SentinelNodeIndex::kEmptySet);
+  return PacketSetHandle(PacketSetHandle::kEmptySet);
 }
 
 PacketSetHandle PacketSetManager::FullSet() const {
-  return PacketSetHandle(SentinelNodeIndex::kFullSet);
+  return PacketSetHandle(PacketSetHandle::kFullSet);
 }
 
 bool PacketSetManager::IsEmptySet(PacketSetHandle packet_set) const {
@@ -117,7 +90,7 @@ PacketSetHandle PacketSetManager::NodeToPacket(DecisionNode&& node) {
       packet_by_node_.try_emplace(node, PacketSetHandle(nodes_.size()));
   if (inserted) {
     nodes_.push_back(std::move(node));
-    LOG_IF(DFATAL, nodes_.size() > SentinelNodeIndex::kMinSentinel)
+    LOG_IF(DFATAL, nodes_.size() > PacketSetHandle::kMinSentinel)
         << "Internal invariant violated: Proper and sentinel node indices must "
            "be disjoint. This indicates that we allocated more nodes than are "
            "supported (> 2^32 - 2).";
@@ -151,21 +124,21 @@ std::string PacketSetManager::ToDot(PacketSetHandle packet_set) const {
   work_list.push(packet_set);
   if (IsFullSet(packet_set)) {
     absl::StrAppendFormat(&result, "  %d [label=\"T\" shape=box]\n",
-                          SentinelNodeIndex::kFullSet);
+                          PacketSetHandle::kFullSet);
     absl::StrAppend(&result, "}\n");
     return result;
   }
   if (IsEmptySet(packet_set)) {
     absl::StrAppendFormat(&result, "  %d [label=\"F\" shape=box]\n",
-                          SentinelNodeIndex::kEmptySet);
+                          PacketSetHandle::kEmptySet);
     absl::StrAppend(&result, "}\n");
     return result;
   }
   absl::flat_hash_set<PacketSetHandle> visited = {packet_set};
   absl::StrAppendFormat(&result, "  %d [label=\"T\" shape=box]\n",
-                        SentinelNodeIndex::kFullSet);
+                        PacketSetHandle::kFullSet);
   absl::StrAppendFormat(&result, "  %d [label=\"F\" shape=box]\n",
-                        SentinelNodeIndex::kEmptySet);
+                        PacketSetHandle::kEmptySet);
 
   while (!work_list.empty()) {
     PacketSetHandle packet_set = work_list.front();
@@ -493,7 +466,7 @@ std::string PacketSetManager::ToString(const DecisionNode& node) const {
 
 absl::Status PacketSetManager::CheckInternalInvariants() const {
   // Invariant: Proper and sentinel node indices are disjoint.
-  RET_CHECK(nodes_.size() <= SentinelNodeIndex::kMinSentinel);
+  RET_CHECK(nodes_.size() <= PacketSetHandle::kMinSentinel);
 
   // Invariant: `packet_by_node_[n] = s` iff `nodes_[s.node_index_] == n`.
   for (const auto& [node, packet] : packet_by_node_) {

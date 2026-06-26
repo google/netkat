@@ -338,6 +338,22 @@ cc_test(
 )
 
 cc_library(
+    name = "packet_transformer_handle",
+    hdrs = ["packet_transformer_handle.h"],
+    deps = [
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_library(
+    name = "packet_set_handle",
+    hdrs = ["packet_set_handle.h"],
+    deps = [
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_library(
     name = "packet_transformer",
     srcs = [
         "packet_set.cc",
@@ -351,6 +367,8 @@ cc_library(
         ":netkat_cc_proto",
         ":packet",
         ":packet_field",
+        ":packet_set_handle",
+        ":packet_transformer_handle",
         ":paged_stable_vector",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:btree",

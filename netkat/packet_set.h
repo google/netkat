@@ -16,7 +16,7 @@
 // File: packet_set.h
 // -----------------------------------------------------------------------------
 //
-// Defines `PacketSetHandle` and its companion class `PacketSetManager`
+// Defines `PacketSetManager`, the companion class to `PacketSetHandle`
 // following the manager-handle pattern described in
 // `manager_handle_pattern.md`. Together, they provide an often compact and
 // efficient representation of large and even infinite packet sets, exploiting
@@ -58,68 +58,10 @@
 #include "netkat/netkat.pb.h"
 #include "netkat/packet.h"
 #include "netkat/packet_field.h"
+#include "netkat/packet_set_handle.h"
 #include "netkat/paged_stable_vector.h"
 
 namespace netkat {
-
-// A lightweight handle (32 bits) representing a set of packets. The
-// representation can efficiently encode typical large and even infinite sets
-// seen in practice.
-//
-// The APIs of this object are almost entirely defined as methods of the
-// companion class `PacketSetManager`, following the manager-handle pattern
-// described in `manager_handle_pattern.md`.
-//
-// CAUTION: Each `PacketSetHandle` is implicitly associated with the manager
-// object that created it; using it with a different manager has undefined
-// behavior.
-//
-// This data structure enjoys the following powerful *canonicity property*: two
-// handles represent the same set if and only if they have the same memory
-// representation. Since the memory representation is just 32 bits, semantic set
-// equality is cheap: O(1)!
-class [[nodiscard]] PacketSetHandle {
- public:
-  // Default constructor: the empty set of packets.
-  PacketSetHandle();
-
-  // Two packet set handles compare equal iff they represent the same set of
-  // concrete packets. Comparison is O(1), thanks to interning/hash-consing.
-  friend auto operator<=>(PacketSetHandle a, PacketSetHandle b) = default;
-
-  // Hashing, see https://abseil.io/docs/cpp/guides/hash.
-  template <typename H>
-  friend H AbslHashValue(H h, PacketSetHandle packet_set) {
-    return H::combine(std::move(h), packet_set.node_index_);
-  }
-
-  // Formatting, see https://abseil.io/docs/cpp/guides/abslstringify.
-  // NOTE: These functions do not produce particularly useful output. Instead,
-  // use `PacketSetManager::ToString(packet_set)` whenever possible.
-  template <typename Sink>
-  friend void AbslStringify(Sink& sink, PacketSetHandle packet_set) {
-    absl::Format(&sink, "%s", packet_set.ToString());
-  }
-  std::string ToString() const;
-
- private:
-  // An index into the `nodes_` vector of the `PacketSetManager` object
-  // associated with this `PacketSetHandle`. The semantics of this packet set
-  // is entirely determined by the node `nodes_[node_index_]`. The index is
-  // otherwise arbitrary and meaningless.
-  //
-  // We use a 32-bit index as a tradeoff between minimizing memory usage and
-  // maximizing the number of `PacketSetHandle`s that can be created, both
-  // aspects that impact how well we scale to large NetKAT models. We expect
-  // millions, but not billions, of packet sets in practice, and 2^32 ~= 4
-  // billion.
-  uint32_t node_index_;
-  explicit PacketSetHandle(uint32_t node_index) : node_index_(node_index) {}
-  friend class PacketSetManager;
-};
-
-// Protect against regressions in the memory layout, as it affects performance.
-static_assert(sizeof(PacketSetHandle) <= 4);
 
 // An "arena" in which `PacketSetHandle`s can be created and manipulated
 // (following the manager-handle pattern, see `manager_handle_pattern.md`).
