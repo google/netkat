@@ -136,6 +136,17 @@ void DifferenceProtoReturnsDifference(PolicyProto left, PolicyProto right) {
 }
 FUZZ_TEST(PolicyProtoTest, DifferenceProtoReturnsDifference);
 
+void SymmetricDifferenceProtoReturnsSymmetricDifference(PolicyProto left,
+                                                        PolicyProto right) {
+  PolicyProto expected_policy;
+  *expected_policy.mutable_symmetric_difference_op()->mutable_left() = left;
+  *expected_policy.mutable_symmetric_difference_op()->mutable_right() = right;
+
+  EXPECT_THAT(SymmetricDifferenceProto(left, right),
+              EqualsProto(expected_policy));
+}
+FUZZ_TEST(PolicyProtoTest, SymmetricDifferenceProtoReturnsSymmetricDifference);
+
 // -- Derived Policy tests -----------------------------------------------------
 
 TEST(PolicyProtoTest, DenyProtoFiltersOnFalse) {
