@@ -320,6 +320,10 @@ class PacketSetManager {
                       PacketSetHandle>
       and_cache_;
 
+  // A memoization table for the `Not` operation.
+  // Maps an argument handle to its computed complement handle.
+  absl::flat_hash_map<PacketSetHandle, PacketSetHandle> not_cache_;
+
   // INVARIANT: All `DecisionNode` fields are interned by this manager.
   PacketFieldManager field_manager_;
 
