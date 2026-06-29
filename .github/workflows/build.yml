@@ -37,10 +37,10 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: "~/.cache/bazel"
-          key: bazel-${{ hashFiles('*.bazel', '*.bazelrc') }}-${{ github.ref_name }}
+          key: bazel-ubuntu-22.04-${{ hashFiles('*.bazel', '*.bazelrc') }}-${{ github.ref_name }}
           restore-keys: |
-            bazel-${{hashFiles('*.bazel', '*.bazelrc') }}
-            bazel-
+            bazel-ubuntu-22.04-${{ hashFiles('*.bazel', '*.bazelrc') }}
+            bazel-ubuntu-22.04-
 
       - name: Save start time
         uses: josStorer/get-current-time@v2
@@ -89,4 +89,4 @@ jobs:
         if: always() && (github.ref_name == 'main' || env.duration > 300)
         with:
           path: "~/.cache/bazel"
-          key: bazel-${{ hashFiles('*.bazel', '*.bazelrc') }}-${{ github.ref_name }}-${{ github.run_id }}
+          key: bazel-ubuntu-22.04-${{ hashFiles('*.bazel', '*.bazelrc') }}-${{ github.ref_name }}-${{ github.run_id }}
