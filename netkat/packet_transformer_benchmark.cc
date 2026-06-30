@@ -200,4 +200,82 @@ void BM_ReCompileUnionOrSequenceWithHighOverlappingPolicy(
 }
 BENCHMARK(BM_ReCompileUnionOrSequenceWithHighOverlappingPolicy);
 
+// Benchmarks the first-time cost of compiling a policy with a high degree of
+// overlapping substructures, exercising memoization (especially Difference
+// cache).
+void BM_FirstTimeCompileDifferenceWithHighOverlappingPolicy(
+    benchmark::State& state) {
+  // 1. Create base policies. Using 3 distinct base BDD structures creates
+  // significant BDD complexity and overlap when combined in a DAG.
+  std::vector<PolicyProto> policies;
+  policies.reserve(6);
+  for (int i = 0; i < 6; ++i) {
+    policies.push_back(CreateFixedArbitraryPolicyProto(/*id_suffix=*/i % 3));
+  }
+
+  // 2. Combine them into a DAG of policies. We do this in 6 layers to
+  // prevent the exponential growth of the protobuf tree from dwarfing BDD
+  // compilation time.
+  for (int layer = 0; layer < 6; ++layer) {
+    std::vector<PolicyProto> next_layer;
+    for (size_t i = 0; i < policies.size(); ++i) {
+      size_t next_idx = (i + 1) % policies.size();
+      if (i % 2 == 0) {
+        next_layer.push_back(DifferenceProto(policies[i], policies[next_idx]));
+      } else {
+        next_layer.push_back(DifferenceProto(policies[next_idx], policies[i]));
+      }
+    }
+    policies = std::move(next_layer);
+  }
+
+  for (auto s : state) {
+    PacketTransformerManager manager;
+    PacketTransformerHandle handle;
+    for (auto& policy : policies) {
+      handle = manager.Compile(policy);
+      benchmark::DoNotOptimize(handle);
+    }
+  }
+}
+BENCHMARK(BM_FirstTimeCompileDifferenceWithHighOverlappingPolicy);
+
+// Benchmarks the cost of compiling a policy with a high degree of
+// overlapping substructures, that has already been compiled once before.
+// Excludes the initial cost of compilation.
+void BM_ReCompileDifferenceWithHighOverlappingPolicy(benchmark::State& state) {
+  std::vector<PolicyProto> policies;
+  policies.reserve(6);
+  for (int i = 0; i < 6; ++i) {
+    policies.push_back(CreateFixedArbitraryPolicyProto(/*id_suffix=*/i % 3));
+  }
+
+  for (int layer = 0; layer < 6; ++layer) {
+    std::vector<PolicyProto> next_layer;
+    for (size_t i = 0; i < policies.size(); ++i) {
+      size_t next_idx = (i + 1) % policies.size();
+      if (i % 2 == 0) {
+        next_layer.push_back(DifferenceProto(policies[i], policies[next_idx]));
+      } else {
+        next_layer.push_back(DifferenceProto(policies[next_idx], policies[i]));
+      }
+    }
+    policies = std::move(next_layer);
+  }
+
+  PacketTransformerManager manager;
+  PacketTransformerHandle handle;
+  for (auto& policy : policies) {
+    handle = manager.Compile(policy);
+    benchmark::DoNotOptimize(handle);
+  }
+  for (auto s : state) {
+    for (auto& policy : policies) {
+      handle = manager.Compile(policy);
+      benchmark::DoNotOptimize(handle);
+    }
+  }
+}
+BENCHMARK(BM_ReCompileDifferenceWithHighOverlappingPolicy);
+
 }  // namespace netkat

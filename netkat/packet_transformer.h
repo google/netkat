@@ -387,6 +387,13 @@ class PacketTransformerManager {
       PacketTransformerHandle>
       sequence_cache_;
 
+  // A memoization table for the `Difference` operation.
+  // Maps a pair of argument handles to their computed difference handle.
+  absl::flat_hash_map<
+      std::pair<PacketTransformerHandle, PacketTransformerHandle>,
+      PacketTransformerHandle>
+      difference_cache_;
+
   // INVARIANT: All `DecisionNode` fields are interned by this manager's
   // PacketFieldManager.
   PacketSetManager packet_set_manager_;

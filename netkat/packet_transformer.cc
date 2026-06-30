@@ -57,6 +57,7 @@ PacketTransformerManager::PacketTransformerManager(
       transformer_by_hash_(std::move(other.transformer_by_hash_)),
       union_cache_(std::move(other.union_cache_)),
       sequence_cache_(std::move(other.sequence_cache_)),
+      difference_cache_(std::move(other.difference_cache_)),
       packet_set_manager_(std::move(other.packet_set_manager_)) {
   packet_set_manager_.transformer_ = this;
 }
@@ -69,6 +70,7 @@ PacketTransformerManager& PacketTransformerManager::operator=(
     transformer_by_hash_ = std::move(other.transformer_by_hash_);
     union_cache_ = std::move(other.union_cache_);
     sequence_cache_ = std::move(other.sequence_cache_);
+    difference_cache_ = std::move(other.difference_cache_);
     packet_set_manager_ = std::move(other.packet_set_manager_);
     packet_set_manager_.transformer_ = this;
   }
@@ -754,23 +756,32 @@ PacketTransformerHandle PacketTransformerManager::Difference(
   if (IsDeny(left)) return Deny();
   if (IsDeny(right)) return left;
 
+  // Difference is NOT commutative, so we do not normalize the keys.
+  std::pair<PacketTransformerHandle, PacketTransformerHandle> cache_key =
+      std::make_pair(left, right);
+  if (auto it = difference_cache_.find(cache_key);
+      it != difference_cache_.end()) {
+    return it->second;
+  }
+
   // If either node is accept, then expand it before merging.
   if (IsAccept(left)) {
     const DecisionNode& right_node = GetNodeOrDie(right);
-    return Difference(
-        DecisionNode{
-            .field = right_node.field,
-            .default_branch = Accept(),
-        },
-        right_node);
+    return difference_cache_[cache_key] = Difference(
+               DecisionNode{
+                   .field = right_node.field,
+                   .default_branch = Accept(),
+               },
+               right_node);
   }
 
   if (IsAccept(right)) {
     const DecisionNode& left_node = GetNodeOrDie(left);
-    return Difference(left_node, DecisionNode{
-                                     .field = left_node.field,
-                                     .default_branch = Accept(),
-                                 });
+    return difference_cache_[cache_key] =
+               Difference(left_node, DecisionNode{
+                                         .field = left_node.field,
+                                         .default_branch = Accept(),
+                                     });
   }
 
   // If neither node is accept or deny, then difference the nodes directly.
