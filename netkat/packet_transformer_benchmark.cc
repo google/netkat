@@ -21,6 +21,7 @@
 #include "benchmark/benchmark.h"
 #include "netkat/netkat.pb.h"
 #include "netkat/netkat_proto_constructors.h"
+#include "netkat/packet_set_handle.h"
 #include "netkat/packet_transformer.h"
 #include "netkat/packet_transformer_handle.h"
 
@@ -121,11 +122,8 @@ void BM_ReCompileOverlappingPolicy(benchmark::State& state) {
 }
 BENCHMARK(BM_ReCompileOverlappingPolicy);
 
-// Benchmarks the first-time cost of compiling a policy with a high degree of
-// overlapping substructures, exercising memoization (especially Union and
-// Sequence cache).
-void BM_FirstTimeCompileUnionOrSequenceWithHighOverlappingPolicy(
-    benchmark::State& state) {
+// Helper to create a high-overlapping policy for benchmarking.
+std::vector<PolicyProto> CreateUnionOrSequenceWithHighOverlappingPolicies() {
   // 1. Create base policies. Using 3 distinct base BDD structures creates
   // significant BDD complexity and overlap when combined in a DAG.
   std::vector<PolicyProto> policies;
@@ -149,6 +147,16 @@ void BM_FirstTimeCompileUnionOrSequenceWithHighOverlappingPolicy(
     }
     policies = std::move(next_layer);
   }
+  return policies;
+}
+
+// Benchmarks the first-time cost of compiling a policy with a high degree of
+// overlapping substructures, exercising memoization (especially Union and
+// Sequence cache).
+void BM_FirstTimeCompileUnionOrSequenceWithHighOverlappingPolicy(
+    benchmark::State& state) {
+  std::vector<PolicyProto> policies =
+      CreateUnionOrSequenceWithHighOverlappingPolicies();
 
   for (auto s : state) {
     PacketTransformerManager manager;
@@ -166,24 +174,8 @@ BENCHMARK(BM_FirstTimeCompileUnionOrSequenceWithHighOverlappingPolicy);
 // Excludes the initial cost of compilation.
 void BM_ReCompileUnionOrSequenceWithHighOverlappingPolicy(
     benchmark::State& state) {
-  std::vector<PolicyProto> policies;
-  policies.reserve(6);
-  for (int i = 0; i < 6; ++i) {
-    policies.push_back(CreateFixedArbitraryPolicyProto(/*id_suffix=*/i % 3));
-  }
-
-  for (int layer = 0; layer < 6; ++layer) {
-    std::vector<PolicyProto> next_layer;
-    for (size_t i = 0; i < policies.size(); ++i) {
-      size_t next_idx = (i + 1) % policies.size();
-      if (i % 2 == 0) {
-        next_layer.push_back(SequenceProto(policies[i], policies[next_idx]));
-      } else {
-        next_layer.push_back(UnionProto(policies[i], policies[next_idx]));
-      }
-    }
-    policies = std::move(next_layer);
-  }
+  std::vector<PolicyProto> policies =
+      CreateUnionOrSequenceWithHighOverlappingPolicies();
 
   PacketTransformerManager manager;
   PacketTransformerHandle handle;
@@ -344,5 +336,59 @@ void BM_ReCompileIterateWithEquivalentPolicies(benchmark::State& state) {
   }
 }
 BENCHMARK(BM_ReCompileIterateWithEquivalentPolicies);
+
+// Benchmarks the first-time cost of running GetAllPossibleOutputPackets on a
+// transformer with a high degree of overlapping substructures.
+// This exercises the cache during the recursive walk of the transformer BDD.
+void BM_FirstTimeGetAllPossibleOutputPacketsWithHighOverlappingPolicy(
+    benchmark::State& state) {
+  std::vector<PolicyProto> policies =
+      CreateUnionOrSequenceWithHighOverlappingPolicies();
+
+  for (auto s : state) {
+    state.PauseTiming();
+    PacketTransformerManager manager;
+    std::vector<PacketTransformerHandle> handles;
+    handles.reserve(policies.size());
+    for (auto& policy : policies) {
+      handles.push_back(manager.Compile(policy));
+    }
+    state.ResumeTiming();
+
+    for (auto handle : handles) {
+      PacketSetHandle output = manager.GetAllPossibleOutputPackets(handle);
+      benchmark::DoNotOptimize(output);
+    }
+  }
+}
+BENCHMARK(BM_FirstTimeGetAllPossibleOutputPacketsWithHighOverlappingPolicy);
+
+// Benchmarks the cost of running GetAllPossibleOutputPackets repeatedly on the
+// same transformer. This should hit the cache and be O(1).
+void BM_RepeatedGetAllPossibleOutputPacketsWithHighOverlappingPolicy(
+    benchmark::State& state) {
+  std::vector<PolicyProto> policies =
+      CreateUnionOrSequenceWithHighOverlappingPolicies();
+
+  PacketTransformerManager manager;
+  std::vector<PacketTransformerHandle> handles;
+  handles.reserve(policies.size());
+  for (auto& policy : policies) {
+    handles.push_back(manager.Compile(policy));
+  }
+  // Run it once to populate the cache.
+  for (auto handle : handles) {
+    PacketSetHandle output = manager.GetAllPossibleOutputPackets(handle);
+    benchmark::DoNotOptimize(output);
+  }
+
+  for (auto s : state) {
+    for (auto handle : handles) {
+      PacketSetHandle output = manager.GetAllPossibleOutputPackets(handle);
+      benchmark::DoNotOptimize(output);
+    }
+  }
+}
+BENCHMARK(BM_RepeatedGetAllPossibleOutputPacketsWithHighOverlappingPolicy);
 
 }  // namespace netkat

@@ -60,6 +60,8 @@ PacketTransformerManager::PacketTransformerManager(
       difference_cache_(std::move(other.difference_cache_)),
       iterate_cache_(std::move(other.iterate_cache_)),
       from_packet_set_cache_(std::move(other.from_packet_set_cache_)),
+      get_all_possible_outputs_cache_(
+          std::move(other.get_all_possible_outputs_cache_)),
       packet_set_manager_(std::move(other.packet_set_manager_)) {
   packet_set_manager_.transformer_ = this;
 }
@@ -75,6 +77,8 @@ PacketTransformerManager& PacketTransformerManager::operator=(
     difference_cache_ = std::move(other.difference_cache_);
     iterate_cache_ = std::move(other.iterate_cache_);
     from_packet_set_cache_ = std::move(other.from_packet_set_cache_);
+    get_all_possible_outputs_cache_ =
+        std::move(other.get_all_possible_outputs_cache_);
     packet_set_manager_ = std::move(other.packet_set_manager_);
     packet_set_manager_.transformer_ = this;
   }
@@ -820,6 +824,11 @@ PacketSetHandle PacketTransformerManager::GetAllPossibleOutputPackets(
   if (IsAccept(transformer)) return packet_set_manager_.FullSet();
   if (IsDeny(transformer)) return packet_set_manager_.EmptySet();
 
+  if (auto it = get_all_possible_outputs_cache_.find(transformer);
+      it != get_all_possible_outputs_cache_.end()) {
+    return it->second;
+  }
+
   const DecisionNode& node = GetNodeOrDie(transformer);
   PacketSetHandle default_output =
       GetAllPossibleOutputPackets(node.default_branch);
@@ -892,11 +901,12 @@ PacketSetHandle PacketTransformerManager::GetAllPossibleOutputPackets(
     return left.first < right.first;
   });
 
-  return packet_set_manager_.NodeToPacket({
-      .field = node.field,
-      .default_branch = default_output,
-      .branch_by_field_value = std::move(output_by_field_value_list),
-  });
+  return get_all_possible_outputs_cache_[transformer] =
+             packet_set_manager_.NodeToPacket({
+                 .field = node.field,
+                 .default_branch = default_output,
+                 .branch_by_field_value = std::move(output_by_field_value_list),
+             });
 }
 
 PacketSetHandle PacketTransformerManager::Push(

@@ -404,6 +404,11 @@ class PacketTransformerManager {
   absl::flat_hash_map<PacketSetHandle, PacketTransformerHandle>
       from_packet_set_cache_;
 
+  // A memoization table for the `GetAllPossibleOutputPackets` operation.
+  // Maps a transformer handle to its computed output packet set handle.
+  absl::flat_hash_map<PacketTransformerHandle, PacketSetHandle>
+      get_all_possible_outputs_cache_;
+
   // INVARIANT: All `DecisionNode` fields are interned by this manager's
   // PacketFieldManager.
   PacketSetManager packet_set_manager_;
