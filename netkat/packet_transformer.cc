@@ -62,6 +62,7 @@ PacketTransformerManager::PacketTransformerManager(
       from_packet_set_cache_(std::move(other.from_packet_set_cache_)),
       get_all_possible_outputs_cache_(
           std::move(other.get_all_possible_outputs_cache_)),
+      get_all_inputs_cache_(std::move(other.get_all_inputs_cache_)),
       packet_set_manager_(std::move(other.packet_set_manager_)) {
   packet_set_manager_.transformer_ = this;
 }
@@ -79,6 +80,7 @@ PacketTransformerManager& PacketTransformerManager::operator=(
     from_packet_set_cache_ = std::move(other.from_packet_set_cache_);
     get_all_possible_outputs_cache_ =
         std::move(other.get_all_possible_outputs_cache_);
+    get_all_inputs_cache_ = std::move(other.get_all_inputs_cache_);
     packet_set_manager_ = std::move(other.packet_set_manager_);
     packet_set_manager_.transformer_ = this;
   }
@@ -921,6 +923,11 @@ PacketTransformerManager::GetAllInputPacketsThatProduceAnyOutput(
   if (IsAccept(transformer)) return packet_set_manager_.FullSet();
   if (IsDeny(transformer)) return packet_set_manager_.EmptySet();
 
+  if (auto it = get_all_inputs_cache_.find(transformer);
+      it != get_all_inputs_cache_.end()) {
+    return it->second;
+  }
+
   const DecisionNode& node = GetNodeOrDie(transformer);
 
   // Case 1: Input packets that hit the default branch and got modified.
@@ -983,11 +990,11 @@ PacketTransformerManager::GetAllInputPacketsThatProduceAnyOutput(
     return left.first < right.first;
   });
 
-  return packet_set_manager_.NodeToPacket({
-      .field = node.field,
-      .default_branch = default_branch,
-      .branch_by_field_value = std::move(branch_by_field_value_list),
-  });
+  return get_all_inputs_cache_[transformer] = packet_set_manager_.NodeToPacket({
+             .field = node.field,
+             .default_branch = default_branch,
+             .branch_by_field_value = std::move(branch_by_field_value_list),
+         });
 }
 
 PacketSetHandle PacketTransformerManager::Pull(

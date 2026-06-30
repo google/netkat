@@ -391,4 +391,62 @@ void BM_RepeatedGetAllPossibleOutputPacketsWithHighOverlappingPolicy(
 }
 BENCHMARK(BM_RepeatedGetAllPossibleOutputPacketsWithHighOverlappingPolicy);
 
+// Benchmarks the first-time cost of running
+// GetAllInputPacketsThatProduceAnyOutput on a transformer with a high degree of
+// overlapping substructures. This exercises the cache during the recursive walk
+// of the transformer BDD.
+void BM_FirstTimeGetAllInputPacketsWithHighOverlappingPolicy(
+    benchmark::State& state) {
+  std::vector<PolicyProto> policies =
+      CreateUnionOrSequenceWithHighOverlappingPolicies();
+
+  for (auto s : state) {
+    state.PauseTiming();
+    PacketTransformerManager manager;
+    std::vector<PacketTransformerHandle> handles;
+    handles.reserve(policies.size());
+    for (auto& policy : policies) {
+      handles.push_back(manager.Compile(policy));
+    }
+    state.ResumeTiming();
+
+    for (auto handle : handles) {
+      PacketSetHandle output =
+          manager.GetAllInputPacketsThatProduceAnyOutput(handle);
+      benchmark::DoNotOptimize(output);
+    }
+  }
+}
+BENCHMARK(BM_FirstTimeGetAllInputPacketsWithHighOverlappingPolicy);
+
+// Benchmarks the cost of running GetAllInputPacketsThatProduceAnyOutput
+// repeatedly on the same transformer. This should hit the cache and be O(1).
+void BM_RepeatedGetAllInputPacketsWithHighOverlappingPolicy(
+    benchmark::State& state) {
+  std::vector<PolicyProto> policies =
+      CreateUnionOrSequenceWithHighOverlappingPolicies();
+
+  PacketTransformerManager manager;
+  std::vector<PacketTransformerHandle> handles;
+  handles.reserve(policies.size());
+  for (auto& policy : policies) {
+    handles.push_back(manager.Compile(policy));
+  }
+  // Run it once to populate the cache.
+  for (auto handle : handles) {
+    PacketSetHandle output =
+        manager.GetAllInputPacketsThatProduceAnyOutput(handle);
+    benchmark::DoNotOptimize(output);
+  }
+
+  for (auto s : state) {
+    for (auto handle : handles) {
+      PacketSetHandle output =
+          manager.GetAllInputPacketsThatProduceAnyOutput(handle);
+      benchmark::DoNotOptimize(output);
+    }
+  }
+}
+BENCHMARK(BM_RepeatedGetAllInputPacketsWithHighOverlappingPolicy);
+
 }  // namespace netkat

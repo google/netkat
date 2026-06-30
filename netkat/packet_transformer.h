@@ -52,6 +52,7 @@
 #include "netkat/packet.h"
 #include "netkat/packet_field.h"
 #include "netkat/packet_set.h"
+#include "netkat/packet_set_handle.h"
 #include "netkat/packet_transformer_handle.h"
 #include "netkat/paged_stable_vector.h"
 
@@ -408,6 +409,12 @@ class PacketTransformerManager {
   // Maps a transformer handle to its computed output packet set handle.
   absl::flat_hash_map<PacketTransformerHandle, PacketSetHandle>
       get_all_possible_outputs_cache_;
+
+  // A memoization table for the `GetAllInputPacketsThatProduceAnyOutput`
+  // operation. Maps a transformer handle to its computed input packet set
+  // handle.
+  absl::flat_hash_map<PacketTransformerHandle, PacketSetHandle>
+      get_all_inputs_cache_;
 
   // INVARIANT: All `DecisionNode` fields are interned by this manager's
   // PacketFieldManager.
