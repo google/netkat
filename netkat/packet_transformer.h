@@ -380,6 +380,13 @@ class PacketTransformerManager {
       PacketTransformerHandle>
       union_cache_;
 
+  // A memoization table for the `Sequence` operation.
+  // Maps a pair of argument handles to their computed sequence handle.
+  absl::flat_hash_map<
+      std::pair<PacketTransformerHandle, PacketTransformerHandle>,
+      PacketTransformerHandle>
+      sequence_cache_;
+
   // INVARIANT: All `DecisionNode` fields are interned by this manager's
   // PacketFieldManager.
   PacketSetManager packet_set_manager_;

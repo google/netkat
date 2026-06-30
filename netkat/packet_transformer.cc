@@ -56,6 +56,7 @@ PacketTransformerManager::PacketTransformerManager(
       transformer_by_node_(std::move(other.transformer_by_node_)),
       transformer_by_hash_(std::move(other.transformer_by_hash_)),
       union_cache_(std::move(other.union_cache_)),
+      sequence_cache_(std::move(other.sequence_cache_)),
       packet_set_manager_(std::move(other.packet_set_manager_)) {
   packet_set_manager_.transformer_ = this;
 }
@@ -67,6 +68,7 @@ PacketTransformerManager& PacketTransformerManager::operator=(
     transformer_by_node_ = std::move(other.transformer_by_node_);
     transformer_by_hash_ = std::move(other.transformer_by_hash_);
     union_cache_ = std::move(other.union_cache_);
+    sequence_cache_ = std::move(other.sequence_cache_);
     packet_set_manager_ = std::move(other.packet_set_manager_);
     packet_set_manager_.transformer_ = this;
   }
@@ -539,8 +541,16 @@ PacketTransformerHandle PacketTransformerManager::Sequence(
   if (IsAccept(left)) return right;
   if (IsAccept(right)) return left;
 
+  // Sequence is NOT commutative, so we do not normalize the keys.
+  std::pair<PacketTransformerHandle, PacketTransformerHandle> cache_key =
+      std::make_pair(left, right);
+  if (auto it = sequence_cache_.find(cache_key); it != sequence_cache_.end()) {
+    return it->second;
+  }
+
   // If neither node is accept or deny, then sequence the nodes directly.
-  return Sequence(GetNodeOrDie(left), GetNodeOrDie(right));
+  return sequence_cache_[cache_key] =
+             Sequence(GetNodeOrDie(left), GetNodeOrDie(right));
 }
 
 PacketTransformerHandle PacketTransformerManager::Union(DecisionNode left,
