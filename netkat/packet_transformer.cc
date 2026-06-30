@@ -59,6 +59,7 @@ PacketTransformerManager::PacketTransformerManager(
       sequence_cache_(std::move(other.sequence_cache_)),
       difference_cache_(std::move(other.difference_cache_)),
       iterate_cache_(std::move(other.iterate_cache_)),
+      from_packet_set_cache_(std::move(other.from_packet_set_cache_)),
       packet_set_manager_(std::move(other.packet_set_manager_)) {
   packet_set_manager_.transformer_ = this;
 }
@@ -73,6 +74,7 @@ PacketTransformerManager& PacketTransformerManager::operator=(
     sequence_cache_ = std::move(other.sequence_cache_);
     difference_cache_ = std::move(other.difference_cache_);
     iterate_cache_ = std::move(other.iterate_cache_);
+    from_packet_set_cache_ = std::move(other.from_packet_set_cache_);
     packet_set_manager_ = std::move(other.packet_set_manager_);
     packet_set_manager_.transformer_ = this;
   }
@@ -342,6 +344,11 @@ PacketTransformerHandle PacketTransformerManager::FromPacketSetHandle(
   if (packet_set_manager_.IsEmptySet(packet_set)) return Deny();
   if (packet_set_manager_.IsFullSet(packet_set)) return Accept();
 
+  if (auto it = from_packet_set_cache_.find(packet_set);
+      it != from_packet_set_cache_.end()) {
+    return it->second;
+  }
+
   const PacketSetManager::DecisionNode& packet_node =
       packet_set_manager_.GetNodeOrDie(packet_set);
 
@@ -362,7 +369,8 @@ PacketTransformerHandle PacketTransformerManager::FromPacketSetHandle(
         transformer_branch;
   }
 
-  return NodeToTransformer(std::move(transformer_node));
+  return from_packet_set_cache_[packet_set] =
+             NodeToTransformer(std::move(transformer_node));
 }
 
 // TODO(dilo): There are efficiency improvements we could make here, like
