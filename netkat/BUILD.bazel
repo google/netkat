@@ -428,6 +428,7 @@ cc_binary(
         ":netkat_cc_proto",
         ":netkat_proto_constructors",
         ":packet_transformer",
+        ":packet_transformer_handle",
         "@com_google_absl//absl/strings",
         "@com_google_benchmark//:benchmark_main",
     ],

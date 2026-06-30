@@ -14,6 +14,7 @@
 
 #include "netkat/packet_transformer.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <iterator>
 #include <limits>
@@ -41,6 +42,8 @@
 #include "netkat/packet.h"
 #include "netkat/packet_field.h"
 #include "netkat/packet_set.h"
+#include "netkat/packet_set_handle.h"
+#include "netkat/packet_transformer_handle.h"
 
 namespace netkat {
 
@@ -52,6 +55,7 @@ PacketTransformerManager::PacketTransformerManager(
     : nodes_(std::move(other.nodes_)),
       transformer_by_node_(std::move(other.transformer_by_node_)),
       transformer_by_hash_(std::move(other.transformer_by_hash_)),
+      union_cache_(std::move(other.union_cache_)),
       packet_set_manager_(std::move(other.packet_set_manager_)) {
   packet_set_manager_.transformer_ = this;
 }
@@ -62,6 +66,7 @@ PacketTransformerManager& PacketTransformerManager::operator=(
     nodes_ = std::move(other.nodes_);
     transformer_by_node_ = std::move(other.transformer_by_node_);
     transformer_by_hash_ = std::move(other.transformer_by_hash_);
+    union_cache_ = std::move(other.union_cache_);
     packet_set_manager_ = std::move(other.packet_set_manager_);
     packet_set_manager_.transformer_ = this;
   }
@@ -628,20 +633,29 @@ PacketTransformerHandle PacketTransformerManager::Union(
   if (IsDeny(right)) return left;
   if (IsDeny(left)) return right;
 
+  // Normalize keys to leverage commutativity.
+  std::pair<PacketTransformerHandle, PacketTransformerHandle> cache_key =
+      std::make_pair(std::min(left, right), std::max(left, right));
+  auto it = union_cache_.find(cache_key);
+  if (it != union_cache_.end()) {
+    return it->second;
+  }
+
   // If either node is accept, then expand it before merging.
   if (IsAccept(left) || IsAccept(right)) {
     const DecisionNode& other_node =
         GetNodeOrDie(IsAccept(left) ? right : left);
-    return Union(
-        DecisionNode{
-            .field = other_node.field,
-            .default_branch = Accept(),
-        },
-        other_node);
+    return union_cache_[cache_key] = Union(
+               DecisionNode{
+                   .field = other_node.field,
+                   .default_branch = Accept(),
+               },
+               other_node);
   }
 
   // If neither node is accept or deny, then union the nodes directly.
-  return Union(GetNodeOrDie(left), GetNodeOrDie(right));
+  return union_cache_[cache_key] =
+             Union(GetNodeOrDie(left), GetNodeOrDie(right));
 }
 
 PacketTransformerHandle PacketTransformerManager::Difference(

@@ -372,6 +372,14 @@ class PacketTransformerManager {
   absl::flat_hash_map<ProtoHashKey, PacketTransformerHandle>
       transformer_by_hash_;
 
+  // A memoization table for the `Union` operation.
+  // Maps a pair of (normalized) argument handles to their computed union
+  // handle.
+  absl::flat_hash_map<
+      std::pair<PacketTransformerHandle, PacketTransformerHandle>,
+      PacketTransformerHandle>
+      union_cache_;
+
   // INVARIANT: All `DecisionNode` fields are interned by this manager's
   // PacketFieldManager.
   PacketSetManager packet_set_manager_;
