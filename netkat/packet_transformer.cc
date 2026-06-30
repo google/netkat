@@ -58,6 +58,7 @@ PacketTransformerManager::PacketTransformerManager(
       union_cache_(std::move(other.union_cache_)),
       sequence_cache_(std::move(other.sequence_cache_)),
       difference_cache_(std::move(other.difference_cache_)),
+      iterate_cache_(std::move(other.iterate_cache_)),
       packet_set_manager_(std::move(other.packet_set_manager_)) {
   packet_set_manager_.transformer_ = this;
 }
@@ -71,6 +72,7 @@ PacketTransformerManager& PacketTransformerManager::operator=(
     union_cache_ = std::move(other.union_cache_);
     sequence_cache_ = std::move(other.sequence_cache_);
     difference_cache_ = std::move(other.difference_cache_);
+    iterate_cache_ = std::move(other.iterate_cache_);
     packet_set_manager_ = std::move(other.packet_set_manager_);
     packet_set_manager_.transformer_ = this;
   }
@@ -790,6 +792,10 @@ PacketTransformerHandle PacketTransformerManager::Difference(
 
 PacketTransformerHandle PacketTransformerManager::Iterate(
     PacketTransformerHandle iterable) {
+  if (auto it = iterate_cache_.find(iterable); it != iterate_cache_.end()) {
+    return it->second;
+  }
+
   PacketTransformerHandle previous_approximation = Accept();
   PacketTransformerHandle current_approximation = Union(Accept(), iterable);
   // Iterate until we reach a fixed point.
@@ -798,7 +804,7 @@ PacketTransformerHandle PacketTransformerManager::Iterate(
     current_approximation =
         Sequence(previous_approximation, previous_approximation);
   }
-  return current_approximation;
+  return iterate_cache_[iterable] = current_approximation;
 }
 
 PacketSetHandle PacketTransformerManager::GetAllPossibleOutputPackets(

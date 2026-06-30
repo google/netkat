@@ -394,6 +394,11 @@ class PacketTransformerManager {
       PacketTransformerHandle>
       difference_cache_;
 
+  // A memoization table for the `Iterate` operation.
+  // Maps an argument handle to its computed iteration handle.
+  absl::flat_hash_map<PacketTransformerHandle, PacketTransformerHandle>
+      iterate_cache_;
+
   // INVARIANT: All `DecisionNode` fields are interned by this manager's
   // PacketFieldManager.
   PacketSetManager packet_set_manager_;

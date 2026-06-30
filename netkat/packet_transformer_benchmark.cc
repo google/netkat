@@ -278,4 +278,71 @@ void BM_ReCompileDifferenceWithHighOverlappingPolicy(benchmark::State& state) {
 }
 BENCHMARK(BM_ReCompileDifferenceWithHighOverlappingPolicy);
 
+// Benchmarks the first-time cost of compiling a policy with a high degree of
+// overlapping substructures, exercising memoization (especially Iterate cache).
+// We use equivalent but structurally different policies to bypass the
+// proto-level cache (transformer_by_hash_) and hit the BDD-level
+// iterate_cache_.
+void BM_FirstTimeCompileIterateWithEquivalentPolicies(benchmark::State& state) {
+  // Create a non-trivial base policy.
+  PolicyProto base = CreateFixedArbitraryPolicyProto();
+
+  // Create equivalent but structurally different policies.
+  PolicyProto p1 = base;
+  PolicyProto p2 = SequenceProto(base, AcceptProto());
+  PolicyProto p3 = SequenceProto(AcceptProto(), base);
+  PolicyProto p4 = UnionProto(base, DenyProto());
+  PolicyProto p5 = UnionProto(DenyProto(), base);
+  PolicyProto p6 =
+      SequenceProto(SequenceProto(base, AcceptProto()), AcceptProto());
+
+  // We want to iterate all of them. They should all compile to the same BDD
+  // handle, so subsequent Iterate calls should hit the iterate_cache_.
+  std::vector<PolicyProto> iterated_policies = {
+      IterateProto(p1), IterateProto(p2), IterateProto(p3),
+      IterateProto(p4), IterateProto(p5), IterateProto(p6),
+  };
+
+  for (auto s : state) {
+    PacketTransformerManager manager;
+    for (const auto& policy : iterated_policies) {
+      PacketTransformerHandle handle = manager.Compile(policy);
+      benchmark::DoNotOptimize(handle);
+    }
+  }
+}
+BENCHMARK(BM_FirstTimeCompileIterateWithEquivalentPolicies);
+
+// Benchmarks the cost of compiling a policy with a high degree of
+// overlapping substructures, that has already been compiled once before.
+// Excludes the initial cost of compilation.
+void BM_ReCompileIterateWithEquivalentPolicies(benchmark::State& state) {
+  PolicyProto base = CreateFixedArbitraryPolicyProto();
+  PolicyProto p1 = base;
+  PolicyProto p2 = SequenceProto(base, AcceptProto());
+  PolicyProto p3 = SequenceProto(AcceptProto(), base);
+  PolicyProto p4 = UnionProto(base, DenyProto());
+  PolicyProto p5 = UnionProto(DenyProto(), base);
+  PolicyProto p6 =
+      SequenceProto(SequenceProto(base, AcceptProto()), AcceptProto());
+
+  std::vector<PolicyProto> iterated_policies = {
+      IterateProto(p1), IterateProto(p2), IterateProto(p3),
+      IterateProto(p4), IterateProto(p5), IterateProto(p6),
+  };
+
+  PacketTransformerManager manager;
+  for (const auto& policy : iterated_policies) {
+    PacketTransformerHandle handle = manager.Compile(policy);
+    benchmark::DoNotOptimize(handle);
+  }
+  for (auto s : state) {
+    for (const auto& policy : iterated_policies) {
+      PacketTransformerHandle handle = manager.Compile(policy);
+      benchmark::DoNotOptimize(handle);
+    }
+  }
+}
+BENCHMARK(BM_ReCompileIterateWithEquivalentPolicies);
+
 }  // namespace netkat
