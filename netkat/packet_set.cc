@@ -34,6 +34,8 @@
 #include "absl/strings/string_view.h"
 #include "gutil/status.h"
 #include "netkat/packet.h"
+#include "netkat/packet_transformer.h"
+#include "netkat/packet_transformer_handle.h"
 
 namespace netkat {
 
@@ -172,8 +174,12 @@ PacketSetHandle PacketSetManager::Compile(const PredicateProto& pred) {
   ProtoHashKey key = {.predicate_case = pred.predicate_case()};
   switch (pred.predicate_case()) {
     case PredicateProto::kPullOp: {
-      // TODO: anthonyroy - Implement Pull compilation.
-      LOG(FATAL) << "Pull compilation not implemented yet";
+      key.lhs_policy_handle = transformer_->Compile(pred.pull_op().policy());
+      key.rhs_child = Compile(pred.pull_op().pred());
+      auto it = packet_set_by_hash_.find(key);
+      if (it != packet_set_by_hash_.end()) return it->second;
+      return packet_set_by_hash_[key] =
+                 transformer_->Pull(key.lhs_policy_handle, key.rhs_child);
     }
     case PredicateProto::kBoolConstant: {
       return pred.bool_constant().value() ? FullSet() : EmptySet();

@@ -62,6 +62,7 @@ namespace {
 using ::fuzztest::Arbitrary;
 using ::fuzztest::ElementOf;
 using ::netkat::netkat_test::ArbitraryValidPolicyProto;
+using ::netkat::netkat_test::ArbitraryValidPolicyProtoWithoutPull;
 using ::netkat::netkat_test::ArbitraryValidPredicateProto;
 using ::netkat::netkat_test::FieldTypeIs;
 using ::testing::ContainerEq;
@@ -77,10 +78,7 @@ fuzztest::Domain<PredicateProto> PredicateWithRestrictedFields() {
   return fuzztest::Arbitrary<PredicateProto>()
       .WithFieldsAlwaysSet()
       .WithStringFields(ElementOf<std::string>({"f", "g"}))
-      .WithInt32Fields(ElementOf<int32_t>({1, 2, 3}))
-      // TODO: anthonyroy - Revert once Pull compilation is implemented in the
-      // backend.
-      .WithFieldsUnset(FieldTypeIs<PredicateProto::Pull>);
+      .WithInt32Fields(ElementOf<int32_t>({1, 2, 3}));
 }
 
 // A domain of policies with a restricted set of fields and values. This is
@@ -504,6 +502,8 @@ TEST(PacketTransformerManagerTest, RunDenyAndAccept) {
 
 // We expect that any concrete packet that is `Run` through a `policy` gives the
 // same result as when it is `Evaluate`d on that policy.
+// TODO: anthonyroy - Revert RunIsSameAsEvaluate to
+// ArbitraryValidPolicyProto once Pull is implemented in the evaluator.
 void RunIsSameAsEvaluate(PolicyProto policy, Packet packet) {
   Packet original_packet = packet;
   EXPECT_THAT(Manager().Run(Manager().Compile(policy), packet),
@@ -511,7 +511,7 @@ void RunIsSameAsEvaluate(PolicyProto policy, Packet packet) {
   EXPECT_EQ(packet, original_packet);
 }
 FUZZ_TEST(PacketTransformerManagerTest, RunIsSameAsEvaluate)
-    .WithDomains(ArbitraryValidPolicyProto(), Arbitrary<Packet>());
+    .WithDomains(ArbitraryValidPolicyProtoWithoutPull(), Arbitrary<Packet>());
 
 TEST(PacketTransformerManagerTest, SimpleSequenceRunTest1) {
   // !(once=1) ; a:=1 ; once:=1
@@ -1063,6 +1063,15 @@ void GetAllPossibleOutputPacketsIsSameAsReferenceImplementation(
 FUZZ_TEST(PacketTransformerManagerTest,
           GetAllPossibleOutputPacketsIsSameAsReferenceImplementation)
     .WithDomains(PolicyWithRestrictedFields());
+
+void CompilePullIsCorrect(PolicyProto policy, PredicateProto predicate) {
+  EXPECT_EQ(
+      Manager().GetPacketSetManager().Compile(PullProto(policy, predicate)),
+      Manager().Pull(Manager().Compile(policy),
+                     Manager().GetPacketSetManager().Compile(predicate)));
+}
+FUZZ_TEST(PacketTransformerManagerTest, CompilePullIsCorrect)
+    .WithDomains(PolicyWithRestrictedFields(), PredicateWithRestrictedFields());
 
 }  // namespace
 }  // namespace netkat

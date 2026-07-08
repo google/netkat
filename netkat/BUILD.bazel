@@ -408,6 +408,7 @@ cc_test(
         ":netkat_proto_constructors",
         ":packet",
         ":packet_transformer",
+        ":packet_transformer_handle",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",

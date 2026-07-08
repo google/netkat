@@ -59,6 +59,7 @@
 #include "netkat/packet.h"
 #include "netkat/packet_field.h"
 #include "netkat/packet_set_handle.h"
+#include "netkat/packet_transformer_handle.h"
 #include "netkat/paged_stable_vector.h"
 
 namespace netkat {
@@ -248,9 +249,13 @@ class PacketSetManager {
     // The `PredicateProto` oneof case.
     int predicate_case;
 
-    // The left child, if `predicate_case` is an operation. In the case
+    // The left child, if `predicate_case` is a predicate operation. In the case
     // `predicate_case` is unary, e.g. Not, this will be the child.
     PacketSetHandle lhs_child;
+
+    // The left child policy, if `predicate_case` is a policy-predicate
+    // operation (e.g., Pull). Otherwise defaulted.
+    PacketTransformerHandle lhs_policy_handle;
 
     // The right child, if `predicate_case` is an operation. In the case
     // `predicate_case` is unary, e.g. Not, this will be defaulted.
@@ -262,7 +267,7 @@ class PacketSetManager {
     template <typename H>
     friend H AbslHashValue(H h, const ProtoHashKey& key) {
       return H::combine(std::move(h), key.predicate_case, key.lhs_child,
-                        key.rhs_child);
+                        key.lhs_policy_handle, key.rhs_child);
     }
   };
 

@@ -58,6 +58,7 @@ void PrintTo(PacketSetHandle packet, std::ostream* os) {
 namespace {
 
 using ::netkat::netkat_test::ArbitraryValidPredicateProto;
+using ::netkat::netkat_test::ArbitraryValidPredicateProtoWithoutPull;
 using ::netkat::netkat_test::FieldTypeIs;
 using ::testing::Ge;
 using ::testing::Pair;
@@ -145,13 +146,16 @@ void NotCompilesToNot(const PredicateProto& pred) {
 FUZZ_TEST(PacketSetManagerTest, NotCompilesToNot)
     .WithDomains(ArbitraryValidPredicateProto());
 
+// TODO: anthonyroy - Revert CompilationPreservesSemantics to
+// ArbitraryValidPredicateProto once Pull is implemented in the evaluator.
 void CompilationPreservesSemantics(const PredicateProto& pred,
                                    const Packet& packet) {
   EXPECT_EQ(Manager().Contains(Manager().Compile(pred), packet),
             Evaluate(pred, packet));
 }
 FUZZ_TEST(PacketSetManagerTest, CompilationPreservesSemantics)
-    .WithDomains(ArbitraryValidPredicateProto(), fuzztest::Arbitrary<Packet>());
+    .WithDomains(ArbitraryValidPredicateProtoWithoutPull(),
+                 fuzztest::Arbitrary<Packet>());
 
 void GetConcretePacketsReturnsNonEmptyListForNonEmptySet(
     const PredicateProto& pred) {
@@ -421,9 +425,8 @@ FUZZ_TEST(PacketSetManagerTest, ExistIsIdentityForNonExistentField)
     // match/modify the same field several times.
     .WithDomains(fuzztest::Arbitrary<PredicateProto>()
                      .WithFieldsAlwaysSet()
-                     .WithStringFields(
-                         fuzztest::ElementOf<std::string>({"f", "g", "h", "i"}))
-                     .WithFieldsUnset(FieldTypeIs<PredicateProto::Pull>));
+                     .WithStringFields(fuzztest::ElementOf<std::string>(
+                         {"f", "g", "h", "i"})));
 
 void ExistOnFieldRemovesPacketFieldProperty(const PredicateProto& pred,
                                             int new_value) {

@@ -40,11 +40,17 @@ bool FieldTypeIs(const google::protobuf::FieldDescriptor* field) {
 // defined to mean false.
 fuzztest::Domain<PredicateProto> ArbitraryValidPredicateProto();
 
+// Same as ArbitraryValidPredicateProto but without Pull.
+fuzztest::Domain<PredicateProto> ArbitraryValidPredicateProtoWithoutPull();
+
 // Returns a FUZZ_TEST domain for an arbitrary valid PolicyProto.
 // See netkat::Policy::FromProto for the definition of a valid PolicyProto.
 // Nonetheless, invalid protos are accepted in the backend where empty is
 // defined to mean DENY policy.
 fuzztest::Domain<PolicyProto> ArbitraryValidPolicyProto();
+
+// Same as ArbitraryValidPolicyProto but without Pull.
+fuzztest::Domain<PolicyProto> ArbitraryValidPolicyProtoWithoutPull();
 
 // Returns a FUZZ_TEST domain for an arbitrary, atomic Predicate. I.e., the
 // predicate may be any of: an arbitrary Match, or the True/False predicates.

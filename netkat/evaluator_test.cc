@@ -31,6 +31,10 @@ using ::fuzztest::Arbitrary;
 using ::fuzztest::InRange;
 using ::netkat::netkat_test::ArbitraryValidPolicyProto;
 using ::netkat::netkat_test::ArbitraryValidPredicateProto;
+// TODO: anthonyroy - Revert to ArbitraryValidPredicateProto /
+// ArbitraryValidPolicyProto once Pull is implemented.
+using ::netkat::netkat_test::ArbitraryValidPolicyProtoWithoutPull;
+using ::netkat::netkat_test::ArbitraryValidPredicateProtoWithoutPull;
 using ::testing::ContainerEq;
 using ::testing::IsEmpty;
 using ::testing::IsSupersetOf;
@@ -57,7 +61,8 @@ void NotIsLogicalNot(Packet packet, PredicateProto negand) {
   EXPECT_EQ(Evaluate(NotProto(negand), packet), !Evaluate(negand, packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, NotIsLogicalNot)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void MatchOnlyMatchesPacketsWithCorrectValueAndField(Packet packet,
                                                      std::string field,
@@ -79,16 +84,16 @@ void AndIsLogicalAnd(Packet packet, PredicateProto left, PredicateProto right) {
             Evaluate(left, packet) && Evaluate(right, packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, AndIsLogicalAnd)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
-                 ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProtoWithoutPull(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void OrIsLogicalOr(Packet packet, PredicateProto left, PredicateProto right) {
   EXPECT_EQ(Evaluate(OrProto(left, right), packet),
             Evaluate(left, packet) || Evaluate(right, packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, OrIsLogicalOr)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
-                 ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProtoWithoutPull(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 /*--- Boolean algebra axioms and equivalences --------------------------------*/
 
@@ -97,34 +102,39 @@ void PredOrItsNegationIsTrue(const Packet& packet,
   EXPECT_TRUE(Evaluate(OrProto(predicate, NotProto(predicate)), packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, PredOrItsNegationIsTrue)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void PredAndItsNegationIsFalse(const Packet& packet,
                                const PredicateProto& predicate) {
   EXPECT_FALSE(Evaluate(AndProto(predicate, NotProto(predicate)), packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, PredAndItsNegationIsFalse)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void AndIsIdempotent(const Packet& packet, const PredicateProto& predicate) {
   EXPECT_EQ(Evaluate(AndProto(predicate, predicate), packet),
             Evaluate(predicate, packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, AndIsIdempotent)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void AndTrueIsIdentity(const Packet& packet, const PredicateProto& predicate) {
   EXPECT_EQ(Evaluate(AndProto(predicate, TrueProto()), packet),
             Evaluate(predicate, packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, AndTrueIsIdentity)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void AndFalseIsFalse(const Packet& packet, const PredicateProto& predicate) {
   EXPECT_FALSE(Evaluate(AndProto(predicate, FalseProto()), packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, AndFalseIsFalse)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void AndIsCommutative(const Packet& packet, const PredicateProto& left,
                       const PredicateProto& right) {
@@ -132,8 +142,8 @@ void AndIsCommutative(const Packet& packet, const PredicateProto& left,
             Evaluate(AndProto(right, left), packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, AndIsCommutative)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
-                 ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProtoWithoutPull(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void AndIsAssociative(const Packet& packet, const PredicateProto& left,
                       const PredicateProto& middle,
@@ -142,29 +152,32 @@ void AndIsAssociative(const Packet& packet, const PredicateProto& left,
             Evaluate(AndProto(left, AndProto(middle, right)), packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, AndIsAssociative)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
-                 ArbitraryValidPredicateProto(),
-                 ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProtoWithoutPull(),
+                 ArbitraryValidPredicateProtoWithoutPull(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void OrIsIdempotent(const Packet& packet, const PredicateProto& predicate) {
   EXPECT_EQ(Evaluate(OrProto(predicate, predicate), packet),
             Evaluate(predicate, packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, OrIsIdempotent)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void OrFalseIsIdentity(const Packet& packet, const PredicateProto& predicate) {
   EXPECT_EQ(Evaluate(OrProto(predicate, FalseProto()), packet),
             Evaluate(predicate, packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, OrFalseIsIdentity)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void OrTrueIsTrue(const Packet& packet, const PredicateProto& predicate) {
   EXPECT_TRUE(Evaluate(OrProto(predicate, TrueProto()), packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, OrTrueIsTrue)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void OrIsCommutative(const Packet& packet, const PredicateProto& left,
                      const PredicateProto& right) {
@@ -172,8 +185,8 @@ void OrIsCommutative(const Packet& packet, const PredicateProto& left,
             Evaluate(OrProto(right, left), packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, OrIsCommutative)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
-                 ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProtoWithoutPull(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void OrIsAssociative(const Packet& packet, const PredicateProto& left,
                      const PredicateProto& middle,
@@ -182,22 +195,24 @@ void OrIsAssociative(const Packet& packet, const PredicateProto& left,
             Evaluate(OrProto(left, OrProto(middle, right)), packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, OrIsAssociative)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
-                 ArbitraryValidPredicateProto(),
-                 ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProtoWithoutPull(),
+                 ArbitraryValidPredicateProtoWithoutPull(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void XorFalseIsIdentity(const Packet& packet, const PredicateProto& predicate) {
   EXPECT_EQ(Evaluate(XorProto(predicate, FalseProto()), packet),
             Evaluate(predicate, packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, XorFalseIsIdentity)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void XorSelfIsFalse(const Packet& packet, const PredicateProto& pred) {
   EXPECT_FALSE(Evaluate(XorProto(pred, pred), packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, XorSelfIsFalse)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void XorIsCommutative(const Packet& packet, const PredicateProto& left,
                       PredicateProto right) {
@@ -205,8 +220,8 @@ void XorIsCommutative(const Packet& packet, const PredicateProto& left,
             Evaluate(XorProto(right, left), packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, XorIsCommutative)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
-                 ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProtoWithoutPull(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void XorIsAssociative(const Packet& packet, const PredicateProto& left,
                       const PredicateProto& middle, PredicateProto right) {
@@ -214,9 +229,9 @@ void XorIsAssociative(const Packet& packet, const PredicateProto& left,
             Evaluate(XorProto(left, XorProto(middle, right)), packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, XorIsAssociative)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
-                 ArbitraryValidPredicateProto(),
-                 ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProtoWithoutPull(),
+                 ArbitraryValidPredicateProtoWithoutPull(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void DistributiveLawHolds(const Packet& packet, const PredicateProto& first,
                           const PredicateProto& second,
@@ -232,9 +247,9 @@ void DistributiveLawHolds(const Packet& packet, const PredicateProto& first,
                      packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, DistributiveLawHolds)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
-                 ArbitraryValidPredicateProto(),
-                 ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProtoWithoutPull(),
+                 ArbitraryValidPredicateProtoWithoutPull(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void DeMorganHolds(const Packet& packet, const PredicateProto& left,
                    const PredicateProto& right) {
@@ -247,8 +262,8 @@ void DeMorganHolds(const Packet& packet, const PredicateProto& left,
             Evaluate(AndProto(NotProto(left), NotProto(right)), packet));
 }
 FUZZ_TEST(EvaluatePredicateProtoTest, DeMorganHolds)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto(),
-                 ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProtoWithoutPull(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 /*--- Basic policy properties ------------------------------------------------*/
 
@@ -262,7 +277,7 @@ void LiftedEvaluationIsCorrect(absl::flat_hash_set<Packet> packets,
 }
 FUZZ_TEST(EvaluatePolicyProtoTest, LiftedEvaluationIsCorrect)
     .WithDomains(Arbitrary<absl::flat_hash_set<Packet>>(),
-                 ArbitraryValidPolicyProto());
+                 ArbitraryValidPolicyProtoWithoutPull());
 
 void RecordIsAccept(Packet packet) {
   EXPECT_THAT(Evaluate(RecordProto(), packet), UnorderedElementsAre(packet));
@@ -283,7 +298,8 @@ void FilterIsCorrect(Packet packet, PredicateProto predicate) {
   }
 }
 FUZZ_TEST(EvaluatePolicyProtoTest, FilterIsCorrect)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPredicateProto());
+    .WithDomains(Arbitrary<Packet>(),
+                 ArbitraryValidPredicateProtoWithoutPull());
 
 void ModifyModifies(Packet packet, std::string field, int value) {
   Packet expected_packet = packet;
@@ -301,8 +317,8 @@ void UnionCombines(Packet packet, PolicyProto left, PolicyProto right) {
               ContainerEq(expected_packets));
 }
 FUZZ_TEST(EvaluatePolicyProtoTest, UnionCombines)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPolicyProto(),
-                 ArbitraryValidPolicyProto());
+    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPolicyProtoWithoutPull(),
+                 ArbitraryValidPolicyProtoWithoutPull());
 
 void DifferenceRemoves(Packet packet, PolicyProto left, PolicyProto right) {
   absl::flat_hash_set<Packet> expected_packets = Evaluate(left, packet);
@@ -314,8 +330,8 @@ void DifferenceRemoves(Packet packet, PolicyProto left, PolicyProto right) {
               ContainerEq(expected_packets));
 }
 FUZZ_TEST(EvaluatePolicyProtoTest, DifferenceRemoves)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPolicyProto(),
-                 ArbitraryValidPolicyProto());
+    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPolicyProtoWithoutPull(),
+                 ArbitraryValidPolicyProtoWithoutPull());
 
 void SequenceSequences(Packet packet, PolicyProto left, PolicyProto right) {
   absl::flat_hash_set<Packet> expected_packets =
@@ -325,8 +341,8 @@ void SequenceSequences(Packet packet, PolicyProto left, PolicyProto right) {
               ContainerEq(expected_packets));
 }
 FUZZ_TEST(EvaluatePolicyProtoTest, SequenceSequences)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPolicyProto(),
-                 ArbitraryValidPolicyProto());
+    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPolicyProtoWithoutPull(),
+                 ArbitraryValidPolicyProtoWithoutPull());
 
 PolicyProto UnionUpToNthPower(PolicyProto iterable, int n) {
   PolicyProto union_policy = AcceptProto();
@@ -345,7 +361,7 @@ void IterateIsSupersetOfUnionOfNSequences(Packet packet, PolicyProto iterable,
 }
 FUZZ_TEST(EvaluatePolicyProtoTest, IterateIsSupersetOfUnionOfNSequences)
     .WithDomains(/*packet=*/Arbitrary<Packet>(),
-                 /*iterable=*/ArbitraryValidPolicyProto(),
+                 /*iterable=*/ArbitraryValidPolicyProtoWithoutPull(),
                  /*n=*/InRange(0, 100));
 
 void IterateIsUnionOfNSequencesForSomeN(Packet packet, PolicyProto iterable) {
@@ -366,7 +382,7 @@ void IterateIsUnionOfNSequencesForSomeN(Packet packet, PolicyProto iterable) {
   EXPECT_THAT(iterate_output_packets, ContainerEq(union_output_packets));
 }
 FUZZ_TEST(EvaluatePolicyProtoTest, IterateIsUnionOfNSequencesForSomeN)
-    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPolicyProto());
+    .WithDomains(Arbitrary<Packet>(), ArbitraryValidPolicyProtoWithoutPull());
 
 TEST(EvaluatePolicyProtoTest, SimpleIterateThroughFiltersAndModifies) {
   // f == 0; f:=1 + f == 1; f := 2 + f == 2; f := 3

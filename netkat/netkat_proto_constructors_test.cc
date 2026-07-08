@@ -79,6 +79,15 @@ void XorProtoReturnsXor(PredicateProto left, PredicateProto right) {
 }
 FUZZ_TEST(XorProtoTest, XorProtoReturnsXor);
 
+void PullProtoReturnsPull(PolicyProto policy, PredicateProto pred) {
+  PredicateProto pull_proto;
+  PredicateProto::Pull& pull = *pull_proto.mutable_pull_op();
+  *pull.mutable_policy() = policy;
+  *pull.mutable_pred() = pred;
+  EXPECT_THAT(PullProto(policy, pred), EqualsProto(pull_proto));
+}
+FUZZ_TEST(PullProtoTest, PullProtoReturnsPull);
+
 // -- Basic Policy constructors ------------------------------------------------
 
 void FilterProtoReturnsFilter(PredicateProto filter) {

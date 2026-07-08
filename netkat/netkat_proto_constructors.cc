@@ -71,6 +71,13 @@ PredicateProto XorProto(PredicateProto left, PredicateProto right) {
   *xor_op.mutable_right() = std::move(right);
   return proto;
 }
+PredicateProto PullProto(PolicyProto policy, PredicateProto pred) {
+  PredicateProto proto;
+  PredicateProto::Pull& pull = *proto.mutable_pull_op();
+  *pull.mutable_policy() = std::move(policy);
+  *pull.mutable_pred() = std::move(pred);
+  return proto;
+}
 
 // -- Basic Policy constructors ------------------------------------------------
 
