@@ -207,6 +207,12 @@ TEST(AsShorthandStringTest, NegationIsOkay) {
             "!(true || false)");
 }
 
+TEST(AsShorthandStringTest, PullIsCorrect) {
+  EXPECT_EQ(AsShorthandString(PullProto(ModificationProto("field", 2),
+                                        MatchProto("field", 1))),
+            "pull(@field:=2, @field==1)");
+}
+
 TEST(AsShorthandStringTest, ModifyIsCorrect) {
   EXPECT_EQ(AsShorthandString(ModificationProto("field", 2)), "@field:=2");
 }

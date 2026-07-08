@@ -138,8 +138,9 @@ std::string AsShorthandString(PredicateProto predicate) {
     case PredicateProto::kBoolConstant:
       return predicate.bool_constant().value() ? "true" : "false";
     case PredicateProto::kPullOp:
-      // TODO: anthonyroy - Implement AsShorthandString for Pull.
-      return "pull(stub)";
+      return absl::StrFormat("pull(%s, %s)",
+                             AsShorthandString(predicate.pull_op().policy()),
+                             AsShorthandString(predicate.pull_op().pred()));
     case PredicateProto::kMatch:
       return absl::StrFormat("@%s==%d", predicate.match().field(),
                              predicate.match().value());

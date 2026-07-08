@@ -62,6 +62,7 @@ PolicyProto AcceptProto();
 //   Predicate Or -> '||'
 //   Predicate Not -> '!'
 //   Predicate Xor -> '(+)'
+//   Predicate Pull -> 'pull(left, right)'
 //   Policy Sequence -> ';'
 //   Policy Or -> '+'
 //   Iterate -> '*'
