@@ -11,13 +11,24 @@
 #include "netkat/netkat_proto_constructors.h"
 namespace netkat {
 
+// Forward declaration needed for mutual recursion: PredicateProto::Pull
+// contains a PolicyProto, which in turn can contain Filter policies containing
+// PredicateProtos.
+absl::Status RecursivelyCheckIsValid(const PolicyProto& policy_proto);
+
 // Recursively checks whether `predicate_proto` is valid.
 absl::Status RecursivelyCheckIsValid(const PredicateProto& predicate_proto) {
   switch (predicate_proto.predicate_case()) {
-    case PredicateProto::kPullOp:
-      // TODO: anthonyroy - Implement Pull validation once frontend compiler
-      // supports it.
-      return absl::UnimplementedError("Pull predicate is not implemented yet");
+    case PredicateProto::kPullOp: {
+      RETURN_IF_ERROR(
+          RecursivelyCheckIsValid(predicate_proto.pull_op().policy()))
+              .SetPrepend()
+          << "PredicateProto::Pull's policy is invalid: ";
+      RETURN_IF_ERROR(RecursivelyCheckIsValid(predicate_proto.pull_op().pred()))
+              .SetPrepend()
+          << "PredicateProto::Pull's predicate is invalid: ";
+      return absl::OkStatus();
+    }
     case PredicateProto::PREDICATE_NOT_SET:
       return absl::InvalidArgumentError("Unset Predicate case is invalid");
     case PredicateProto::kMatch:
@@ -93,6 +104,11 @@ Predicate Predicate::False() { return Predicate(FalseProto()); }
 
 Predicate Match(absl::string_view field, int value) {
   return Predicate(MatchProto(field, value));
+}
+
+Predicate Pull(Policy policy, Predicate predicate) {
+  return Predicate(
+      PullProto(std::move(policy).ToProto(), std::move(predicate).ToProto()));
 }
 
 absl::Status RecursivelyCheckIsValid(const PolicyProto& policy_proto) {

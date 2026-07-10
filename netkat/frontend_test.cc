@@ -22,8 +22,8 @@ using ::absl_testing::StatusIs;
 using ::fuzztest::ContainerOf;
 using ::gutil::EqualsProto;
 
-using ::netkat::netkat_test::ArbitraryValidPolicyProtoWithoutPull;
-using ::netkat::netkat_test::ArbitraryValidPredicateProtoWithoutPull;
+using ::netkat::netkat_test::ArbitraryValidPolicyProto;
+using ::netkat::netkat_test::ArbitraryValidPredicateProto;
 using ::netkat::netkat_test::AtomicDupFreePolicyDomain;
 using ::netkat::netkat_test::AtomicPredicateDomain;
 using UlongTernaryField =
@@ -39,7 +39,7 @@ void ExpectFromProtoCanParseValidProto(PredicateProto predicate_proto) {
   EXPECT_OK(Predicate::FromProto(predicate_proto));
 }
 FUZZ_TEST(FrontEndTest, ExpectFromProtoCanParseValidProto)
-    .WithDomains(ArbitraryValidPredicateProtoWithoutPull());
+    .WithDomains(ArbitraryValidPredicateProto());
 
 // Returns an invalid PredicateProto based on `predicate_proto`, where
 // the set `predicate` will be mutated into an invalid state.
@@ -85,7 +85,7 @@ void ExpectFromProtoToFailWithInvalidPredicateProto(
       << invalid_proto.DebugString();
 }
 FUZZ_TEST(FrontEndTest, ExpectFromProtoToFailWithInvalidPredicateProto)
-    .WithDomains(ArbitraryValidPredicateProtoWithoutPull());
+    .WithDomains(ArbitraryValidPredicateProto());
 
 TEST(FrontEndTest, TrueToProtoIsCorrect) {
   EXPECT_THAT(Predicate::True().ToProto(), EqualsProto(TrueProto()));
@@ -129,6 +129,15 @@ FUZZ_TEST(FrontEndTest, XorToProtoIsCorrect)
     .WithDomains(/*lhs=*/AtomicPredicateDomain(),
                  /*rhs=*/AtomicPredicateDomain());
 
+void PullToProtoIsCorrect(Policy policy, Predicate predicate) {
+  Predicate pull_pred = Pull(policy, predicate);
+  EXPECT_THAT(pull_pred.ToProto(),
+              EqualsProto(PullProto(policy.ToProto(), predicate.ToProto())));
+}
+FUZZ_TEST(FrontEndTest, PullToProtoIsCorrect)
+    .WithDomains(/*policy=*/AtomicDupFreePolicyDomain(),
+                 /*predicate=*/AtomicPredicateDomain());
+
 void OperationOrderIsPreserved(Predicate a, Predicate b, Predicate c) {
   Predicate abc = !(a || b) && c || a;
   EXPECT_THAT(
@@ -146,7 +155,7 @@ void ExpectFromProtoCanParseValidPolicyProto(const PolicyProto& policy_proto) {
   EXPECT_OK(Policy::FromProto(policy_proto));
 }
 FUZZ_TEST(FrontEndTest, ExpectFromProtoCanParseValidPolicyProto)
-    .WithDomains(ArbitraryValidPolicyProtoWithoutPull());
+    .WithDomains(ArbitraryValidPolicyProto());
 
 void ExpectFromProtoToFailWithInvalidPolicyProto(PolicyProto policy_proto) {
   // For `policy_proto` with PolicyProto as operand(s), an empty operand
@@ -185,7 +194,7 @@ void ExpectFromProtoToFailWithInvalidPolicyProto(PolicyProto policy_proto) {
       << policy_proto.DebugString();
 }
 FUZZ_TEST(FrontEndTest, ExpectFromProtoToFailWithInvalidPolicyProto)
-    .WithDomains(ArbitraryValidPolicyProtoWithoutPull());
+    .WithDomains(ArbitraryValidPolicyProto());
 
 TEST(FrontEndTest, DenyToProtoIsCorrect) {
   EXPECT_THAT(Policy::Deny().ToProto(), EqualsProto(DenyProto()));
