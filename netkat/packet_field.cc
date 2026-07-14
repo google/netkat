@@ -14,8 +14,11 @@
 
 #include "netkat/packet_field.h"
 
+#include <cstdint>
+#include <limits>
 #include <string>
 
+#include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
@@ -25,6 +28,16 @@ namespace netkat {
 
 PacketFieldHandle PacketFieldManager::GetOrCreatePacketFieldHandle(
     absl::string_view field_name) {
+  // `PacketFieldHandle` packs its index into a 16-bit field (see
+  // packet_field.h), so silently truncating an index that no longer fits
+  // would let two distinct field names collide on the same handle. Fail
+  // loudly instead, since that's a violation of a documented, load-bearing
+  // assumption rather than a recoverable runtime condition.
+  CHECK_LE(field_names_.size(),  // Crash OK
+           std::numeric_limits<uint16_t>::max())
+      << "PacketFieldManager: exceeded the maximum of "
+      << std::numeric_limits<uint16_t>::max() + 1 << " distinct packet fields.";
+
   auto [it, inserted] = packet_field_by_name_.try_emplace(
       field_name, PacketFieldHandle(field_names_.size()));
   if (inserted) field_names_.push_back(std::string(field_name));

@@ -75,5 +75,26 @@ TEST(PacketFieldManagerTest, GetFieldNameReturnsNameOfPacketFieldHandle) {
   EXPECT_EQ(Manager().GetFieldName(foo), "foo");
   EXPECT_EQ(Manager().GetFieldName(bar), "bar");
 }
+
+// `PacketFieldHandle` packs its index into 16 bits (see packet_field.h), so
+// the manager must reject attempts to intern more than 2^16 distinct field
+// names instead of silently truncating the index and aliasing two different
+// field names onto the same handle.
+//
+// Uses a manager local to this test (rather than the shared `Manager()`
+// above) so as to not pollute global test state with tens of thousands of
+// interned fields.
+TEST(PacketFieldManagerTest,
+     GetOrCreatePacketFieldHandleCrashesOnTooManyDistinctFields) {
+  PacketFieldManager manager;
+  constexpr int kMaxDistinctFields = 1 << 16;
+  for (int i = 0; i < kMaxDistinctFields; ++i) {
+    (void)manager.GetOrCreatePacketFieldHandle(absl::StrCat("field_", i));
+  }
+  EXPECT_DEATH(
+      (void)manager.GetOrCreatePacketFieldHandle(
+          absl::StrCat("field_", kMaxDistinctFields)),
+      "exceeded the maximum");
+}
 }  // namespace
 }  // namespace netkat
