@@ -27,6 +27,7 @@ class MockPipelineStage : public NetkatSwitchPipelineStage {
   MOCK_METHOD(Policy, CleanUp, (), (const, override));
   MOCK_METHOD(std::unique_ptr<NetkatSwitchPipelineStage>, Clone, (),
               (const, override));
+  MOCK_METHOD(void, Clear, (), (override));
 };
 
 TEST(NetkatSwitchTest, CreateFailsWithNullStage) {

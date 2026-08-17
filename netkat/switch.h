@@ -69,6 +69,9 @@ class NetkatSwitchPipelineStage {
 
   // Returns a copy of the pipeline stage.
   virtual std::unique_ptr<NetkatSwitchPipelineStage> Clone() const = 0;
+
+  // Clears all policies in this stage.
+  virtual void Clear() = 0;
 };
 
 // Defines a switch that is composed of multiple pipeline stages. The generated

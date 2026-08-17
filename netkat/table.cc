@@ -216,6 +216,14 @@ Policy NetkatTable::GetPolicy() && {
                            accept_default_ ? Policy::Accept() : Policy::Deny());
 }
 
+void NetkatTable::Clear(bool reset_manager) {
+  rules_.clear();
+  raw_rules_.clear();
+  if (reset_manager) {
+    policy_manager_ = PacketTransformerManager();
+  }
+}
+
 Predicate NetkatTable::GetMatch() const {
   Predicate total_match = Predicate::False();
   for (const auto& [priority, match_action] : rules_) {

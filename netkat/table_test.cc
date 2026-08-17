@@ -185,13 +185,13 @@ TEST(NetkatTable, NonDeterministicRuleWithSameActionIsOk) {
 
 TEST(NetkatTable, MergeEmptyTablesIsEmpty) {
   NetkatTable table1, table2;
-  ASSERT_OK_AND_ASSIGN(absl::StatusOr<NetkatTable> merged_table,
+  ASSERT_OK_AND_ASSIGN(NetkatTable merged_table,
                        NetkatTable::Merge(table1, table2));
-  EXPECT_THAT(merged_table->GetPolicy().ToProto(), EqualsProto(DenyProto()));
+  EXPECT_THAT(merged_table.GetPolicy().ToProto(), EqualsProto(DenyProto()));
 
-  merged_table = NetkatTable::Merge(table2, table1);
-  ASSERT_THAT(merged_table, IsOk());
-  EXPECT_THAT(merged_table->GetPolicy().ToProto(), EqualsProto(DenyProto()));
+  ASSERT_OK_AND_ASSIGN(NetkatTable merged_table2,
+                       NetkatTable::Merge(table2, table1));
+  EXPECT_THAT(merged_table2.GetPolicy().ToProto(), EqualsProto(DenyProto()));
 }
 
 TEST(NetkatTable, MergeWithEmptyTableIsNoop) {
@@ -351,6 +351,30 @@ TEST(NetkatTable, GetMatchReturnsAllMatchesAcrossAllPriorities) {
                                          Match("smac", 1) || Match("dmac", 1)));
 }
 
+TEST(NetkatTable, ClearResetsRulesAndManagerOptionally) {
+  NetkatTable table;
+  ASSERT_OK(table.AddRule(/*priority=*/10, Match("port", 0), Modify("vrf", 1)));
+
+  AnalysisEngine engine;
+  EXPECT_FALSE(
+      engine.CheckEquivalent(table.GetPolicy(), Policy::Deny()).IsSuccess());
+  EXPECT_TRUE(engine.CheckEquivalent(table.GetMatch(), Match("port", 0)));
+
+  table.Clear(/*reset_manager=*/false);
+  EXPECT_TRUE(
+      engine.CheckEquivalent(table.GetPolicy(), Policy::Deny()).IsSuccess());
+  EXPECT_TRUE(engine.CheckEquivalent(table.GetMatch(), Predicate::False()));
+
+  ASSERT_OK(table.AddRule(/*priority=*/10, Match("port", 1), Modify("vrf", 2)));
+  EXPECT_FALSE(
+      engine.CheckEquivalent(table.GetPolicy(), Policy::Deny()).IsSuccess());
+  EXPECT_TRUE(engine.CheckEquivalent(table.GetMatch(), Match("port", 1)));
+
+  table.Clear(/*reset_manager=*/true);
+  EXPECT_TRUE(
+      engine.CheckEquivalent(table.GetPolicy(), Policy::Deny()).IsSuccess());
+  EXPECT_TRUE(engine.CheckEquivalent(table.GetMatch(), Predicate::False()));
+}
 // Even if an action of Deny is specified, the match should still reflect that
 // that predicate was expected to hit it.
 TEST(NetkatTable, GetMatchStillReturnsRegardlessOfAction) {

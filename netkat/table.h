@@ -43,7 +43,7 @@ namespace netkat {
 // For any given packet, this class requires that it be modified by at most one
 // unique action in the table. See `AddRule` for more details.
 //
-// `TableContraint`s may be added to enforce additional expectations on each
+// `TableConstraint`s may be added to enforce additional expectations on each
 // rule. See the constructor for more information.
 class NetkatTable {
  public:
@@ -162,6 +162,10 @@ class NetkatTable {
   // Any predicate that does not fall under this would then be subject to the
   // default policy of this table, e.g. Accept or Deny.
   Predicate GetMatch() const;
+
+  // Clears all rules from this table. If `reset_manager` is true, the backing
+  // policy manager is also reset completely.
+  void Clear(bool reset_manager = true);
 
   // Attempts to merge `rhs` into `lhs`. Returns an error if any rule in
   // `rhs` conflicts with any rule in `lhs`.
