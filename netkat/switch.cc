@@ -21,6 +21,14 @@
 
 namespace netkat {
 
+NetkatSwitch NetkatSwitch::Clone() const {
+  NetkatSwitch clone;
+  for (const std::unique_ptr<NetkatSwitchPipelineStage>& stage : stages_) {
+    clone.stages_.push_back(stage->Clone());
+  }
+  return clone;
+}
+
 absl::Status NetkatSwitch::AddStage(
     std::unique_ptr<NetkatSwitchPipelineStage> stage) {
   if (stage == nullptr) return absl::InvalidArgumentError("Stage is null");

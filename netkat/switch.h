@@ -66,6 +66,9 @@ class NetkatSwitchPipelineStage {
   // The policy defined here will be appended to the end of the final policy of
   // the switch.
   virtual netkat::Policy CleanUp() const = 0;
+
+  // Returns a copy of the pipeline stage.
+  virtual std::unique_ptr<NetkatSwitchPipelineStage> Clone() const = 0;
 };
 
 // Defines a switch that is composed of multiple pipeline stages. The generated
@@ -89,6 +92,9 @@ class NetkatSwitch {
   //       std::make_unique<NexthopStage>());
   template <typename... Stages>
   static absl::StatusOr<NetkatSwitch> Create(Stages&&... stages);
+
+  // Returns a copy of the switch.
+  NetkatSwitch Clone() const;
 
   // Appends a non-null stage to the end of the switch.
   //

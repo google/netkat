@@ -29,7 +29,9 @@
 #include "netkat/frontend.h"
 #include "netkat/netkat.pb.h"
 #include "netkat/packet_set.h"
+#include "netkat/packet_set_handle.h"
 #include "netkat/packet_transformer.h"
+#include "netkat/packet_transformer_handle.h"
 
 namespace netkat {
 namespace {
@@ -145,16 +147,7 @@ Policy GetPolicyInternal(
 
 NetkatTable::NetkatTable(std::vector<TableConstraint> constraints,
                          bool accept_default)
-    : accept_default_(accept_default), constraints_(std::move(constraints)) {
-  // TODO(anthonyroy): Consider an unsafe variant that only performs these
-  // checks in DEBUG builds.
-  constraints_.push_back([](const PendingRuleInfo& info) {
-    return VerifyActionHasNoPredicate(info.new_action);
-  });
-  constraints_.push_back([this](const PendingRuleInfo& info) {
-    return VerifyRuleDeterminism(info, policy_manager_);
-  });
-}
+    : accept_default_(accept_default), constraints_(std::move(constraints)) {}
 
 NetkatTable::NetkatTable(const NetkatTable& other)
     : accept_default_(other.accept_default_),
@@ -183,12 +176,20 @@ absl::Status NetkatTable::AddRule(int priority, Predicate match,
       .new_action = inserted ? current_action : action,
       .existing_match = inserted ? nullptr : &current_match,
       .existing_policy = inserted ? nullptr : &current_action};
-  for (TableConstraint& constraint : constraints_) {
-    absl::Status status = constraint(info);
-    if (!status.ok()) {
-      if (inserted) rules_.erase(it);
-      return status;
+
+  auto check_constraints = [&]() -> absl::Status {
+    for (TableConstraint& constraint : constraints_) {
+      RETURN_IF_ERROR(constraint(info));
     }
+    RETURN_IF_ERROR(VerifyActionHasNoPredicate(info.new_action));
+    RETURN_IF_ERROR(VerifyRuleDeterminism(info, policy_manager_));
+    return absl::OkStatus();
+  };
+
+  absl::Status status = check_constraints();
+  if (!status.ok()) {
+    if (inserted) rules_.erase(it);
+    return status;
   }
 
   // If this is the first rule in the priority band, the action does not yet

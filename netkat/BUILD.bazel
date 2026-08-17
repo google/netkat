@@ -77,7 +77,9 @@ cc_library(
     deps = [
         ":frontend",
         ":netkat_cc_proto",
+        ":packet_set_handle",
         ":packet_transformer",
+        ":packet_transformer_handle",
         "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/status",

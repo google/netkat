@@ -25,6 +25,8 @@ class MockPipelineStage : public NetkatSwitchPipelineStage {
               MergeStage, (const NetkatSwitchPipelineStage&),
               (const, override));
   MOCK_METHOD(Policy, CleanUp, (), (const, override));
+  MOCK_METHOD(std::unique_ptr<NetkatSwitchPipelineStage>, Clone, (),
+              (const, override));
 };
 
 TEST(NetkatSwitchTest, CreateFailsWithNullStage) {
@@ -118,6 +120,32 @@ TEST(NetkatSwitchTest, MultiStageSwitchReturnsCorrectPolicy) {
               Sequence(Filter(Match("vlan_id", 1)), Modify("vlan_id", 2),
                        Modify("vrf", -1), Modify("rnd_tag", -1)))
           .IsSuccess());
+}
+
+TEST(NetkatSwitchTest, CloneIsOk) {
+  ASSERT_OK_AND_ASSIGN(
+      NetkatSwitch nk_switch,
+      NetkatSwitch::Create(std::make_unique<MockPipelineStage>(),
+                           std::make_unique<MockPipelineStage>()));
+
+  auto* mock_stage = nk_switch.GetStage<MockPipelineStage>(0);
+  ASSERT_NE(mock_stage, nullptr);
+  EXPECT_CALL(*mock_stage, Clone())
+      .WillOnce(testing::Return(
+          testing::ByMove(std::make_unique<MockPipelineStage>())));
+
+  auto* mock_stage_2 = nk_switch.GetStage<MockPipelineStage>(1);
+  ASSERT_NE(mock_stage_2, nullptr);
+  EXPECT_CALL(*mock_stage_2, Clone())
+      .WillOnce(testing::Return(
+          testing::ByMove(std::make_unique<MockPipelineStage>())));
+
+  NetkatSwitch clone = nk_switch.Clone();
+  EXPECT_NE(clone.GetStage(0), nullptr);
+  EXPECT_NE(clone.GetStage(1), nullptr);
+  EXPECT_NE(clone.GetStage(0), clone.GetStage(1));
+  EXPECT_NE(clone.GetStage(0), nk_switch.GetStage(0));
+  EXPECT_NE(clone.GetStage(1), nk_switch.GetStage(1));
 }
 
 }  // namespace
