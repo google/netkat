@@ -22,8 +22,12 @@
 #ifndef GOOGLE_NETKAT_NETKAT_GTEST_UTILS_H_
 #define GOOGLE_NETKAT_NETKAT_GTEST_UTILS_H_
 
+#include <string>
+
 #include "fuzztest/fuzztest.h"
+#include "gmock/gmock.h"
 #include "google/protobuf/descriptor.h"
+#include "netkat/counter_example.h"
 #include "netkat/frontend.h"
 
 namespace netkat::netkat_test {
@@ -59,6 +63,26 @@ fuzztest::Domain<Predicate> AtomicPredicateDomain();
 // Returns a FUZZ_TEST domain for an arbitrary, dup-free, atomic Policy. I.e.,
 // the policy may be any of an arbitrary Modify or filtered, atomic predicate.
 fuzztest::Domain<Policy> AtomicDupFreePolicyDomain();
+
+// Matches a netkat::SuccessOrCounterExample that represents success (no
+// CounterExample).
+// On failure, explains the mismatch with the CounterExample's Explain() output.
+MATCHER(IsSuccess, negation ? "has CounterExample" : "is success") {
+  if (arg.IsSuccess()) {
+    return true;
+  }
+  *result_listener << "\nCounterExample:\n" << arg.Explain();
+  return false;
+}
+
+// Matches a netkat::SuccessOrCounterExample that contains a CounterExample.
+MATCHER(HasCounterExample, negation ? "is success" : "has CounterExample") {
+  if (!arg.IsSuccess()) {
+    return true;
+  }
+  *result_listener << "No CounterExample generated, statement was success.";
+  return false;
+}
 
 }  // namespace netkat::netkat_test
 
