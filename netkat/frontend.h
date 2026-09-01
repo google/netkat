@@ -202,6 +202,7 @@ class Policy {
   friend Policy Sequence(std::vector<Policy>);
   friend Policy Union(std::vector<Policy>);
   friend Policy Iterate(Policy);
+  friend Policy IterateAtLeastOnce(Policy);
   friend Policy Difference(Policy, Policy);
   friend Policy Record();
 
@@ -322,12 +323,19 @@ Policy Union(T&&... policies) {
 //   Policy topology = Union(link_action0, link_action1, ...);
 //
 // We may then use `Iterate` to build a policy that "walks" all paths in the
-// network, reachable by some arbitrary switch.
+// network(including no hop), reachable by some arbitrary switch.
 //
 //   Policy set_any_port = Union(Modify("port", 0), Modify("port", 1), ...);
 //   Policy walk_topology_from_x =
 //        Sequence(Filter(Match("switch", X)), set_any_port, Iterate(topology));
 Policy Iterate(Policy policy);
+
+// Iterates over the given policy one or more times, similar to the '+' operator
+// in Regex and enforces the input `policy` is iterated at least once.
+// IterateAtLeastOnce is defined as:
+//
+// IterateAtLeastOnce(p) == Sequence(p, Iterate(p));
+Policy IterateAtLeastOnce(Policy policy);
 
 // Performs a set difference operation on the given policies.
 //

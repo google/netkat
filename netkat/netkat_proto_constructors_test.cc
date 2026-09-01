@@ -157,6 +157,14 @@ TEST(PolicyProtoTest, AcceptProtoFiltersOnTrue) {
               EqualsProto(R"pb(filter { bool_constant { value: true } })pb"));
 }
 
+void IterateAtLeastOnceProtoReturnsSequenceOfPolicyAndIterate(
+    PolicyProto iterable) {
+  EXPECT_THAT(IterateAtLeastOnceProto(iterable),
+              EqualsProto(SequenceProto(iterable, IterateProto(iterable))));
+}
+FUZZ_TEST(PolicyProtoTest,
+          IterateAtLeastOnceProtoReturnsSequenceOfPolicyAndIterate);
+
 // -- Short hand tests ---------------------------------------------------------
 
 TEST(AsShorthandStringTest, RecordStringIsCorrect) {
@@ -219,6 +227,11 @@ TEST(AsShorthandStringTest, ModifyIsCorrect) {
 
 TEST(AsShorthandStringTest, IterateIsCorrect) {
   EXPECT_EQ(AsShorthandString(IterateProto(AcceptProto())), "(true)*");
+}
+
+TEST(AsShorthandStringTest, IterateAtLeastOnceIsCorrect) {
+  EXPECT_EQ(AsShorthandString(IterateAtLeastOnceProto(AcceptProto())),
+            "(true; (true)*)");
 }
 
 TEST(AsShorthandStringTest, MixedPolicyOrderIsPreserved) {

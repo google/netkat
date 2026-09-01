@@ -54,6 +54,9 @@ PolicyProto DifferenceProto(PolicyProto left, PolicyProto right);
 
 PolicyProto DenyProto();
 PolicyProto AcceptProto();
+// Returns a policy that iterates `iterable` one or more times (1 to infinity),
+// representing the Kleene Plus operation (p^+).
+PolicyProto IterateAtLeastOnceProto(PolicyProto iterable);
 
 // Returns a shorthand string from a given NetKAT policy/predicate. This follows
 // roughly the shorthand typically used in literature. Specifically:

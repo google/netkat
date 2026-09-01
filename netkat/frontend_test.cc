@@ -224,6 +224,23 @@ void IterateToProtoIsCorrect(Policy policy) {
 FUZZ_TEST(FrontEndTest, IterateToProtoIsCorrect)
     .WithDomains(/*policy=*/AtomicDupFreePolicyDomain());
 
+void IterateAtLeastOnceToProtoIsCorrect(Policy policy) {
+  EXPECT_THAT(IterateAtLeastOnce(policy).ToProto(),
+              EqualsProto(IterateAtLeastOnceProto(policy.ToProto())));
+}
+FUZZ_TEST(FrontEndTest, IterateAtLeastOnceToProtoIsCorrect)
+    .WithDomains(/*policy=*/AtomicDupFreePolicyDomain());
+
+void IterateAtLeastOnceCompositePolicyToProtoIsCorrect(
+    const PolicyProto& policy_proto) {
+  absl::StatusOr<Policy> policy = Policy::FromProto(policy_proto);
+  ASSERT_OK(policy.status());
+  EXPECT_THAT(IterateAtLeastOnce(*policy).ToProto(),
+              EqualsProto(IterateAtLeastOnceProto(policy_proto)));
+}
+FUZZ_TEST(FrontEndTest, IterateAtLeastOnceCompositePolicyToProtoIsCorrect)
+    .WithDomains(ArbitraryValidPolicyProto());
+
 void DifferenceToProtoIsCorrect(Policy left, Policy right) {
   EXPECT_THAT(Difference(left, right).ToProto(),
               EqualsProto(DifferenceProto(left.ToProto(), right.ToProto())));

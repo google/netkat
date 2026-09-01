@@ -133,6 +133,11 @@ PolicyProto DenyProto() { return FilterProto(FalseProto()); }
 
 PolicyProto AcceptProto() { return FilterProto(TrueProto()); }
 
+PolicyProto IterateAtLeastOnceProto(PolicyProto iterable) {
+  PolicyProto iterate_op = IterateProto(iterable);
+  return SequenceProto(std::move(iterable), std::move(iterate_op));
+}
+
 std::string AsShorthandString(PredicateProto predicate) {
   switch (predicate.predicate_case()) {
     case PredicateProto::kBoolConstant:

@@ -317,6 +317,32 @@ void IterateUnrollOnce(PolicyProto policy) {
 FUZZ_TEST(PacketTransformerManagerTest, IterateUnrollOnce)
     .WithDomains(ArbitraryValidPolicyProto());
 
+void IterateAtLeastOnceLeftAndRightUnrollsAreEquivalent(PolicyProto policy) {
+  EXPECT_EQ(Manager().Compile(IterateAtLeastOnceProto(policy)),
+            Manager().Compile(SequenceProto(IterateProto(policy), policy)));
+}
+FUZZ_TEST(PacketTransformerManagerTest,
+          IterateAtLeastOnceLeftAndRightUnrollsAreEquivalent)
+    .WithDomains(ArbitraryValidPolicyProto());
+
+void IterateAtLeastOnceAlgebraicIdentitiesHold(PolicyProto policy) {
+  // (p^+)^+ == p^+
+  EXPECT_EQ(Manager().Compile(
+                IterateAtLeastOnceProto(IterateAtLeastOnceProto(policy))),
+            Manager().Compile(IterateAtLeastOnceProto(policy)));
+
+  // (p^+)^* == p^*
+  EXPECT_EQ(Manager().Compile(IterateProto(IterateAtLeastOnceProto(policy))),
+            Manager().Compile(IterateProto(policy)));
+
+  // (p^*)^+ == p^*
+  EXPECT_EQ(Manager().Compile(IterateAtLeastOnceProto(IterateProto(policy))),
+            Manager().Compile(IterateProto(policy)));
+}
+FUZZ_TEST(PacketTransformerManagerTest,
+          IterateAtLeastOnceAlgebraicIdentitiesHold)
+    .WithDomains(ArbitraryValidPolicyProto());
+
 // This test checks that iterate is the least-fixed point on the left and right
 // side of a sequence. I.e. that if there is a term x such that x;y (or y;x) is
 // smaller than y, then x* is the smallest such term.

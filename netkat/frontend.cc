@@ -203,6 +203,10 @@ Policy Iterate(Policy policy) {
   return Policy(IterateProto(std::move(policy).ToProto()));
 }
 
+Policy IterateAtLeastOnce(Policy policy) {
+  return Policy(IterateAtLeastOnceProto(std::move(policy).ToProto()));
+}
+
 Policy Record() { return Policy(RecordProto()); }
 
 Policy Filter(Predicate predicate) {

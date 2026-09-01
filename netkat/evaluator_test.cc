@@ -405,6 +405,35 @@ TEST(EvaluatePolicyProtoTest, SimpleIterateThroughFiltersAndModifies) {
               UnorderedElementsAre(Packet()));
 }
 
+TEST(EvaluatePolicyProtoTest, IterateAtLeastOnceRequiresAtLeastOneTransition) {
+  // Define a state machine that increments `f` from 0 to 3, one number at a
+  // time:
+  // f == 0; f:=1 + f == 1; f := 2 + f == 2; f := 3
+  PolicyProto iterable = UnionProto(
+      SequenceProto(FilterProto(MatchProto("f", 0)), ModificationProto("f", 1)),
+      UnionProto(SequenceProto(FilterProto(MatchProto("f", 1)),
+                               ModificationProto("f", 2)),
+                 SequenceProto(FilterProto(MatchProto("f", 2)),
+                               ModificationProto("f", 3))));
+
+  // IterateAtLeastOnce captures the reachable states, after at least one
+  // hop. 0 transition state (the identity of the input packet) is omitted.
+  EXPECT_THAT(Evaluate(IterateAtLeastOnceProto(iterable), Packet({{"f", 0}})),
+              UnorderedElementsAre(Packet({{"f", 1}}), Packet({{"f", 2}}),
+                                   Packet({{"f", 3}})));
+
+  // If the packet doesn't match any transition, IterateAtLeastOnce drops 0-hop
+  // packets and IterateProto returns the input packet.
+  EXPECT_THAT(Evaluate(IterateAtLeastOnceProto(iterable), Packet()), IsEmpty());
+  EXPECT_THAT(Evaluate(IterateProto(iterable), Packet()),
+              UnorderedElementsAre(Packet()));
+
+  EXPECT_THAT(Evaluate(IterateAtLeastOnceProto(iterable), Packet({{"f", 99}})),
+              IsEmpty());
+  EXPECT_THAT(Evaluate(IterateProto(iterable), Packet({{"f", 99}})),
+              UnorderedElementsAre(Packet({{"f", 99}})));
+}
+
 /*--- Advanced policy properties ---------------------------------------------*/
 void ModifyThenMatchIsEquivalentToModify(Packet packet, std::string field,
                                          int value) {
