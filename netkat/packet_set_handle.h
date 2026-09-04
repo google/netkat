@@ -28,7 +28,6 @@
 #define GOOGLE_NETKAT_NETKAT_PACKET_SET_HANDLE_H_
 
 #include <cstdint>
-#include <limits>
 #include <string>
 #include <utility>
 
@@ -54,25 +53,39 @@ namespace netkat {
 // equality is cheap: O(1)!
 class [[nodiscard]] PacketSetHandle {
  public:
-  // The empty and full set of packets are not decision nodes, and thus we
-  // cannot associate an index into the `nodes_` vector with them. Instead, we
-  // represent them using sentinel values, chosen maximally to avoid collisions
-  // with proper indices.
+  // COMPLEMENT EDGES
+  // ----------------
+  // The most-significant bit of `node_index_` is a "complement" (a.k.a.
+  // "negative" or "complemented") edge flag, a standard BDD optimization: when
+  // set, the handle denotes the *complement* of the set denoted by the same
+  // handle with the flag cleared. This lets a set and its complement share a
+  // single decision node, and makes `PacketSetManager::Not` an O(1) bit flip.
+  //
+  // The remaining 31 bits are the index of the decision node in the manager's
+  // `nodes_` vector (or the leaf sentinel below). We expect millions, but not
+  // billions, of decision nodes in practice, so 2^31 ~= 2.1 billion is ample.
+  static constexpr uint32_t kComplementBit = uint32_t{1} << 31;
+  static constexpr uint32_t kIndexMask = kComplementBit - 1;
+
+  // The empty and full sets of packets are not decision nodes. Thanks to
+  // complement edges we need only a *single* leaf sentinel: a plain edge to it
+  // is the full set, a complement edge to it (`kEmptySet`) is the empty set.
   enum Sentinel : uint32_t {
-    // Encodes the empty set of packets.
-    kEmptySet = std::numeric_limits<uint32_t>::max(),
-    // Encodes the full set of packets.
-    kFullSet = std::numeric_limits<uint32_t>::max() - 1,
-    // The minimum sentinel node index.
-    // Smaller values are reserved for proper indices into the `nodes_` vector.
-    kMinSentinel = kFullSet,
+    // Encodes the full set of packets: a plain edge to the leaf.
+    kFullSet = kIndexMask,
+    // Encodes the empty set of packets: a complement edge to the leaf.
+    kEmptySet = kComplementBit | kIndexMask,
+    // Node indices in `[0, kMaxNodeCount)` are proper indices into `nodes_`;
+    // they must not collide with the leaf.
+    kMaxNodeCount = kIndexMask,
   };
 
   // Default constructor: the empty set of packets.
   PacketSetHandle() : node_index_(kEmptySet) {}
 
   // Two packet set handles compare equal iff they represent the same set of
-  // concrete packets. Comparison is O(1), thanks to interning/hash-consing.
+  // concrete packets. Comparison is O(1), thanks to interning/hash-consing and
+  // the canonical treatment of complement edges (see `packet_set.h`).
   friend auto operator<=>(PacketSetHandle a, PacketSetHandle b) = default;
 
   // Hashing, see https://abseil.io/docs/cpp/guides/hash.
@@ -94,23 +107,31 @@ class [[nodiscard]] PacketSetHandle {
     } else if (node_index_ == kFullSet) {
       return "PacketSetHandle<full>";
     } else {
-      return absl::StrFormat("PacketSetHandle<%d>", node_index_);
+      // A leading "~" marks a complement edge, e.g. "PacketSetHandle<~7>".
+      return absl::StrFormat("PacketSetHandle<%s%d>", complemented() ? "~" : "",
+                             index());
     }
   }
 
+  // True iff this is a complement edge (see "COMPLEMENT EDGES" above).
+  bool complemented() const { return (node_index_ & kComplementBit) != 0; }
+
  private:
-  // An index into the `nodes_` vector of the `PacketSetManager` object
-  // associated with this `PacketSetHandle`. The semantics of this packet set
-  // is entirely determined by the node `nodes_[node_index_]`. The index is
-  // otherwise arbitrary and meaningless.
-  //
-  // We use a 32-bit index as a tradeoff between minimizing memory usage and
-  // maximizing the number of `PacketSetHandle`s that can be created, both
-  // aspects that impact how well we scale to large NetKAT models. We expect
-  // millions, but not billions, of packet sets in practice, and 2^32 ~= 4
-  // billion.
+  // The complement bit (see above) packed with the index of the decision node
+  // in the `PacketSetManager`'s `nodes_` vector. The semantics of this packet
+  // set is entirely determined by `nodes_[index()]` and `complemented()`.
   uint32_t node_index_;
+
   explicit PacketSetHandle(uint32_t node_index) : node_index_(node_index) {}
+
+  // The decision-node index, with the complement bit masked off.
+  uint32_t index() const { return node_index_ & kIndexMask; }
+
+  // This handle with its complement bit toggled: denotes the complement set.
+  PacketSetHandle Flip() const {
+    return PacketSetHandle(node_index_ ^ kComplementBit);
+  }
+
   friend class PacketSetManager;
 };
 
