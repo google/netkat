@@ -208,6 +208,42 @@ void DoubleNegationCompilesToSamePacketSetHandle(const PredicateProto& pred) {
 FUZZ_TEST(PacketSetManagerTest, DoubleNegationCompilesToSamePacketSetHandle)
     .WithDomains(ArbitraryValidPredicateProto());
 
+// -- Complement edges -------------------------------------------------------
+// `Not` is implemented as an O(1) flip of a "complement edge" bit on the
+// handle (see `packet_set_handle.h`). These tests pin down the observable
+// consequences: it is an exact structural involution, and a set and its
+// complement are backed by the very same decision node.
+
+void NotIsAStructuralInvolution(const PredicateProto& pred) {
+  PacketSetHandle set = Manager().Compile(pred);
+  // Not twice yields the *identical* handle bits, not merely an equal set.
+  EXPECT_EQ(Manager().Not(Manager().Not(set)), set);
+}
+FUZZ_TEST(PacketSetManagerTest, NotIsAStructuralInvolution)
+    .WithDomains(ArbitraryValidPredicateProto());
+
+TEST(PacketSetManagerTest, NotOfLeafIsTheOtherLeaf) {
+  EXPECT_EQ(Manager().Not(Manager().FullSet()), Manager().EmptySet());
+  EXPECT_EQ(Manager().Not(Manager().EmptySet()), Manager().FullSet());
+}
+
+TEST(PacketSetManagerTest, ASetAndItsComplementShareOneDecisionNode) {
+  PacketSetHandle set =
+      Manager().Compile(OrProto(MatchProto("a", 1), MatchProto("b", 2)));
+  PacketSetHandle complement = Manager().Not(set);
+  ASSERT_NE(set, complement);
+
+  // The debug string is "PacketSetHandle<N>" for a plain edge and
+  // "PacketSetHandle<~N>" for a complement edge to the same node N.
+  const auto node_id = [](absl::string_view rendered) {
+    int id = -1;
+    EXPECT_TRUE(RE2::FullMatch(rendered, R"(PacketSetHandle<~?(\d+)>)", &id))
+        << rendered;
+    return id;
+  };
+  EXPECT_EQ(node_id(absl::StrCat(set)), node_id(absl::StrCat(complement)));
+}
+
 TEST(PacketSetManagerTest, TrueNotEqualsMatch) {
   EXPECT_NE(Manager().Compile(TrueProto()),
             Manager().Compile(MatchProto("hi", 42)));

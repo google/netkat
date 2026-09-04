@@ -277,6 +277,14 @@ class PacketSetManager {
 
   PacketSetHandle NodeToPacket(DecisionNode&& node);
 
+  // Returns `child`, the raw edge stored in a decision node, adjusted for the
+  // complement bit of the `parent` edge through which the node was reached: if
+  // `parent` is a complement edge, so are all of `parent`'s sub-edges. Used
+  // when recursing into a (possibly complemented) decision node.
+  static PacketSetHandle ChildEdge(PacketSetHandle parent, PacketSetHandle child) {
+    return parent.complemented() ? child.Flip() : child;
+  }
+
   // Helper function for GetConcretePackets that recursively generates a list of
   // concrete packets that are contained in the given packet set. This
   // function is only used for testing.
@@ -298,7 +306,7 @@ class PacketSetManager {
   static constexpr size_t kPageSize = (1 << 26) / sizeof(DecisionNode);
 
   // The decision nodes forming the BDD-style DAG representation of packet sets.
-  // `PacketSetHandle::node_index_` indexes into this vector.
+  // `PacketSetHandle::index()` indexes into this vector.
   //
   // We use a custom vector class that provides pointer stability, allowing us
   // to create new nodes while traversing the graph (e.g. during operations like
@@ -306,9 +314,10 @@ class PacketSetManager {
   PagedStableVector<DecisionNode, kPageSize> nodes_;
 
   // A so called "unique table" to ensure each node is only added to `nodes_`
-  // once, and thus has a unique `PacketSetHandle::node_index`.
+  // once, and thus has a unique `PacketSetHandle::index()`.
   //
-  // INVARIANT: `packet_by_node_[n] = s` iff `nodes_[s.node_index_] == n`.
+  // INVARIANT: `packet_by_node_[n] = s` iff `nodes_[s.index()] == n`, and every
+  // key `n` is in canonical form (`!n.default_branch.complemented()`).
   absl::flat_hash_map<DecisionNode, PacketSetHandle> packet_by_node_;
 
   // A map of a given `PredicateProto` to a `PacketSetHandle`.
@@ -321,13 +330,13 @@ class PacketSetManager {
   // A memoization table for the `And` operation.
   // Maps a pair of (normalized) argument handles to their computed intersection
   // handle.
+  //
+  // With complement edges, `Or` and `Xor` are expressed in terms of `And` and
+  // `Not` (see the .cc file) and so share this one table. `Not` itself is an
+  // O(1) bit flip and needs no memoization.
   absl::flat_hash_map<std::pair<PacketSetHandle, PacketSetHandle>,
                       PacketSetHandle>
       and_cache_;
-
-  // A memoization table for the `Not` operation.
-  // Maps an argument handle to its computed complement handle.
-  absl::flat_hash_map<PacketSetHandle, PacketSetHandle> not_cache_;
 
   // INVARIANT: All `DecisionNode` fields are interned by this manager.
   PacketFieldManager field_manager_;
