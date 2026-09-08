@@ -1,0 +1,78 @@
+diff --git absl/utility/BUILD.bazel absl/utility/BUILD.bazel
+--- absl/utility/BUILD.bazel
++++ absl/utility/BUILD.bazel
+@@ -45,3 +45,16 @@
+         "//absl/meta:type_traits",
+     ],
+ )
++
++# Compatibility shim: removed in 20260526.0 but still referenced by protobuf 29.
++cc_library(
++    name = "if_constexpr",
++    hdrs = [
++        "internal/if_constexpr.h",
++    ],
++    copts = ABSL_DEFAULT_COPTS,
++    linkopts = ABSL_DEFAULT_LINKOPTS,
++    deps = [
++        "//absl/base:config",
++    ],
++)
+diff --git absl/utility/internal/if_constexpr.h absl/utility/internal/if_constexpr.h
+new file mode 100644
+--- /dev/null
++++ absl/utility/internal/if_constexpr.h
+@@ -0,0 +1,53 @@
++// Copyright 2023 The Abseil Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++// Compatibility shim: this header was present in abseil through 20250512 but
++// removed in 20260526. protobuf 29 still references the if_constexpr target.
++// This header provides IfConstexpr/IfConstexprElse for pre-C++17 code;
++// in C++17+ you can use `if constexpr` directly.
++
++#ifndef ABSL_UTILITY_INTERNAL_IF_CONSTEXPR_H_
++#define ABSL_UTILITY_INTERNAL_IF_CONSTEXPR_H_
++
++#include <tuple>
++#include <utility>
++
++#include "absl/base/config.h"
++
++namespace absl {
++ABSL_NAMESPACE_BEGIN
++
++namespace utility_internal {
++
++template <bool condition, typename TrueFunc, typename FalseFunc,
++          typename... Args>
++auto IfConstexprElse(TrueFunc&& true_func, FalseFunc&& false_func,
++                     Args&&... args) {
++  return std::get<condition>(std::forward_as_tuple(
++      std::forward<FalseFunc>(false_func), std::forward<TrueFunc>(true_func)))(
++      std::forward<Args>(args)...);
++}
++
++template <bool condition, typename Func, typename... Args>
++void IfConstexpr(Func&& func, Args&&... args) {
++  IfConstexprElse<condition>(std::forward<Func>(func), [](auto&&...){},
++                             std::forward<Args>(args)...);
++}
++
++}  // namespace utility_internal
++
++ABSL_NAMESPACE_END
++}  // namespace absl
++
++#endif  // ABSL_UTILITY_INTERNAL_IF_CONSTEXPR_H_

@@ -21,13 +21,24 @@ module(
     compatibility_level = 1,
 )
 
-bazel_dep(name = "protobuf", version = "29.0", repo_name = "com_google_protobuf")
-bazel_dep(name = "abseil-cpp", version = "20240722.0", repo_name = "com_google_absl")
-bazel_dep(name = "gutil", version = "20250502.0", repo_name = "com_google_gutil")
-bazel_dep(name = "re2", version = "2024-07-02.bcr.1", repo_name = "com_googlesource_code_re2")
+bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
+bazel_dep(name = "abseil-cpp", version = "20260526.0", repo_name = "com_google_absl")
+bazel_dep(name = "gutil", version = "20260309.0.bcr.1", repo_name = "com_google_gutil")
+bazel_dep(name = "re2", version = "2025-11-05.bcr.1", repo_name = "com_googlesource_code_re2")
 
 # Dev Depdencies.
 bazel_dep(name = "rules_license", version = "1.0.0", dev_dependency = True)
-bazel_dep(name = "googletest", version = "1.15.2", dev_dependency = True, repo_name = "com_google_googletest")
-bazel_dep(name = "fuzztest", version = "20241028.0", dev_dependency = True, repo_name = "com_google_fuzztest")
-bazel_dep(name = "google_benchmark", version = "1.9.4", dev_dependency = True, repo_name = "com_google_benchmark")
+bazel_dep(name = "googletest", version = "1.17.0.bcr.2", dev_dependency = True, repo_name = "com_google_googletest")
+bazel_dep(name = "fuzztest", version = "20260219.0", dev_dependency = True, repo_name = "com_google_fuzztest")
+bazel_dep(name = "google_benchmark", version = "1.9.5", dev_dependency = True, repo_name = "com_google_benchmark")
+
+# fuzztest 20260219.0 relies on a transitive include of
+# absl/random/internal/distribution_caller.h via absl/random/bit_gen_ref.h,
+# which was removed in abseil 20260526.0 as a layering cleanup. Patch it to
+# forward-declare those types directly so the friend declarations compile.
+single_version_override(
+    module_name = "fuzztest",
+    patches = ["//patches:fuzztest_20260219.0_abseil_random_internal_compat.patch"],
+    patch_strip = 0,
+    version = "20260219.0",
+)

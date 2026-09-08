@@ -1,0 +1,22 @@
+diff --git fuzztest/fuzzing_bit_gen.h fuzztest/fuzzing_bit_gen.h
+--- fuzztest/fuzzing_bit_gen.h
++++ fuzztest/fuzzing_bit_gen.h
+@@ -24,6 +24,18 @@
+ #include "absl/random/bit_gen_ref.h"
+ #include "absl/types/span.h"
+
++
++// Forward-declare internal abseil types used for friend access below.
++// These were transitively declared via absl/random/bit_gen_ref.h in abseil
++// versions before 20260526.0, but that transitive exposure was removed.
++namespace absl {
++namespace random_internal {
++template <typename URBG>
++struct DistributionCaller;
++class MockHelpers;
++}  // namespace random_internal
++}  // namespace absl
++
+ namespace fuzztest {
+
+ /// FuzzingBitGen is a BitGen instance which uses the Abseil mock mechanisms
