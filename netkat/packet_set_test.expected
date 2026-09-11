@@ -18,140 +18,140 @@ PacketSetHandle<full>:
 digraph {
   node [fontsize = 14]
   edge [fontsize = 12]
-  4294967294 [label="T" shape=box]
+  2147483647 [label="T" shape=box]
 }
 ================================================================================
 Test case: p := (a=3 && b=4) || (b!=5 && c=5). Example from Katch paper Fig 3.
 ================================================================================
 -- STRING ----------------------------------------------------------------------
-PacketSetHandle<14>:
-  PacketFieldHandle<0>:'a' == 3 -> PacketSetHandle<13>
-  PacketFieldHandle<0>:'a' == * -> PacketSetHandle<6>
-PacketSetHandle<13>:
+PacketSetHandle<!7>:
+  PacketFieldHandle<0>:'a' == 3 -> PacketSetHandle<!6>
+  PacketFieldHandle<0>:'a' == * -> PacketSetHandle<!5>
+PacketSetHandle<!6>:
   PacketFieldHandle<1>:'b' == 4 -> PacketSetHandle<full>
   PacketFieldHandle<1>:'b' == 5 -> PacketSetHandle<empty>
-  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<5>
-PacketSetHandle<6>:
+  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<!4>
+PacketSetHandle<!5>:
   PacketFieldHandle<1>:'b' == 5 -> PacketSetHandle<empty>
-  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<5>
-PacketSetHandle<5>:
+  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<!4>
+PacketSetHandle<!4>:
   PacketFieldHandle<2>:'c' == 5 -> PacketSetHandle<full>
   PacketFieldHandle<2>:'c' == * -> PacketSetHandle<empty>
 -- DOT -------------------------------------------------------------------------
 digraph {
   node [fontsize = 14]
   edge [fontsize = 12]
-  4294967294 [label="T" shape=box]
-  4294967295 [label="F" shape=box]
-  14 [label="a"]
-  14 -> 13 [label="3"]
-  14 -> 6 [style=dashed]
-  13 [label="b"]
-  13 -> 4294967294 [label="4"]
-  13 -> 4294967295 [label="5"]
-  13 -> 5 [style=dashed]
+  2147483647 [label="T" shape=box]
+  root [shape=point]
+  root -> 7 [arrowtail=odot dir=both]
+  7 [label="a"]
+  7 -> 6 [label="3"]
+  7 -> 5 [style=dashed]
   6 [label="b"]
-  6 -> 4294967295 [label="5"]
-  6 -> 5 [style=dashed]
-  5 [label="c"]
-  5 -> 4294967294 [label="5"]
-  5 -> 4294967295 [style=dashed]
+  6 -> 2147483647 [label="4" arrowtail=odot dir=both]
+  6 -> 2147483647 [label="5"]
+  6 -> 4 [style=dashed]
+  5 [label="b"]
+  5 -> 2147483647 [label="5"]
+  5 -> 4 [style=dashed]
+  4 [label="c"]
+  4 -> 2147483647 [label="5" arrowtail=odot dir=both]
+  4 -> 2147483647 [style=dashed]
 }
 ================================================================================
 Test case: q := (b=3 && c=4) || (a=5 && c!=5). Example from Katch paper Fig 3.
 ================================================================================
 -- STRING ----------------------------------------------------------------------
-PacketSetHandle<24>:
-  PacketFieldHandle<0>:'a' == 5 -> PacketSetHandle<9>
-  PacketFieldHandle<0>:'a' == * -> PacketSetHandle<17>
-PacketSetHandle<9>:
+PacketSetHandle<!13>:
+  PacketFieldHandle<0>:'a' == 5 -> PacketSetHandle<4>
+  PacketFieldHandle<0>:'a' == * -> PacketSetHandle<!10>
+PacketSetHandle<4>:
   PacketFieldHandle<2>:'c' == 5 -> PacketSetHandle<empty>
   PacketFieldHandle<2>:'c' == * -> PacketSetHandle<full>
-PacketSetHandle<17>:
-  PacketFieldHandle<1>:'b' == 3 -> PacketSetHandle<16>
+PacketSetHandle<!10>:
+  PacketFieldHandle<1>:'b' == 3 -> PacketSetHandle<!9>
   PacketFieldHandle<1>:'b' == * -> PacketSetHandle<empty>
-PacketSetHandle<16>:
+PacketSetHandle<!9>:
   PacketFieldHandle<2>:'c' == 4 -> PacketSetHandle<full>
   PacketFieldHandle<2>:'c' == * -> PacketSetHandle<empty>
 -- DOT -------------------------------------------------------------------------
 digraph {
   node [fontsize = 14]
   edge [fontsize = 12]
-  4294967294 [label="T" shape=box]
-  4294967295 [label="F" shape=box]
-  24 [label="a"]
-  24 -> 9 [label="5"]
-  24 -> 17 [style=dashed]
+  2147483647 [label="T" shape=box]
+  root [shape=point]
+  root -> 13 [arrowtail=odot dir=both]
+  13 [label="a"]
+  13 -> 4 [label="5" arrowtail=odot dir=both]
+  13 -> 10 [style=dashed]
+  4 [label="c"]
+  4 -> 2147483647 [label="5" arrowtail=odot dir=both]
+  4 -> 2147483647 [style=dashed]
+  10 [label="b"]
+  10 -> 9 [label="3"]
+  10 -> 2147483647 [style=dashed]
   9 [label="c"]
-  9 -> 4294967295 [label="5"]
-  9 -> 4294967294 [style=dashed]
-  17 [label="b"]
-  17 -> 16 [label="3"]
-  17 -> 4294967295 [style=dashed]
-  16 [label="c"]
-  16 -> 4294967294 [label="4"]
-  16 -> 4294967295 [style=dashed]
+  9 -> 2147483647 [label="4" arrowtail=odot dir=both]
+  9 -> 2147483647 [style=dashed]
 }
 ================================================================================
 Test case: p + q. Example from Katch paper Fig 3.
 ================================================================================
 -- STRING ----------------------------------------------------------------------
-PacketSetHandle<34>:
-  PacketFieldHandle<0>:'a' == 3 -> PacketSetHandle<32>
-  PacketFieldHandle<0>:'a' == 5 -> PacketSetHandle<33>
-  PacketFieldHandle<0>:'a' == * -> PacketSetHandle<31>
-PacketSetHandle<32>:
-  PacketFieldHandle<1>:'b' == 3 -> PacketSetHandle<30>
+PacketSetHandle<!18>:
+  PacketFieldHandle<0>:'a' == 3 -> PacketSetHandle<!16>
+  PacketFieldHandle<0>:'a' == 5 -> PacketSetHandle<17>
+  PacketFieldHandle<0>:'a' == * -> PacketSetHandle<!15>
+PacketSetHandle<!16>:
+  PacketFieldHandle<1>:'b' == 3 -> PacketSetHandle<!14>
   PacketFieldHandle<1>:'b' == 4 -> PacketSetHandle<full>
   PacketFieldHandle<1>:'b' == 5 -> PacketSetHandle<empty>
-  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<5>
-PacketSetHandle<33>:
-  PacketFieldHandle<1>:'b' == 5 -> PacketSetHandle<9>
+  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<!4>
+PacketSetHandle<17>:
+  PacketFieldHandle<1>:'b' == 5 -> PacketSetHandle<4>
   PacketFieldHandle<1>:'b' == * -> PacketSetHandle<full>
-PacketSetHandle<31>:
-  PacketFieldHandle<1>:'b' == 3 -> PacketSetHandle<30>
+PacketSetHandle<!15>:
+  PacketFieldHandle<1>:'b' == 3 -> PacketSetHandle<!14>
   PacketFieldHandle<1>:'b' == 5 -> PacketSetHandle<empty>
-  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<5>
-PacketSetHandle<30>:
+  PacketFieldHandle<1>:'b' == * -> PacketSetHandle<!4>
+PacketSetHandle<!14>:
   PacketFieldHandle<2>:'c' == 4 -> PacketSetHandle<full>
   PacketFieldHandle<2>:'c' == 5 -> PacketSetHandle<full>
   PacketFieldHandle<2>:'c' == * -> PacketSetHandle<empty>
-PacketSetHandle<5>:
+PacketSetHandle<!4>:
   PacketFieldHandle<2>:'c' == 5 -> PacketSetHandle<full>
   PacketFieldHandle<2>:'c' == * -> PacketSetHandle<empty>
-PacketSetHandle<9>:
+PacketSetHandle<4>:
   PacketFieldHandle<2>:'c' == 5 -> PacketSetHandle<empty>
   PacketFieldHandle<2>:'c' == * -> PacketSetHandle<full>
 -- DOT -------------------------------------------------------------------------
 digraph {
   node [fontsize = 14]
   edge [fontsize = 12]
-  4294967294 [label="T" shape=box]
-  4294967295 [label="F" shape=box]
-  34 [label="a"]
-  34 -> 32 [label="3"]
-  34 -> 33 [label="5"]
-  34 -> 31 [style=dashed]
-  32 [label="b"]
-  32 -> 30 [label="3"]
-  32 -> 4294967294 [label="4"]
-  32 -> 4294967295 [label="5"]
-  32 -> 5 [style=dashed]
-  33 [label="b"]
-  33 -> 9 [label="5"]
-  33 -> 4294967294 [style=dashed]
-  31 [label="b"]
-  31 -> 30 [label="3"]
-  31 -> 4294967295 [label="5"]
-  31 -> 5 [style=dashed]
-  30 [label="c"]
-  30 -> 4294967294 [label="4"]
-  30 -> 4294967294 [label="5"]
-  30 -> 4294967295 [style=dashed]
-  5 [label="c"]
-  5 -> 4294967294 [label="5"]
-  5 -> 4294967295 [style=dashed]
-  9 [label="c"]
-  9 -> 4294967295 [label="5"]
-  9 -> 4294967294 [style=dashed]
+  2147483647 [label="T" shape=box]
+  root [shape=point]
+  root -> 18 [arrowtail=odot dir=both]
+  18 [label="a"]
+  18 -> 16 [label="3"]
+  18 -> 17 [label="5" arrowtail=odot dir=both]
+  18 -> 15 [style=dashed]
+  16 [label="b"]
+  16 -> 14 [label="3"]
+  16 -> 2147483647 [label="4" arrowtail=odot dir=both]
+  16 -> 2147483647 [label="5"]
+  16 -> 4 [style=dashed]
+  17 [label="b"]
+  17 -> 4 [label="5"]
+  17 -> 2147483647 [style=dashed]
+  15 [label="b"]
+  15 -> 14 [label="3"]
+  15 -> 2147483647 [label="5"]
+  15 -> 4 [style=dashed]
+  14 [label="c"]
+  14 -> 2147483647 [label="4" arrowtail=odot dir=both]
+  14 -> 2147483647 [label="5" arrowtail=odot dir=both]
+  14 -> 2147483647 [style=dashed]
+  4 [label="c"]
+  4 -> 2147483647 [label="5" arrowtail=odot dir=both]
+  4 -> 2147483647 [style=dashed]
 }

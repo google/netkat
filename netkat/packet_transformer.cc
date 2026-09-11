@@ -365,11 +365,16 @@ PacketTransformerHandle PacketTransformerManager::FromPacketSetHandle(
       // Since packet sets are not modified, we don't want any default
       // field modification branches.
       .default_branch_by_field_modification = {},
-      .default_branch = FromPacketSetHandle(packet_node.default_branch),
+      // NOTE: `packet_set` may be a complemented edge, in which case all
+      // branches of `packet_node` must be complemented, see
+      // `PacketSetManager::ResolveBranch`.
+      .default_branch = FromPacketSetHandle(PacketSetManager::ResolveBranch(
+          packet_set, packet_node.default_branch)),
   };
 
   for (const auto& [value, branch] : packet_node.branch_by_field_value) {
-    PacketTransformerHandle transformer_branch = FromPacketSetHandle(branch);
+    PacketTransformerHandle transformer_branch = FromPacketSetHandle(
+        PacketSetManager::ResolveBranch(packet_set, branch));
     DCHECK(transformer_branch != transformer_node.default_branch);
     transformer_node.modify_branch_by_field_match[value][value] =
         transformer_branch;

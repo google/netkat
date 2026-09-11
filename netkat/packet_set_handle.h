@@ -28,7 +28,6 @@
 #define GOOGLE_NETKAT_NETKAT_PACKET_SET_HANDLE_H_
 
 #include <cstdint>
-#include <limits>
 #include <string>
 #include <utility>
 
@@ -52,24 +51,47 @@ namespace netkat {
 // handles represent the same set if and only if they have the same memory
 // representation. Since the memory representation is just 32 bits, semantic set
 // equality is cheap: O(1)!
+//
+// COMPLEMENTED EDGES:
+// A handle is a pair of a "complement bit" and a node index (see `value_`),
+// i.e. it is an *edge* pointing at a node, and the edge may be "complemented".
+// A complemented edge denotes the complement of the set denoted by the node it
+// points at, see
+// https://en.wikipedia.org/wiki/Binary_decision_diagram#Complemented_edges.
+// This makes set complement an O(1) bit flip and roughly halves the number of
+// nodes we need to store, at the cost of a canonicity rule that
+// `PacketSetManager` must maintain (see `PacketSetManager::NodeToPacket`).
 class [[nodiscard]] PacketSetHandle {
  public:
-  // The empty and full set of packets are not decision nodes, and thus we
-  // cannot associate an index into the `nodes_` vector with them. Instead, we
-  // represent them using sentinel values, chosen maximally to avoid collisions
-  // with proper indices.
+  // The bit of `value_` encoding whether this is a complemented edge, i.e.
+  // whether this handle denotes the complement of the set denoted by the node
+  // it points at.
+  static constexpr uint32_t kComplementBit = uint32_t{1} << 31;
+
+  // The bits of `value_` encoding the node this handle points at: either an
+  // index into the `nodes_` vector of the `PacketSetManager` object associated
+  // with this `PacketSetHandle`, or the `kFullSet` sentinel. The index is
+  // otherwise arbitrary and meaningless.
+  static constexpr uint32_t kNodeIndexMask = ~kComplementBit;
+
+  // The full set of packets is not a decision node, and thus we cannot
+  // associate an index into the `nodes_` vector with it. Instead, we represent
+  // it using a sentinel value, chosen maximally to avoid collisions with proper
+  // indices. The empty set needs no sentinel of its own: it is simply the
+  // complement of the full set.
   enum Sentinel : uint32_t {
-    // Encodes the empty set of packets.
-    kEmptySet = std::numeric_limits<uint32_t>::max(),
-    // Encodes the full set of packets.
-    kFullSet = std::numeric_limits<uint32_t>::max() - 1,
+    // Encodes the full set of packets: the unique terminal node.
+    kFullSet = kComplementBit - 1,
+    // Encodes the empty set of packets: a complemented edge to the terminal
+    // node.
+    kEmptySet = kFullSet | kComplementBit,
     // The minimum sentinel node index.
     // Smaller values are reserved for proper indices into the `nodes_` vector.
     kMinSentinel = kFullSet,
   };
 
   // Default constructor: the empty set of packets.
-  PacketSetHandle() : node_index_(kEmptySet) {}
+  PacketSetHandle() : value_(kEmptySet) {}
 
   // Two packet set handles compare equal iff they represent the same set of
   // concrete packets. Comparison is O(1), thanks to interning/hash-consing.
@@ -78,7 +100,7 @@ class [[nodiscard]] PacketSetHandle {
   // Hashing, see https://abseil.io/docs/cpp/guides/hash.
   template <typename H>
   friend H AbslHashValue(H h, PacketSetHandle packet_set) {
-    return H::combine(std::move(h), packet_set.node_index_);
+    return H::combine(std::move(h), packet_set.value_);
   }
 
   // Formatting, see https://abseil.io/docs/cpp/guides/abslstringify.
@@ -89,30 +111,58 @@ class [[nodiscard]] PacketSetHandle {
     absl::Format(&sink, "%s", packet_set.ToString());
   }
   std::string ToString() const {
-    if (node_index_ == kEmptySet) {
+    if (value_ == kEmptySet) {
       return "PacketSetHandle<empty>";
-    } else if (node_index_ == kFullSet) {
+    } else if (value_ == kFullSet) {
       return "PacketSetHandle<full>";
+    } else if (IsComplemented()) {
+      // '!' denotes a complemented edge, i.e. the complement of node `%d`.
+      return absl::StrFormat("PacketSetHandle<!%d>", NodeIndex());
     } else {
-      return absl::StrFormat("PacketSetHandle<%d>", node_index_);
+      return absl::StrFormat("PacketSetHandle<%d>", NodeIndex());
     }
   }
 
  private:
-  // An index into the `nodes_` vector of the `PacketSetManager` object
-  // associated with this `PacketSetHandle`. The semantics of this packet set
-  // is entirely determined by the node `nodes_[node_index_]`. The index is
-  // otherwise arbitrary and meaningless.
+  // The complement bit (see `kComplementBit`) and the node index (see
+  // `kNodeIndexMask`), packed into a single 32-bit word. The semantics of this
+  // packet set is entirely determined by the node `nodes_[NodeIndex()]`, and
+  // the complement bit: if the bit is set, this handle denotes the complement
+  // of the set denoted by that node.
   //
-  // We use a 32-bit index as a tradeoff between minimizing memory usage and
+  // We use a 32-bit word as a tradeoff between minimizing memory usage and
   // maximizing the number of `PacketSetHandle`s that can be created, both
   // aspects that impact how well we scale to large NetKAT models. We expect
-  // millions, but not billions, of packet sets in practice, and 2^32 ~= 4
+  // millions, but not billions, of packet sets in practice, and 2^31 ~= 2
   // billion.
-  uint32_t node_index_;
-  explicit PacketSetHandle(uint32_t node_index) : node_index_(node_index) {}
+  uint32_t value_;
+
+  explicit PacketSetHandle(uint32_t value) : value_(value) {}
+
+  // Returns the index of the node this handle points at, ignoring the
+  // complement bit. Note that `x` and `x.Complement()` share the same index.
+  uint32_t NodeIndex() const { return value_ & kNodeIndexMask; }
+
+  // Returns whether this is a complemented edge, i.e. whether this handle
+  // denotes the complement of the set denoted by the node it points at.
+  bool IsComplemented() const { return (value_ & kComplementBit) != 0; }
+
+  // Returns the handle denoting the complement of the set denoted by this
+  // handle. O(1)!
+  PacketSetHandle Complement() const {
+    return PacketSetHandle(value_ ^ kComplementBit);
+  }
+
+  // Returns `Complement()` if `complement` is true, and `*this` otherwise.
+  PacketSetHandle ComplementIf(bool complement) const {
+    return PacketSetHandle(value_ ^ (complement ? kComplementBit : 0));
+  }
+
   friend class PacketSetManager;
 };
+
+static_assert(PacketSetHandle::kFullSet == 0x7fff'ffff);
+static_assert(PacketSetHandle::kEmptySet == 0xffff'ffff);
 
 // Protect against regressions in the memory layout, as it affects performance.
 static_assert(sizeof(PacketSetHandle) <= 4);
