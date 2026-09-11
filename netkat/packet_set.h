@@ -125,7 +125,12 @@ class PacketSetManager {
 
   // Returns the set of packets that are *NOT* in the given set.
   // Also known as set complement.
-  PacketSetHandle Not(PacketSetHandle negand);
+  //
+  // Thanks to complemented edges, this is O(1) and allocation-free: it merely
+  // flips a bit in the handle. See `PacketSetHandle` for details.
+  PacketSetHandle Not(PacketSetHandle negand) const {
+    return negand.Complement();
+  }
 
   // Returns the set of packets that are in either in the `left` or the `right`
   // set, but not in both. Also known as symmetric set difference.
@@ -180,17 +185,43 @@ class PacketSetManager {
   // see https://en.wikipedia.org/wiki/Binary_decision_diagram. This variant of
   // BDDs is described in the paper "KATch: A Fast Symbolic Verifier for
   // NetKAT".
+  //
+  // COMPLEMENTED EDGES:
+  // On top of the above, we use "complemented edges", see
+  // https://en.wikipedia.org/wiki/Binary_decision_diagram#Complemented_edges.
+  // That is, a `PacketSetHandle` is an *edge*: a node index plus a bit saying
+  // whether the edge denotes the set of the node it points at, or the
+  // complement of that set. This has two benefits:
+  // * `Not` is O(1) instead of O(|graph|): it just flips the bit.
+  // * At most one of any two complementary sets `S` and `!S` is stored, roughly
+  //   halving memory usage and improving cache hit rates.
+  //
+  // Complemented edges only preserve the canonicity property (see
+  // `PacketSetHandle`) if we pick a canonical representative of each pair
+  // `{S, !S}`. We use the standard trick of requiring that the `default_branch`
+  // of every stored `DecisionNode` is a *regular* (non-complemented) edge; see
+  // `NodeToPacket`, which establishes this invariant. Note that the branches in
+  // `branch_by_field_value` may be complemented edges.
+  //
+  // CAUTION: The branches of a `DecisionNode` are stored relative to the
+  // *regular* edge pointing at that node. Thus, when traversing the graph along
+  // a handle `h`, each branch `b` of `GetNodeOrDie(h)` must be interpreted as
+  // `ResolveBranch(h, b)`. Forgetting this is the most likely bug when working
+  // with this class.
 
   // A decision node in the packet set DAG. The node branches on the value
   // of a single `field`, and (the consequent of) each branch is a
   // `PacketSetHandle` corresponding to either another decision node or the
-  // full/empty set. Semantically, represents a cascading conditional of the
-  // form:
+  // full/empty set. Semantically, when reached via a regular (non-complemented)
+  // edge, represents a cascading conditional of the form:
   //
   //   if      (field == value_1) then branch_1
   //   else if (field == value_2) then branch_2
   //   ...
   //   else default_branch
+  //
+  // When reached via a complemented edge, it represents the complement of the
+  // above, which is obtained by complementing each of the branches.
   struct DecisionNode {
     // The packet field whose value this decision node branches on.
     //
@@ -275,7 +306,35 @@ class PacketSetManager {
   static_assert(sizeof(DecisionNode) == 24);
   static_assert(alignof(DecisionNode) == 8);
 
+  // Returns the `PacketSetHandle` denoting the set denoted by `node`, creating
+  // (and interning) a new node if necessary.
+  //
+  // Establishes the complemented edge canonicity rule: if `node`'s
+  // `default_branch` is a complemented edge, the complement of `node` is
+  // interned instead and a complemented edge to it is returned.
   PacketSetHandle NodeToPacket(DecisionNode&& node);
+
+  // Returns the `PacketSetHandle` of `node`, adding it to `nodes_` if it is not
+  // already interned. Unlike `NodeToPacket`, assumes that the caller has
+  // already established all node invariants, including that `node`'s
+  // `default_branch` is a regular (non-complemented) edge.
+  PacketSetHandle InternNode(DecisionNode&& node);
+
+  // Returns the branch `branch` of the decision node `GetNodeOrDie(parent)`,
+  // interpreted relative to the (possibly complemented) edge `parent`.
+  //
+  // Branches are stored relative to the regular edge pointing at a node, so
+  // reaching the node via a complemented edge complements all its branches.
+  static PacketSetHandle ResolveBranch(PacketSetHandle parent,
+                                       PacketSetHandle branch) {
+    return branch.ComplementIf(parent.IsComplemented());
+  }
+
+  // Returns true iff `packet_set` is a terminal, i.e. `FullSet()` (a regular
+  // edge to the terminal node) or `EmptySet()` (a complemented edge to it).
+  static bool IsTerminal(PacketSetHandle packet_set) {
+    return packet_set.NodeIndex() == PacketSetHandle::kFullSet;
+  }
 
   // Helper function for GetConcretePackets that recursively generates a list of
   // concrete packets that are contained in the given packet set. This
@@ -288,6 +347,10 @@ class PacketSetManager {
   //
   // Unless there is a bug in the implementation of this class, this function
   // is NOT expected to be called with these special packets that crash.
+  //
+  // CAUTION: The returned node's branches are stored relative to the regular
+  // edge pointing at it; use `ResolveBranch(packet_set, branch)` to interpret
+  // them relative to `packet_set`.
   const DecisionNode& GetNodeOrDie(PacketSetHandle packet_set) const;
 
   [[nodiscard]] std::string ToString(const DecisionNode& node) const;
@@ -298,17 +361,19 @@ class PacketSetManager {
   static constexpr size_t kPageSize = (1 << 26) / sizeof(DecisionNode);
 
   // The decision nodes forming the BDD-style DAG representation of packet sets.
-  // `PacketSetHandle::node_index_` indexes into this vector.
+  // `PacketSetHandle::NodeIndex()` indexes into this vector.
   //
   // We use a custom vector class that provides pointer stability, allowing us
   // to create new nodes while traversing the graph (e.g. during operations like
-  // `And`, `Or`, `Not`). The class also avoids expensive relocations.
+  // `And` and `Or`). The class also avoids expensive relocations.
   PagedStableVector<DecisionNode, kPageSize> nodes_;
 
   // A so called "unique table" to ensure each node is only added to `nodes_`
-  // once, and thus has a unique `PacketSetHandle::node_index`.
+  // once, and thus has a unique `PacketSetHandle::NodeIndex()`.
   //
-  // INVARIANT: `packet_by_node_[n] = s` iff `nodes_[s.node_index_] == n`.
+  // INVARIANT: `packet_by_node_[n] = s` iff `nodes_[s.NodeIndex()] == n`.
+  // INVARIANT: `s` is a regular (non-complemented) edge, i.e. the complement of
+  // a node is never interned separately, see `NodeToPacket`.
   absl::flat_hash_map<DecisionNode, PacketSetHandle> packet_by_node_;
 
   // A map of a given `PredicateProto` to a `PacketSetHandle`.
@@ -321,13 +386,12 @@ class PacketSetManager {
   // A memoization table for the `And` operation.
   // Maps a pair of (normalized) argument handles to their computed intersection
   // handle.
+  //
+  // NOTE: `Or` is implemented in terms of `And` and `Not` (De Morgan), and thus
+  // shares this table; `Not` needs no table, as it is O(1).
   absl::flat_hash_map<std::pair<PacketSetHandle, PacketSetHandle>,
                       PacketSetHandle>
       and_cache_;
-
-  // A memoization table for the `Not` operation.
-  // Maps an argument handle to its computed complement handle.
-  absl::flat_hash_map<PacketSetHandle, PacketSetHandle> not_cache_;
 
   // INVARIANT: All `DecisionNode` fields are interned by this manager.
   PacketFieldManager field_manager_;
