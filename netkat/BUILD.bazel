@@ -143,6 +143,7 @@ cc_test(
         ":gtest_utils",
         ":netkat_proto_constructors",
         ":packet",
+        ":packet_set_handle",
         ":packet_transformer",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -151,7 +152,6 @@ cc_test(
         "@com_google_fuzztest//fuzztest",
         "@com_google_googletest//:gtest_main",
         "@com_google_gutil//gutil:status_matchers",
-        "@com_googlesource_code_re2//:re2",
     ],
 )
 
@@ -162,6 +162,7 @@ cc_binary(
     deps = [
         ":netkat_cc_proto",
         ":netkat_proto_constructors",
+        ":packet_set_handle",
         ":packet_transformer",
         "@com_google_absl//absl/strings",
         "@com_google_benchmark//:benchmark_main",
@@ -264,6 +265,7 @@ cc_library(
     srcs = ["packet_field.cc"],
     hdrs = ["packet_field.h"],
     deps = [
+        "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status",
@@ -290,6 +292,67 @@ cc_test(
 cc_library(
     name = "paged_stable_vector",
     hdrs = ["paged_stable_vector.h"],
+)
+
+cc_library(
+    name = "associative_chain",
+    hdrs = ["associative_chain.h"],
+    deps = ["@com_google_absl//absl/log:check"],
+)
+
+cc_test(
+    name = "associative_chain_test",
+    srcs = ["associative_chain_test.cc"],
+    deps = [
+        ":associative_chain",
+        "@com_google_fuzztest//fuzztest",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "interned_vector",
+    hdrs = ["interned_vector.h"],
+    deps = [
+        ":paged_stable_vector",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/hash",
+        "@com_google_absl//absl/status",
+        "@com_google_gutil//gutil:status",
+    ],
+)
+
+cc_test(
+    name = "interned_vector_test",
+    srcs = ["interned_vector_test.cc"],
+    deps = [
+        ":interned_vector",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_fuzztest//fuzztest",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_gutil//gutil:status_matchers",
+    ],
+)
+
+cc_library(
+    name = "sorted_vector_map",
+    hdrs = ["sorted_vector_map.h"],
+    deps = [
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/log:check",
+    ],
+)
+
+cc_test(
+    name = "sorted_vector_map_test",
+    srcs = ["sorted_vector_map_test.cc"],
+    deps = [
+        ":sorted_vector_map",
+        "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/hash:hash_testing",
+        "@com_google_fuzztest//fuzztest",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 cc_library(
@@ -330,7 +393,9 @@ cc_library(
         ":counter_example",
         ":frontend",
         ":packet",
+        ":packet_set_handle",
         ":packet_transformer",
+        ":packet_transformer_handle",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
@@ -380,24 +445,27 @@ cc_library(
         "packet_transformer.h",
     ],
     deps = [
+        ":associative_chain",
+        ":field_order",
+        ":interned_vector",
         ":netkat_cc_proto",
         ":packet",
         ":packet_field",
         ":packet_set_handle",
         ":packet_transformer_handle",
-        ":paged_stable_vector",
+        ":sorted_vector_map",
         "@com_google_absl//absl/algorithm:container",
-        "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/container:fixed_array",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/functional:any_invocable",
+        "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
         "@com_google_gutil//gutil:status",
     ],
 )
@@ -423,17 +491,16 @@ cc_test(
         ":netkat_cc_proto",
         ":netkat_proto_constructors",
         ":packet",
+        ":packet_set_handle",
         ":packet_transformer",
         ":packet_transformer_handle",
         "@com_google_absl//absl/base:no_destructor",
-        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/strings",
         "@com_google_fuzztest//fuzztest",
         "@com_google_googletest//:gtest_main",
         "@com_google_gutil//gutil:status_matchers",
-        "@com_googlesource_code_re2//:re2",
     ],
 )
 
@@ -449,6 +516,100 @@ cc_binary(
         ":packet_transformer_handle",
         "@com_google_absl//absl/strings",
         "@com_google_benchmark//:benchmark_main",
+    ],
+)
+
+cc_library(
+    name = "benchmark_networks",
+    testonly = True,
+    srcs = ["benchmark_networks.cc"],
+    hdrs = ["benchmark_networks.h"],
+    deps = [
+        ":netkat_cc_proto",
+        ":netkat_proto_constructors",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "benchmark_networks_test",
+    srcs = ["benchmark_networks_test.cc"],
+    deps = [
+        ":benchmark_networks",
+        ":netkat_proto_constructors",
+        ":packet",
+        ":packet_set_handle",
+        ":packet_transformer",
+        ":packet_transformer_handle",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_binary(
+    name = "network_benchmark",
+    testonly = True,
+    srcs = ["network_benchmark.cc"],
+    deps = [
+        ":benchmark_networks",
+        ":field_order",
+        ":netkat_cc_proto",
+        ":netkat_proto_constructors",
+        ":packet_set_handle",
+        ":packet_transformer",
+        ":packet_transformer_handle",
+        "@com_google_absl//absl/types:span",
+        "@com_google_benchmark//:benchmark_main",
+    ],
+)
+
+cc_library(
+    name = "field_order",
+    srcs = ["field_order.cc"],
+    hdrs = ["field_order.h"],
+    deps = [
+        ":netkat_cc_proto",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "field_order_test",
+    srcs = ["field_order_test.cc"],
+    deps = [
+        ":field_order",
+        ":netkat_cc_proto",
+        ":netkat_proto_constructors",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_binary(
+    name = "field_order_study",
+    testonly = True,
+    srcs = ["field_order_study.cc"],
+    deps = [
+        ":benchmark_networks",
+        ":field_order",
+        ":netkat_cc_proto",
+        ":netkat_proto_constructors",
+        ":packet_set_handle",
+        ":packet_transformer",
+        ":packet_transformer_handle",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:span",
     ],
 )
 

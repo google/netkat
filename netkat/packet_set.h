@@ -46,6 +46,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -55,12 +56,13 @@
 #include "absl/status/status.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
+#include "netkat/interned_vector.h"
 #include "netkat/netkat.pb.h"
 #include "netkat/packet.h"
 #include "netkat/packet_field.h"
 #include "netkat/packet_set_handle.h"
 #include "netkat/packet_transformer_handle.h"
-#include "netkat/paged_stable_vector.h"
 
 namespace netkat {
 
@@ -105,6 +107,14 @@ class PacketSetManager {
   // Compiles the given `PredicateProto` into a `PacketSetHandle` that
   // represents the set of packets satisfying the predicate.
   PacketSetHandle Compile(const PredicateProto& pred);
+
+  // Declares the given packet `fields`, in order. Packet sets test fields in
+  // the order in which they are first used (by `Match`, `Compile`, etc.), which
+  // can affect performance dramatically: fields declared first are tested
+  // first. Fields that are already in use keep their place.
+  //
+  // See `field_order.h` for heuristics computing good field orders.
+  void DeclareFields(absl::Span<const std::string> fields);
 
   // The packet set representing the empty set of packets.
   PacketSetHandle EmptySet() const;
@@ -180,6 +190,15 @@ class PacketSetManager {
   // see https://en.wikipedia.org/wiki/Binary_decision_diagram. This variant of
   // BDDs is described in the paper "KATch: A Fast Symbolic Verifier for
   // NetKAT".
+  //
+  // Like many BDD packages, we use "complement edges": A handle with the
+  // complement bit set (see `PacketSetHandle`) represents the complement of
+  // the packet set represented by the same handle without the bit. So `Not` is
+  // O(1), a set and its complement share all nodes, and `Or` can share the
+  // memoization table of `And` by De Morgan's law. For canonicity, the default
+  // branches of decision nodes are never complemented (see `NodeToPacket`).
+  // The branches of a node reached via a complemented handle must be
+  // complemented to obtain their semantics.
 
   // A decision node in the packet set DAG. The node branches on the value
   // of a single `field`, and (the consequent of) each branch is a
@@ -201,6 +220,8 @@ class PacketSetManager {
     PacketFieldHandle field;
 
     // The consequent of the "else" branch of this decision node.
+    //
+    // INVARIANT: Not complemented, and thus in particular != `EmptySet()`.
     PacketSetHandle default_branch;
 
     // The "if" branches of the decision node, "keyed" by the value they branch
@@ -231,8 +252,8 @@ class PacketSetManager {
     // Protect against regressions in memory layout, as it affects performance.
     static_assert(sizeof(branch_by_field_value) == 16);
 
-    friend auto operator<=>(const DecisionNode& a,
-                            const DecisionNode& b) = default;
+    friend bool operator==(const DecisionNode& a,
+                           const DecisionNode& b) = default;
 
     // Hashing, see https://abseil.io/docs/cpp/guides/hash.
     template <typename H>
@@ -275,7 +296,53 @@ class PacketSetManager {
   static_assert(sizeof(DecisionNode) == 24);
   static_assert(alignof(DecisionNode) == 8);
 
+  // Returns the packet set represented by the given `node`, whose branches may
+  // be complemented, canonicalizing it as needed.
   PacketSetHandle NodeToPacket(DecisionNode&& node);
+
+  // Helpers for complement edges, see above.
+  static bool IsComplemented(PacketSetHandle packet_set) {
+    return packet_set.node_index_ & PacketSetHandle::kComplementBit;
+  }
+  static PacketSetHandle Complement(PacketSetHandle packet_set) {
+    return PacketSetHandle(packet_set.node_index_ ^
+                           PacketSetHandle::kComplementBit);
+  }
+  // Returns `Complement(packet_set)` if `complement`, or else `packet_set`.
+  static PacketSetHandle ComplementIf(bool complement,
+                                      PacketSetHandle packet_set) {
+    return complement ? Complement(packet_set) : packet_set;
+  }
+
+  // The left and right operand of a binary predicate operation, if any.
+  using OptionalOperands =
+      std::optional<std::pair<const PredicateProto*, const PredicateProto*>>;
+
+  // Compiles the binary operation `pred` (e.g. `a || b`), whose operands are
+  // given by `get_operands` (see `FlattenAssociativeChain`), using the given
+  // `combine` operation. If `pred` is the root of a long chain of the same
+  // associative operation (e.g. `a || b || c || ...`), compiles the chain as a
+  // balanced tree, to avoid quadratic compile times for degenerate (list-like)
+  // chains. Otherwise, compiles `pred` as usual, memoizing the result in
+  // `packet_set_by_hash_` under the given `key`.
+  template <class GetOperands, class Combine>
+  PacketSetHandle CompileAssociativeChain(const PredicateProto& pred,
+                                          ProtoHashKey& key,
+                                          GetOperands&& get_operands,
+                                          Combine&& combine);
+
+  // Returns the packet set obtained by combining the given (non-leaf) packet
+  // sets pointwise, using the given binary operation `combine` on sub-sets.
+  // In other words, computes the "apply" operation of classic BDD packages.
+  //
+  // Requires `combine` to be commutative, and must only be called with
+  // `left` and `right` that are neither `EmptySet()` nor `FullSet()`.
+  template <class Combine>
+  PacketSetHandle CombineNodes(PacketSetHandle left, PacketSetHandle right,
+                               Combine&& combine);
+
+  // Same as the public `Exists`, but taking an interned field handle.
+  PacketSetHandle Exists(PacketFieldHandle field, PacketSetHandle packet_set);
 
   // Helper function for GetConcretePackets that recursively generates a list of
   // concrete packets that are contained in the given packet set. This
@@ -283,8 +350,9 @@ class PacketSetManager {
   void GetConcretePacketsDfs(PacketSetHandle packet_set, Packet& current_packet,
                              std::vector<Packet>& result) const;
 
-  // Returns the `DecisionNode` corresponding to the given `PacketSetHandle`, or
-  // crashes if the `packet` is `EmptySet()` or `FullSet()`.
+  // Returns the `DecisionNode` corresponding to the given `PacketSetHandle`
+  // (ignoring its complement bit), or crashes if the `packet` is `EmptySet()`
+  // or `FullSet()`.
   //
   // Unless there is a bug in the implementation of this class, this function
   // is NOT expected to be called with these special packets that crash.
@@ -300,16 +368,14 @@ class PacketSetManager {
   // The decision nodes forming the BDD-style DAG representation of packet sets.
   // `PacketSetHandle::node_index_` indexes into this vector.
   //
+  // The vector doubles as a so called "unique table", ensuring each node is
+  // stored only once, and thus has a unique `PacketSetHandle::node_index_`.
+  //
   // We use a custom vector class that provides pointer stability, allowing us
   // to create new nodes while traversing the graph (e.g. during operations like
-  // `And`, `Or`, `Not`). The class also avoids expensive relocations.
-  PagedStableVector<DecisionNode, kPageSize> nodes_;
-
-  // A so called "unique table" to ensure each node is only added to `nodes_`
-  // once, and thus has a unique `PacketSetHandle::node_index`.
-  //
-  // INVARIANT: `packet_by_node_[n] = s` iff `nodes_[s.node_index_] == n`.
-  absl::flat_hash_map<DecisionNode, PacketSetHandle> packet_by_node_;
+  // `And`, `Or`, `Not`). The class also avoids expensive relocations, and
+  // stores each node only once (rather than in both a vector and a hash map).
+  InternedVector<DecisionNode, kPageSize> nodes_;
 
   // A map of a given `PredicateProto` to a `PacketSetHandle`.
   //
@@ -318,16 +384,24 @@ class PacketSetManager {
   // already exists.
   absl::flat_hash_map<ProtoHashKey, PacketSetHandle> packet_set_by_hash_;
 
-  // A memoization table for the `And` operation.
+  // A memoization table for the `And` (and thus `Or`) operation.
   // Maps a pair of (normalized) argument handles to their computed intersection
   // handle.
   absl::flat_hash_map<std::pair<PacketSetHandle, PacketSetHandle>,
                       PacketSetHandle>
       and_cache_;
 
-  // A memoization table for the `Not` operation.
-  // Maps an argument handle to its computed complement handle.
-  absl::flat_hash_map<PacketSetHandle, PacketSetHandle> not_cache_;
+  // A memoization table for the `Xor` operation.
+  // Maps a pair of (normalized, non-complemented) argument handles to the
+  // computed result.
+  absl::flat_hash_map<std::pair<PacketSetHandle, PacketSetHandle>,
+                      PacketSetHandle>
+      xor_cache_;
+
+  // A memoization table for the `Exists` operation.
+  absl::flat_hash_map<std::pair<PacketFieldHandle, PacketSetHandle>,
+                      PacketSetHandle>
+      exists_cache_;
 
   // INVARIANT: All `DecisionNode` fields are interned by this manager.
   PacketFieldManager field_manager_;

@@ -15,15 +15,15 @@
 #include "netkat/packet_transformer.h"
 
 #include <cstdint>
+#include <optional>
 #include <ostream>
 #include <utility>
+#include <vector>
 
 #include "absl/base/no_destructor.h"
-#include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/log.h"
 #include "absl/strings/str_cat.h"
-#include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "fuzztest/fuzztest.h"
 #include "gmock/gmock.h"
@@ -35,7 +35,8 @@
 #include "netkat/netkat_proto_constructors.h"
 #include "netkat/packet.h"
 #include "netkat/packet_set.h"
-#include "re2/re2.h"
+#include "netkat/packet_set_handle.h"
+#include "netkat/packet_transformer_handle.h"
 
 namespace netkat {
 
@@ -67,7 +68,6 @@ using ::netkat::netkat_test::ArbitraryValidPredicateProto;
 using ::netkat::netkat_test::FieldTypeIs;
 using ::testing::ContainerEq;
 using ::testing::IsEmpty;
-using ::testing::Pair;
 using ::testing::StartsWith;
 using ::testing::Truly;
 using ::testing::UnorderedElementsAre;
@@ -232,6 +232,65 @@ void DifferenceCompilesToDifference(PolicyProto left, PolicyProto right) {
 }
 FUZZ_TEST(PacketTransformerManagerTest, DifferenceCompilesToDifference)
     .WithDomains(ArbitraryValidPolicyProto(), ArbitraryValidPolicyProto());
+
+// A rule `filter(match); action + filter(!negated_match); ...` of a cascade of
+// prioritized rules, where `negated_match` is `match` unless overridden.
+struct PrioritizedRule {
+  PredicateProto match;
+  PolicyProto action;
+  std::optional<PredicateProto> negated_match;
+};
+
+// Checks that cascades of prioritized rules, which are compiled specially,
+// compile to the same result as composing the rules one by one. Also covers
+// malformed cascades, where `negated_match` differs from `match`.
+void PrioritizedRulesCompileToCascadeOfRules(std::vector<PrioritizedRule> rules,
+                                             PolicyProto fallthrough) {
+  PolicyProto cascade = fallthrough;
+  PacketTransformerHandle expected = Manager().Compile(fallthrough);
+  for (auto it = rules.rbegin(); it != rules.rend(); ++it) {
+    PredicateProto negated_match = it->negated_match.value_or(it->match);
+    cascade = UnionProto(
+        SequenceProto(FilterProto(it->match), it->action),
+        SequenceProto(FilterProto(NotProto(negated_match)), cascade));
+    expected = Manager().Union(
+        Manager().Sequence(Manager().Filter(it->match),
+                           Manager().Compile(it->action)),
+        Manager().Sequence(Manager().Filter(NotProto(negated_match)),
+                           expected));
+  }
+  EXPECT_EQ(Manager().Compile(cascade), expected);
+}
+FUZZ_TEST(PacketTransformerManagerTest, PrioritizedRulesCompileToCascadeOfRules)
+    .WithDomains(fuzztest::VectorOf(
+                     fuzztest::StructOf<PrioritizedRule>(
+                         PredicateWithRestrictedFields(),
+                         PolicyWithRestrictedFields(),
+                         fuzztest::OptionalOf(PredicateWithRestrictedFields())))
+                     .WithMinSize(1)
+                     .WithMaxSize(40),
+                 PolicyWithRestrictedFields());
+
+// Like above, but for well-formed cascades long enough to be compiled
+// specially.
+void LongPrioritizedTablesCompileToCascadeOfRules(
+    std::vector<std::pair<PredicateProto, PolicyProto>> rules,
+    PolicyProto fallthrough) {
+  std::vector<PrioritizedRule> prioritized_rules;
+  for (auto& [match, action] : rules) {
+    prioritized_rules.push_back({.match = match, .action = action});
+  }
+  PrioritizedRulesCompileToCascadeOfRules(std::move(prioritized_rules),
+                                          std::move(fallthrough));
+}
+FUZZ_TEST(PacketTransformerManagerTest,
+          LongPrioritizedTablesCompileToCascadeOfRules)
+    .WithDomains(
+        fuzztest::VectorOf(fuzztest::PairOf(PredicateWithRestrictedFields(),
+                                            PolicyWithRestrictedFields()))
+            .WithMinSize(16)
+            .WithMaxSize(64),
+        PolicyWithRestrictedFields());
 
 /*--- Kleene algebra axioms and equivalences ---------------------------------*/
 
@@ -1029,7 +1088,7 @@ class PacketTransformerManagerTestPeer {
     };
     // Case 1: Output from explicit match+modify branches.
     for (const auto& [match_value, branch_by_modify_value] :
-         node.modify_branch_by_field_match) {
+         node.modify_branch_by_field_match()) {
       for (const auto& [modify_value, branch] : branch_by_modify_value) {
         add_to_output(
             and_fn(match_fn(field, modify_value),
@@ -1039,7 +1098,7 @@ class PacketTransformerManagerTestPeer {
 
     // Case 2: Output from default-modify branches.
     for (const auto& [modify_value, branch] :
-         node.default_branch_by_field_modification) {
+         node.default_branch_by_field_modification()) {
       add_to_output(
           and_fn(match_fn(field, modify_value),
                  GetAllPossibleOutputPacketsReferenceImplementation(branch)));
@@ -1057,12 +1116,12 @@ class PacketTransformerManagerTestPeer {
     PacketSetHandle fallthrough_output =
         packet_transformer_manager_->GetPacketSetManager().FullSet();
     for (const auto& [match_value, unused] :
-         node.modify_branch_by_field_match) {
+         node.modify_branch_by_field_match()) {
       fallthrough_output =
           and_fn(fallthrough_output, not_fn(match_fn(field, match_value)));
     }
     for (const auto& [modify_value, unused] :
-         node.default_branch_by_field_modification) {
+         node.default_branch_by_field_modification()) {
       fallthrough_output =
           and_fn(fallthrough_output, not_fn(match_fn(field, modify_value)));
     }

@@ -22,6 +22,7 @@
 #include "netkat/netkat.pb.h"
 #include "netkat/netkat_proto_constructors.h"
 #include "netkat/packet_set.h"
+#include "netkat/packet_set_handle.h"
 #include "netkat/packet_transformer.h"
 
 namespace netkat {
@@ -215,5 +216,74 @@ void BM_ReCompileAndWithHighOverlappingPredicate(benchmark::State& state) {
   }
 }
 BENCHMARK(BM_ReCompileAndWithHighOverlappingPredicate);
+
+// -- Scaling benchmarks -------------------------------------------------------
+//
+// The benchmarks above operate on small, fixed-size predicates. The benchmarks
+// below are parameterized by a size `N` and model the kinds of predicates seen
+// in practice, e.g. the match column of an N-entry forwarding table, to expose
+// asymptotic (in)efficiencies.
+
+// Returns a predicate resembling the match column of an N-entry table:
+//
+//   OR_{0 <= i < N} (dst=i+offset && vlan=i%16 && port=i%8)
+PredicateProto CreateTableMatchPredicate(int num_entries, int offset = 0) {
+  PredicateProto result = FalseProto();
+  for (int i = 0; i < num_entries; ++i) {
+    result = OrProto(std::move(result),
+                     AndProto(MatchProto("dst", i + offset),
+                              AndProto(MatchProto("vlan", i % 16),
+                                       MatchProto("port", i % 8))));
+  }
+  return result;
+}
+
+// Benchmarks compiling the match column of an N-entry table (mostly `Or`).
+void BM_CompileTableMatch(benchmark::State& state) {
+  PredicateProto predicate = CreateTableMatchPredicate(state.range(0));
+  for (auto s : state) {
+    PacketTransformerManager transformer;
+    PacketSetManager& manager = transformer.GetPacketSetManager();
+    PacketSetHandle handle = manager.Compile(predicate);
+    benchmark::DoNotOptimize(handle);
+  }
+}
+BENCHMARK(BM_CompileTableMatch)->RangeMultiplier(4)->Range(16, 1024);
+
+// Benchmarks compiling the negation of the match column of an N-entry table,
+// followed by an intersection and a symmetric difference with a second,
+// partially overlapping table (exercises `Not`, `And`, and `Xor`).
+void BM_CompileTableMatchBooleanCombinations(benchmark::State& state) {
+  const int n = state.range(0);
+  PredicateProto left = CreateTableMatchPredicate(n);
+  PredicateProto right = CreateTableMatchPredicate(n, /*offset=*/n / 2);
+  PredicateProto predicate =
+      OrProto(AndProto(NotProto(left), right), XorProto(left, right));
+  for (auto s : state) {
+    PacketTransformerManager transformer;
+    PacketSetManager& manager = transformer.GetPacketSetManager();
+    PacketSetHandle handle = manager.Compile(predicate);
+    benchmark::DoNotOptimize(handle);
+  }
+}
+BENCHMARK(BM_CompileTableMatchBooleanCombinations)
+    ->RangeMultiplier(4)
+    ->Range(16, 1024);
+
+// Benchmarks existential quantification over a field in the middle of the
+// field order of the match column of an N-entry table.
+void BM_ExistsOnTableMatch(benchmark::State& state) {
+  PredicateProto predicate = CreateTableMatchPredicate(state.range(0));
+  for (auto s : state) {
+    state.PauseTiming();
+    PacketTransformerManager transformer;
+    PacketSetManager& manager = transformer.GetPacketSetManager();
+    PacketSetHandle handle = manager.Compile(predicate);
+    state.ResumeTiming();
+    PacketSetHandle result = manager.Exists("vlan", handle);
+    benchmark::DoNotOptimize(result);
+  }
+}
+BENCHMARK(BM_ExistsOnTableMatch)->RangeMultiplier(4)->Range(16, 1024);
 
 }  // namespace netkat

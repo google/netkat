@@ -16,6 +16,7 @@
 
 #include <string>
 
+#include "absl/base/no_destructor.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
@@ -31,12 +32,15 @@ PacketFieldHandle PacketFieldManager::GetOrCreatePacketFieldHandle(
   return it->second;
 }
 
-std::string PacketFieldManager::GetFieldName(PacketFieldHandle field) const {
+const std::string& PacketFieldManager::GetFieldName(
+    PacketFieldHandle field) const {
   if (field.index_ >= field_names_.size()) {
     LOG(DFATAL) << "PacketFieldManager::GetFieldName: field index "
                 << field.index_
                 << " out of bounds. Returning arbitrary string.";
-    return "INTERNAL ERROR: PacketFieldManager::GetFieldName out of bounds";
+    static const absl::NoDestructor<std::string> kError(
+        "INTERNAL ERROR: PacketFieldManager::GetFieldName out of bounds");
+    return *kError;
   }
   return field_names_[field.index_];
 }
