@@ -21,6 +21,7 @@
 #include "benchmark/benchmark.h"
 #include "netkat/netkat.pb.h"
 #include "netkat/netkat_proto_constructors.h"
+#include "netkat/packet_set.h"
 #include "netkat/packet_set_handle.h"
 #include "netkat/packet_transformer.h"
 #include "netkat/packet_transformer_handle.h"
@@ -448,5 +449,116 @@ void BM_RepeatedGetAllInputPacketsWithHighOverlappingPolicy(
   }
 }
 BENCHMARK(BM_RepeatedGetAllInputPacketsWithHighOverlappingPolicy);
+
+// -- Scaling benchmarks -------------------------------------------------------
+//
+// The benchmarks above operate on small, fixed-size policies. The benchmarks
+// below are parameterized by a size `N` and model the kinds of policies seen in
+// practice, to expose asymptotic (in)efficiencies.
+
+// Returns a policy resembling an N-rule prioritized table, encoded the same way
+// `NetkatTable` encodes tables:
+//
+//   r_0 + !m_0; (r_1 + !m_1; (... (r_{N-1} + !m_{N-1}; default)))
+//
+// where m_i = (dst=i && port=i%8) and r_i = m_i; out:=i%8; vlan:=i%4.
+PolicyProto CreatePrioritizedTablePolicy(int num_rules) {
+  PolicyProto result = DenyProto();
+  for (int i = num_rules - 1; i >= 0; --i) {
+    PredicateProto match =
+        AndProto(MatchProto("dst", i), MatchProto("port", i % 8));
+    PolicyProto rule = SequenceProto(
+        FilterProto(match), SequenceProto(ModificationProto("out", i % 8),
+                                          ModificationProto("vlan", i % 4)));
+    result = UnionProto(
+        std::move(rule),
+        SequenceProto(FilterProto(NotProto(match)), std::move(result)));
+  }
+  return result;
+}
+
+// Benchmarks compiling an N-rule prioritized table.
+void BM_CompilePrioritizedTable(benchmark::State& state) {
+  PolicyProto policy = CreatePrioritizedTablePolicy(state.range(0));
+  for (auto s : state) {
+    PacketTransformerManager manager;
+    PacketTransformerHandle transformer = manager.Compile(policy);
+    benchmark::DoNotOptimize(transformer);
+  }
+}
+BENCHMARK(BM_CompilePrioritizedTable)->RangeMultiplier(4)->Range(16, 1024);
+
+// Returns a policy modeling one hop through a network of N switches connected
+// in a line, i.e. forwarding by each switch followed by traversal of a link:
+//
+//   (SUM_s sw=s; table_s); (SUM_s link_s)
+//
+// Switch `s` forwards packets destined to `d` right (port:=1) if d > s, left
+// (port:=0) if d < s, and to the host (port:=2) if d = s. The links connect
+// port 1 of switch `s` to port 0 of switch `s+1`, and vice versa.
+PolicyProto CreateLineNetworkHopPolicy(int num_switches) {
+  PolicyProto switches = DenyProto();
+  PolicyProto links = DenyProto();
+  for (int s = 0; s < num_switches; ++s) {
+    PolicyProto table = DenyProto();
+    for (int d = 0; d < num_switches; ++d) {
+      int port = d > s ? 1 : (d < s ? 0 : 2);
+      table = UnionProto(std::move(table),
+                         SequenceProto(FilterProto(MatchProto("dst", d)),
+                                       ModificationProto("port", port)));
+    }
+    switches = UnionProto(
+        std::move(switches),
+        SequenceProto(FilterProto(MatchProto("sw", s)), std::move(table)));
+    if (s + 1 < num_switches) {
+      links = UnionProto(
+          std::move(links),
+          SequenceProto(
+              FilterProto(AndProto(MatchProto("sw", s), MatchProto("port", 1))),
+              SequenceProto(ModificationProto("sw", s + 1),
+                            ModificationProto("port", 0))));
+      links = UnionProto(
+          std::move(links),
+          SequenceProto(FilterProto(AndProto(MatchProto("sw", s + 1),
+                                             MatchProto("port", 0))),
+                        SequenceProto(ModificationProto("sw", s),
+                                      ModificationProto("port", 1))));
+    }
+  }
+  return SequenceProto(std::move(switches), std::move(links));
+}
+
+// Benchmarks computing the transitive closure of a hop through a line network
+// of N switches (exercises `Iterate`, and thus `Sequence` and `Union`).
+void BM_CompileLineNetworkIterate(benchmark::State& state) {
+  PolicyProto policy = IterateProto(CreateLineNetworkHopPolicy(state.range(0)));
+  for (auto s : state) {
+    PacketTransformerManager manager;
+    PacketTransformerHandle transformer = manager.Compile(policy);
+    benchmark::DoNotOptimize(transformer);
+  }
+}
+BENCHMARK(BM_CompileLineNetworkIterate)->RangeMultiplier(2)->Range(2, 16);
+
+// Benchmarks reachability queries (`Push` and `Pull`) against the transitive
+// closure of a hop through a line network of N switches.
+void BM_LineNetworkReachability(benchmark::State& state) {
+  const int n = state.range(0);
+  PolicyProto policy = IterateProto(CreateLineNetworkHopPolicy(n));
+  for (auto s : state) {
+    state.PauseTiming();
+    PacketTransformerManager manager;
+    PacketTransformerHandle transformer = manager.Compile(policy);
+    PacketSetManager& packet_set_manager = manager.GetPacketSetManager();
+    PacketSetHandle sources = packet_set_manager.Match("sw", 0);
+    PacketSetHandle destinations = packet_set_manager.Match("sw", n - 1);
+    state.ResumeTiming();
+    PacketSetHandle reachable = manager.Push(sources, transformer);
+    PacketSetHandle can_reach = manager.Pull(transformer, destinations);
+    benchmark::DoNotOptimize(reachable);
+    benchmark::DoNotOptimize(can_reach);
+  }
+}
+BENCHMARK(BM_LineNetworkReachability)->RangeMultiplier(2)->Range(2, 16);
 
 }  // namespace netkat

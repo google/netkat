@@ -15,15 +15,15 @@
 
 #include "netkat/packet_set.h"
 
-#include <cstdint>
+#include <cstddef>
 #include <ostream>
+#include <string>
 #include <utility>
 
 #include "absl/base/no_destructor.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_cat.h"
-#include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "fuzztest/fuzztest.h"
 #include "gmock/gmock.h"
@@ -33,8 +33,8 @@
 #include "netkat/gtest_utils.h"
 #include "netkat/netkat_proto_constructors.h"
 #include "netkat/packet.h"
+#include "netkat/packet_set_handle.h"
 #include "netkat/packet_transformer.h"
-#include "re2/re2.h"
 
 namespace netkat {
 
@@ -59,12 +59,9 @@ namespace {
 
 using ::netkat::netkat_test::ArbitraryValidPredicateProto;
 using ::netkat::netkat_test::ArbitraryValidPredicateProtoWithoutPull;
-using ::netkat::netkat_test::FieldTypeIs;
 using ::testing::Ge;
-using ::testing::Pair;
 using ::testing::SizeIs;
 using ::testing::StartsWith;
-using ::testing::UnorderedElementsAre;
 
 // After executing all tests, we check once that no invariants are violated, for
 // defense in depth. Checking invariants after each test (e.g. using a fixture)
@@ -463,6 +460,37 @@ void ExistOnFieldRemovesPacketFieldProperty(const PredicateProto& pred,
 // TODO: b/434438705 - Re-enable this test once the bug is fixed.
 FUZZ_TEST(DISABLED_ExistPacketSetManagerTest,
           ExistOnFieldRemovesPacketFieldProperty);
+
+// Returns true iff `packet_set` tests `first` before `second`.
+bool TestsFieldBefore(PacketSetManager& manager, PacketSetHandle packet_set,
+                      absl::string_view first, absl::string_view second) {
+  std::string dump = manager.ToString(packet_set);
+  size_t first_position = dump.find(absl::StrCat("'", first, "' =="));
+  size_t second_position = dump.find(absl::StrCat("'", second, "' =="));
+  return first_position != std::string::npos &&
+         second_position != std::string::npos &&
+         first_position < second_position;
+}
+
+TEST(PacketSetManagerTest, DeclaredFieldsAreTestedInDeclarationOrder) {
+  PacketTransformerManager transformer;
+  PacketSetManager& manager = transformer.GetPacketSetManager();
+  manager.DeclareFields({"b", "a"});
+  PacketSetHandle a_and_b =
+      manager.Compile(AndProto(MatchProto("a", 1), MatchProto("b", 2)));
+  EXPECT_TRUE(TestsFieldBefore(manager, a_and_b, "b", "a"));
+}
+
+TEST(PacketSetManagerTest, DeclaringFieldsInUseKeepsTheirOrder) {
+  PacketTransformerManager transformer;
+  PacketSetManager& manager = transformer.GetPacketSetManager();
+  PacketSetHandle a_and_b =
+      manager.Compile(AndProto(MatchProto("a", 1), MatchProto("b", 2)));
+  manager.DeclareFields({"b", "a"});
+  EXPECT_TRUE(TestsFieldBefore(manager, a_and_b, "a", "b"));
+  EXPECT_EQ(manager.Compile(AndProto(MatchProto("b", 2), MatchProto("a", 1))),
+            a_and_b);
+}
 
 }  // namespace
 }  // namespace netkat

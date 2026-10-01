@@ -58,12 +58,16 @@ class [[nodiscard]] PacketSetHandle {
   // cannot associate an index into the `nodes_` vector with them. Instead, we
   // represent them using sentinel values, chosen maximally to avoid collisions
   // with proper indices.
+  //
+  // The most significant bit of a handle is its "complement bit" (see
+  // `PacketSetManager`), so the empty set is encoded as the complement of the
+  // full set.
   enum Sentinel : uint32_t {
+    // Encodes the full set of packets.
+    kFullSet = std::numeric_limits<uint32_t>::max() >> 1,
     // Encodes the empty set of packets.
     kEmptySet = std::numeric_limits<uint32_t>::max(),
-    // Encodes the full set of packets.
-    kFullSet = std::numeric_limits<uint32_t>::max() - 1,
-    // The minimum sentinel node index.
+    // The minimum sentinel node index (ignoring the complement bit).
     // Smaller values are reserved for proper indices into the `nodes_` vector.
     kMinSentinel = kFullSet,
   };
@@ -93,21 +97,29 @@ class [[nodiscard]] PacketSetHandle {
       return "PacketSetHandle<empty>";
     } else if (node_index_ == kFullSet) {
       return "PacketSetHandle<full>";
+    } else if (node_index_ & kComplementBit) {
+      return absl::StrFormat("PacketSetHandle<!%d>",
+                             node_index_ & ~kComplementBit);
     } else {
       return absl::StrFormat("PacketSetHandle<%d>", node_index_);
     }
   }
 
  private:
+  // The complement bit of `node_index_`: if set, the handle represents the
+  // complement of the packet set represented by the handle without the bit.
+  static constexpr uint32_t kComplementBit = uint32_t{1} << 31;
+
   // An index into the `nodes_` vector of the `PacketSetManager` object
-  // associated with this `PacketSetHandle`. The semantics of this packet set
-  // is entirely determined by the node `nodes_[node_index_]`. The index is
-  // otherwise arbitrary and meaningless.
+  // associated with this `PacketSetHandle`, possibly with the
+  // `kComplementBit` set. The semantics of this packet set is entirely
+  // determined by the node `nodes_[node_index_ & ~kComplementBit]` and the
+  // complement bit. The index is otherwise arbitrary and meaningless.
   //
   // We use a 32-bit index as a tradeoff between minimizing memory usage and
   // maximizing the number of `PacketSetHandle`s that can be created, both
   // aspects that impact how well we scale to large NetKAT models. We expect
-  // millions, but not billions, of packet sets in practice, and 2^32 ~= 4
+  // millions, but not billions, of packet sets in practice, and 2^31 ~= 2
   // billion.
   uint32_t node_index_;
   explicit PacketSetHandle(uint32_t node_index) : node_index_(node_index) {}

@@ -15,8 +15,7 @@
 #include "netkat/packet_set.h"
 
 #include <algorithm>
-#include <cstdint>
-#include <limits>
+#include <optional>
 #include <queue>
 #include <string>
 #include <utility>
@@ -25,6 +24,7 @@
 #include "absl/algorithm/container.h"
 #include "absl/container/fixed_array.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/container/inlined_vector.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
@@ -32,8 +32,11 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "gutil/status.h"
+#include "netkat/associative_chain.h"
 #include "netkat/packet.h"
+#include "netkat/packet_set_handle.h"
 #include "netkat/packet_transformer.h"
 #include "netkat/packet_transformer_handle.h"
 
@@ -60,14 +63,25 @@ bool PacketSetManager::IsFullSet(PacketSetHandle packet_set) const {
 
 const PacketSetManager::DecisionNode& PacketSetManager::GetNodeOrDie(
     PacketSetHandle packet_set) const {
-  CHECK_LT(packet_set.node_index_, nodes_.size())
+  CHECK_LT(packet_set.node_index_ & ~PacketSetHandle::kComplementBit,
+           nodes_.size())
       << "Did you call this function on a leaf node (i.e. FullSet() or "
          "EmptySet())? ";  // Crash ok
-  return nodes_[packet_set.node_index_];
+  return nodes_[packet_set.node_index_ & ~PacketSetHandle::kComplementBit];
 }
 
 PacketSetHandle PacketSetManager::NodeToPacket(DecisionNode&& node) {
   if (node.branch_by_field_value.empty()) return node.default_branch;
+
+  // Canonicalize the node by complementing it (and the resulting handle) if
+  // its default branch is complemented.
+  const bool complement = IsComplemented(node.default_branch);
+  if (complement) {
+    node.default_branch = Complement(node.default_branch);
+    for (auto& [value, branch] : node.branch_by_field_value) {
+      branch = Complement(branch);
+    }
+  }
 
 // When in debug mode, we check a node's invariants before interning it.
 // We could check the invariants of all nodes by calling
@@ -88,32 +102,32 @@ PacketSetHandle PacketSetManager::NodeToPacket(DecisionNode&& node) {
   }
 #endif
 
-  auto [it, inserted] =
-      packet_by_node_.try_emplace(node, PacketSetHandle(nodes_.size()));
-  if (inserted) {
-    nodes_.push_back(std::move(node));
-    LOG_IF(DFATAL, nodes_.size() > PacketSetHandle::kMinSentinel)
-        << "Internal invariant violated: Proper and sentinel node indices must "
-           "be disjoint. This indicates that we allocated more nodes than are "
-           "supported (> 2^32 - 2).";
-  }
-  return it->second;
+  auto [index, inserted] = nodes_.Intern(std::move(node));
+  LOG_IF(DFATAL, inserted && nodes_.size() > PacketSetHandle::kMinSentinel)
+      << "Internal invariant violated: Proper and sentinel node indices must "
+         "be disjoint. This indicates that we allocated more nodes than are "
+         "supported (> 2^31 - 1).";
+  return ComplementIf(complement, PacketSetHandle(index));
 }
 
 bool PacketSetManager::Contains(PacketSetHandle packet_set,
                                 const Packet& packet) const {
-  if (IsEmptySet(packet_set)) return false;
-  if (IsFullSet(packet_set)) return true;
-
-  const DecisionNode& node = GetNodeOrDie(packet_set);
-  std::string field = field_manager_.GetFieldName(node.field);
-  auto it = packet.find(field);
-  if (it != packet.end()) {
-    for (const auto& [value, branch] : node.branch_by_field_value) {
-      if (it->second == value) return Contains(branch, packet);
+  while (!IsEmptySet(packet_set) && !IsFullSet(packet_set)) {
+    const bool complement = IsComplemented(packet_set);
+    const DecisionNode& node = GetNodeOrDie(packet_set);
+    packet_set = ComplementIf(complement, node.default_branch);
+    auto it = packet.find(field_manager_.GetFieldName(node.field));
+    if (it == packet.end()) continue;
+    // Branches are sorted by value, so we can use binary search.
+    auto branch_it = absl::c_lower_bound(
+        node.branch_by_field_value, it->second,
+        [](const auto& branch, int value) { return branch.first < value; });
+    if (branch_it != node.branch_by_field_value.end() &&
+        branch_it->first == it->second) {
+      packet_set = ComplementIf(complement, branch_it->second);
     }
   }
-  return Contains(node.default_branch, packet);
+  return IsFullSet(packet_set);
 }
 
 std::string PacketSetManager::ToDot(PacketSetHandle packet_set) const {
@@ -137,6 +151,15 @@ std::string PacketSetManager::ToDot(PacketSetHandle packet_set) const {
     return result;
   }
   absl::flat_hash_set<PacketSetHandle> visited = {packet_set};
+  // Returns the DOT node ID of the given handle. Complemented handles are
+  // printed as separate nodes, so the output reflects the semantics of each
+  // node.
+  auto dot_id = [&](PacketSetHandle handle) -> std::string {
+    if (!IsComplemented(handle) || IsEmptySet(handle)) {
+      return absl::StrCat(handle.node_index_);
+    }
+    return absl::StrFormat("\"!%d\"", Complement(handle).node_index_);
+  };
   absl::StrAppendFormat(&result, "  %d [label=\"T\" shape=box]\n",
                         PacketSetHandle::kFullSet);
   absl::StrAppendFormat(&result, "  %d [label=\"F\" shape=box]\n",
@@ -147,27 +170,48 @@ std::string PacketSetManager::ToDot(PacketSetHandle packet_set) const {
     work_list.pop();
     if (IsFullSet(packet_set) || IsEmptySet(packet_set)) continue;
 
+    const bool complement = IsComplemented(packet_set);
     const DecisionNode& node = GetNodeOrDie(packet_set);
-    absl::StrAppendFormat(&result, "  %d [label=\"%s\"]\n",
-                          packet_set.node_index_,
+    absl::StrAppendFormat(&result, "  %s [label=\"%s\"]\n", dot_id(packet_set),
                           field_manager_.GetFieldName(node.field));
 
-    for (const auto& [value, branch] : node.branch_by_field_value) {
-      absl::StrAppendFormat(&result, "  %d -> %d [label=\"%d\"]\n",
-                            packet_set.node_index_, branch.node_index_, value);
+    for (auto [value, branch] : node.branch_by_field_value) {
+      branch = ComplementIf(complement, branch);
+      absl::StrAppendFormat(&result, "  %s -> %s [label=\"%d\"]\n",
+                            dot_id(packet_set), dot_id(branch), value);
       if (IsFullSet(branch) || IsEmptySet(branch)) continue;
       bool new_branch = visited.insert(branch).second;
       if (new_branch) work_list.push(branch);
     }
-    PacketSetHandle fallthrough = node.default_branch;
-    absl::StrAppendFormat(&result, "  %d -> %d [style=dashed]\n",
-                          packet_set.node_index_, fallthrough.node_index_);
+    PacketSetHandle fallthrough = ComplementIf(complement, node.default_branch);
+    absl::StrAppendFormat(&result, "  %s -> %s [style=dashed]\n",
+                          dot_id(packet_set), dot_id(fallthrough));
     if (IsFullSet(fallthrough) || IsEmptySet(fallthrough)) continue;
     bool new_branch = visited.insert(fallthrough).second;
     if (new_branch) work_list.push(fallthrough);
   }
   absl::StrAppend(&result, "}\n");
   return result;
+}
+
+template <class GetOperands, class Combine>
+PacketSetHandle PacketSetManager::CompileAssociativeChain(
+    const PredicateProto& pred, ProtoHashKey& key, GetOperands&& get_operands,
+    Combine&& combine) {
+  if (!IsLongAssociativeChain(pred, get_operands)) {
+    auto [left, right] = *get_operands(pred);
+    key.lhs_child = Compile(*left);
+    key.rhs_child = Compile(*right);
+    auto it = packet_set_by_hash_.find(key);
+    if (it != packet_set_by_hash_.end()) return it->second;
+    return packet_set_by_hash_[key] = combine(key.lhs_child, key.rhs_child);
+  }
+  std::vector<PacketSetHandle> operands;
+  for (const PredicateProto* operand :
+       FlattenAssociativeChain(pred, get_operands)) {
+    operands.push_back(Compile(*operand));
+  }
+  return CombineBalanced(std::move(operands), combine);
 }
 
 PacketSetHandle PacketSetManager::Compile(const PredicateProto& pred) {
@@ -188,18 +232,27 @@ PacketSetHandle PacketSetManager::Compile(const PredicateProto& pred) {
       return Match(pred.match().field(), pred.match().value());
     }
     case PredicateProto::kAndOp: {
-      key.lhs_child = Compile(pred.and_op().left());
-      key.rhs_child = Compile(pred.and_op().right());
-      auto it = packet_set_by_hash_.find(key);
-      if (it != packet_set_by_hash_.end()) return it->second;
-      return packet_set_by_hash_[key] = And(key.lhs_child, key.rhs_child);
+      return CompileAssociativeChain(
+          pred, key,
+          [](const PredicateProto& pred) -> OptionalOperands {
+            if (!pred.has_and_op()) return std::nullopt;
+            return std::make_pair(&pred.and_op().left(),
+                                  &pred.and_op().right());
+          },
+          [this](PacketSetHandle left, PacketSetHandle right) {
+            return And(left, right);
+          });
     }
     case PredicateProto::kOrOp: {
-      key.lhs_child = Compile(pred.or_op().left());
-      key.rhs_child = Compile(pred.or_op().right());
-      auto it = packet_set_by_hash_.find(key);
-      if (it != packet_set_by_hash_.end()) return it->second;
-      return packet_set_by_hash_[key] = Or(key.lhs_child, key.rhs_child);
+      return CompileAssociativeChain(
+          pred, key,
+          [](const PredicateProto& pred) -> OptionalOperands {
+            if (!pred.has_or_op()) return std::nullopt;
+            return std::make_pair(&pred.or_op().left(), &pred.or_op().right());
+          },
+          [this](PacketSetHandle left, PacketSetHandle right) {
+            return Or(left, right);
+          });
     }
     case PredicateProto::kNotOp: {
       key.lhs_child = Compile(pred.not_op().negand());
@@ -208,11 +261,16 @@ PacketSetHandle PacketSetManager::Compile(const PredicateProto& pred) {
       return packet_set_by_hash_[key] = Not(key.lhs_child);
     }
     case PredicateProto::kXorOp: {
-      key.lhs_child = Compile(pred.xor_op().left());
-      key.rhs_child = Compile(pred.xor_op().right());
-      auto it = packet_set_by_hash_.find(key);
-      if (it != packet_set_by_hash_.end()) return it->second;
-      return packet_set_by_hash_[key] = Xor(key.lhs_child, key.rhs_child);
+      return CompileAssociativeChain(
+          pred, key,
+          [](const PredicateProto& pred) -> OptionalOperands {
+            if (!pred.has_xor_op()) return std::nullopt;
+            return std::make_pair(&pred.xor_op().left(),
+                                  &pred.xor_op().right());
+          },
+          [this](PacketSetHandle left, PacketSetHandle right) {
+            return Xor(left, right);
+          });
     }
     // By convention, uninitialized predicates must be treated like `false`.
     case PredicateProto::PREDICATE_NOT_SET: {
@@ -220,6 +278,12 @@ PacketSetHandle PacketSetManager::Compile(const PredicateProto& pred) {
     }
   }
   LOG(FATAL) << "Unhandled predicate kind: " << pred.predicate_case();
+}
+
+void PacketSetManager::DeclareFields(absl::Span<const std::string> fields) {
+  for (const std::string& field : fields) {
+    (void)field_manager_.GetOrCreatePacketFieldHandle(field);
+  }
 }
 
 PacketSetHandle PacketSetManager::Match(absl::string_view field, int value) {
@@ -230,94 +294,60 @@ PacketSetHandle PacketSetManager::Match(absl::string_view field, int value) {
   });
 }
 
-// TODO(b/382380335): Use complement edges to reduce the complexity of this
-// function from O(n) to O(1).
 PacketSetHandle PacketSetManager::Not(PacketSetHandle negand) {
-  // Base cases.
-  if (IsEmptySet(negand)) return FullSet();
-  if (IsFullSet(negand)) return EmptySet();
-
-  if (auto it = not_cache_.find(negand); it != not_cache_.end()) {
-    return it->second;
-  }
-
-  // Compute result the hard way.
-  const DecisionNode& negand_node = GetNodeOrDie(negand);
-  DecisionNode result_node{
-      .field = negand_node.field,
-      .default_branch = Not(negand_node.default_branch),
-      .branch_by_field_value{negand_node.branch_by_field_value.size()},
-  };
-
-  for (int i = 0; i < negand_node.branch_by_field_value.size(); ++i) {
-    auto [value, branch] = negand_node.branch_by_field_value[i];
-    PacketSetHandle negated_branch = Not(branch);
-    DCHECK(branch != negand_node.default_branch);
-    DCHECK(negated_branch != result_node.default_branch);
-    result_node.branch_by_field_value[i] =
-        std::make_pair(value, negated_branch);
-  }
-
-  return not_cache_[negand] = NodeToPacket(std::move(result_node));
+  return Complement(negand);
 }
 
-PacketSetHandle PacketSetManager::And(PacketSetHandle left,
-                                      PacketSetHandle right) {
-  // Base cases.
-  if (IsEmptySet(left) || IsFullSet(right) || left == right) return left;
-  if (IsEmptySet(right) || IsFullSet(left)) return right;
-
-  // Normalize keys to leverage commutativity.
-  std::pair<PacketSetHandle, PacketSetHandle> cache_key =
-      std::make_pair(std::min(left, right), std::max(left, right));
-  auto it = and_cache_.find(cache_key);
-  if (it != and_cache_.end()) {
-    return it->second;
-  }
-
-  // Compute result the hard way.
+template <class Combine>
+PacketSetHandle PacketSetManager::CombineNodes(PacketSetHandle left,
+                                               PacketSetHandle right,
+                                               Combine&& combine) {
+  // NOTE: Nodes are pointer-stable, so these references remain valid even as
+  // new nodes get created by recursive calls below.
   const DecisionNode* left_node = &GetNodeOrDie(left);
   const DecisionNode* right_node = &GetNodeOrDie(right);
 
-  // We exploit that `And` is commutative to canonicalize the order of the
+  // We exploit that `combine` is commutative to canonicalize the order of the
   // arguments, reducing the number of cases by 1.
   if (left_node->field > right_node->field) {
     std::swap(left, right);
     std::swap(left_node, right_node);
   }
+  // The branches of nodes reached via complemented handles get complemented.
+  const bool complement_left = IsComplemented(left);
+  const bool complement_right = IsComplemented(right);
+  const PacketSetHandle left_default =
+      ComplementIf(complement_left, left_node->default_branch);
 
   // Case 1: left_node->field < right_node->field: branch on left field.
+  absl::InlinedVector<std::pair<int, PacketSetHandle>, 32> branches;
   if (left_node->field < right_node->field) {
-    PacketSetHandle default_branch = And(left_node->default_branch, right);
-    absl::FixedArray<std::pair<int, PacketSetHandle>> branch_by_field_value(
-        left_node->branch_by_field_value.size());
-    int num_branches = 0;
+    PacketSetHandle default_branch = combine(left_default, right);
+    branches.reserve(left_node->branch_by_field_value.size());
     for (const auto& [value, left_branch] : left_node->branch_by_field_value) {
-      PacketSetHandle branch = And(left_branch, right);
+      PacketSetHandle branch =
+          combine(ComplementIf(complement_left, left_branch), right);
       if (branch == default_branch) continue;
-      branch_by_field_value[num_branches++] = std::make_pair(value, branch);
+      branches.push_back({value, branch});
     }
-    return and_cache_[cache_key] = NodeToPacket(DecisionNode{
-               .field = left_node->field,
-               .default_branch = default_branch,
-               .branch_by_field_value{
-                   branch_by_field_value.begin(),
-                   branch_by_field_value.begin() + num_branches,
-               },
-           });
+    if (branches.empty()) return default_branch;
+    return NodeToPacket(DecisionNode{
+        .field = left_node->field,
+        .default_branch = default_branch,
+        .branch_by_field_value{branches.begin(), branches.end()},
+    });
   }
 
   // Case 2: left_node->field == right_node->field: branch on shared field.
   DCHECK(left_node->field == right_node->field);
-  PacketSetHandle default_branch =
-      And(left_node->default_branch, right_node->default_branch);
-  absl::FixedArray<std::pair<int, PacketSetHandle>> branch_by_field_value(
-      left_node->branch_by_field_value.size() +
-      right_node->branch_by_field_value.size());
-  int num_branches = 0;
+  const PacketSetHandle right_default =
+      ComplementIf(complement_right, right_node->default_branch);
+  PacketSetHandle default_branch = combine(left_default, right_default);
+  branches.reserve(std::max(left_node->branch_by_field_value.size(),
+                            right_node->branch_by_field_value.size()));
   auto add_branch = [&](int value, PacketSetHandle branch) {
     if (branch == default_branch) return;
-    branch_by_field_value[num_branches++] = std::make_pair(value, branch);
+    branches.push_back({value, branch});
   };
   auto left_it = left_node->branch_by_field_value.begin();
   auto left_end = left_node->branch_by_field_value.end();
@@ -326,98 +356,151 @@ PacketSetHandle PacketSetManager::And(PacketSetHandle left,
   while (left_it != left_end && right_it != right_end) {
     auto [left_value, left_branch] = *left_it;
     auto [right_value, right_branch] = *right_it;
+    left_branch = ComplementIf(complement_left, left_branch);
+    right_branch = ComplementIf(complement_right, right_branch);
     if (left_value < right_value) {
-      add_branch(left_value, And(left_branch, right_node->default_branch));
+      add_branch(left_value, combine(left_branch, right_default));
       ++left_it;
     } else if (left_value > right_value) {
-      add_branch(right_value, And(left_node->default_branch, right_branch));
+      add_branch(right_value, combine(left_default, right_branch));
       ++right_it;
     } else {  // left_value == right_value
-      add_branch(left_value, And(left_branch, right_branch));
+      add_branch(left_value, combine(left_branch, right_branch));
       ++left_it;
       ++right_it;
     }
   }
   for (; left_it != left_end; ++left_it) {
     auto [left_value, left_branch] = *left_it;
-    add_branch(left_value, And(left_branch, right_node->default_branch));
+    add_branch(left_value, combine(ComplementIf(complement_left, left_branch),
+                                   right_default));
   }
   for (; right_it != right_end; ++right_it) {
     auto [right_value, right_branch] = *right_it;
-    add_branch(right_value, And(left_node->default_branch, right_branch));
+    add_branch(right_value, combine(left_default, ComplementIf(complement_right,
+                                                               right_branch)));
   }
-  return and_cache_[cache_key] = NodeToPacket(DecisionNode{
-             .field = left_node->field,
-             .default_branch = default_branch,
-             .branch_by_field_value{
-                 branch_by_field_value.begin(),
-                 branch_by_field_value.begin() + num_branches,
-             },
-         });
+  if (branches.empty()) return default_branch;
+  return NodeToPacket(DecisionNode{
+      .field = left_node->field,
+      .default_branch = default_branch,
+      .branch_by_field_value{branches.begin(), branches.end()},
+  });
+}
+
+PacketSetHandle PacketSetManager::And(PacketSetHandle left,
+                                      PacketSetHandle right) {
+  // Base cases.
+  if (IsEmptySet(left) || IsFullSet(right) || left == right) return left;
+  if (IsEmptySet(right) || IsFullSet(left)) return right;
+  if (left == Complement(right)) return EmptySet();
+
+  // Normalize keys to leverage commutativity.
+  if (left > right) std::swap(left, right);
+  if (auto it = and_cache_.find({left, right}); it != and_cache_.end()) {
+    return it->second;
+  }
+
+  // Compute result the hard way.
+  PacketSetHandle result = CombineNodes(
+      left, right,
+      [this](PacketSetHandle l, PacketSetHandle r) { return And(l, r); });
+  and_cache_.try_emplace({left, right}, result);
+  return result;
 }
 
 PacketSetHandle PacketSetManager::Or(PacketSetHandle left,
                                      PacketSetHandle right) {
-  // Apply De Morgan's law: a || b == !(!a && !b).
-  //
-  // This is currently convenient and terribly inefficient. But once we have
-  // complement edges (b/382380335) and AND-memoization (b/382379263), reducing
-  // OR to NOT and AND will actually be better than implementing OR directly,
-  // since it will allows us to recycle the AND-memoization table.
-  //
-  // TODO(b/382380335, b/382379263): Implement complement edges and memoization.
-  return Not(And(Not(left), Not(right)));
+  // By De Morgan's law, sharing the memoization table of `And`.
+  return Complement(And(Complement(left), Complement(right)));
 }
 
 PacketSetHandle PacketSetManager::Xor(PacketSetHandle left,
                                       PacketSetHandle right) {
-  // a (+) b == (!a && b) || (a && !b).
-  return Or(And(Not(left), right), And(left, Not(right)));
+  // Since Xor(!a, b) = Xor(a, !b) = !Xor(a, b), we strip the complement bits
+  // of the arguments, and complement the result instead.
+  const bool complement = IsComplemented(left) != IsComplemented(right);
+  left = ComplementIf(IsComplemented(left), left);
+  right = ComplementIf(IsComplemented(right), right);
+
+  // Base cases. Note that `EmptySet()` is complemented.
+  if (left == right) return ComplementIf(complement, EmptySet());
+  if (IsFullSet(left)) return ComplementIf(!complement, right);
+  if (IsFullSet(right)) return ComplementIf(!complement, left);
+
+  // Normalize keys to leverage commutativity.
+  if (left > right) std::swap(left, right);
+  auto it = xor_cache_.find({left, right});
+  if (it == xor_cache_.end()) {
+    // Compute result the hard way.
+    PacketSetHandle result = CombineNodes(
+        left, right,
+        [this](PacketSetHandle l, PacketSetHandle r) { return Xor(l, r); });
+    it = xor_cache_.try_emplace({left, right}, result).first;
+  }
+  return ComplementIf(complement, it->second);
 }
 
 PacketSetHandle PacketSetManager::Exists(absl::string_view field,
-                                         PacketSetHandle packet) {
-  if (IsFullSet(packet) || IsEmptySet(packet)) return packet;
+                                         PacketSetHandle packet_set) {
+  return Exists(field_manager_.GetOrCreatePacketFieldHandle(field), packet_set);
+}
+
+PacketSetHandle PacketSetManager::Exists(PacketFieldHandle field,
+                                         PacketSetHandle packet_set) {
+  if (IsFullSet(packet_set) || IsEmptySet(packet_set)) return packet_set;
+
+  // Since fields are strictly increasing along each path, `field` cannot occur
+  // in the sub-graph rooted at a node branching on a larger field.
+  const DecisionNode& node = GetNodeOrDie(packet_set);
+  if (node.field > field) return packet_set;
+
+  if (auto it = exists_cache_.find({field, packet_set});
+      it != exists_cache_.end()) {
+    return it->second;
+  }
 
   // Compute result the hard way.
-  const DecisionNode& node = GetNodeOrDie(packet);
-
-  // Case 1: This node's field is the one we are removing through an
-  // existential: remove the current node and return the OR-ing of all branches.
-  if (node.field == field_manager_.GetOrCreatePacketFieldHandle(field)) {
-    PacketSetHandle result = node.default_branch;
-    for (const auto& [field_value, branch] : node.branch_by_field_value) {
-      result = Or(result, branch);
+  const bool complement = IsComplemented(packet_set);
+  PacketSetHandle result;
+  if (node.field == field) {
+    // Case 1: This node's field is the one we are removing through an
+    // existential: remove the current node and return the OR-ing of all
+    // branches.
+    result = ComplementIf(complement, node.default_branch);
+    for (const auto& [value, branch] : node.branch_by_field_value) {
+      if (IsFullSet(result)) break;
+      result = Or(result, ComplementIf(complement, branch));
     }
-    return result;
+  } else {
+    // Case 2: This node does not branch on the relevant field: keep current
+    // node and call `Exists` on all branches and exclude a branch if it is the
+    // same as the default branch.
+    PacketSetHandle default_branch =
+        Exists(field, ComplementIf(complement, node.default_branch));
+    absl::FixedArray<std::pair<int, PacketSetHandle>> branch_by_field_value(
+        node.branch_by_field_value.size());
+    int num_branches = 0;
+    for (const auto& [value, branch] : node.branch_by_field_value) {
+      // Skips `default_branch` because an invariant of `DecisionNode` is that
+      // no branch in `branch_by_field_value` can be a duplicate of the default
+      // branch.
+      PacketSetHandle new_branch =
+          Exists(field, ComplementIf(complement, branch));
+      if (new_branch == default_branch) continue;
+      branch_by_field_value[num_branches++] = std::make_pair(value, new_branch);
+    }
+    result = NodeToPacket(DecisionNode{
+        .field = node.field,
+        .default_branch = default_branch,
+        .branch_by_field_value{
+            branch_by_field_value.begin(),
+            branch_by_field_value.begin() + num_branches,
+        },
+    });
   }
-
-  // Case 2: This node does not branch on the relevant field: keep current
-  // node and call `Exists` on all branches and exclude a branch if it is the
-  // same as the default branch.
-  PacketSetHandle default_branch = Exists(field, node.default_branch);
-  int num_branches = 0;
-  for (const auto& [value, branch] : node.branch_by_field_value) {
-    if (Exists(field, branch) != default_branch) ++num_branches;
-  }
-  absl::FixedArray<std::pair<int, PacketSetHandle>, 0>
-      non_default_branches_by_field_value(num_branches);
-  int i = 0;
-  for (const auto& [value, branch] : node.branch_by_field_value) {
-    // Skips `default_branch` because an invariant of `DecisionNode` is that no
-    // branch in `branch_by_field_value` can be a duplicate of the default
-    // branch.
-    PacketSetHandle non_default_branch = Exists(field, branch);
-    if (non_default_branch == default_branch) continue;
-    non_default_branches_by_field_value[i++] =
-        std::make_pair(value, non_default_branch);
-  }
-
-  return NodeToPacket(DecisionNode{
-      .field = node.field,
-      .default_branch = default_branch,
-      .branch_by_field_value = std::move(non_default_branches_by_field_value),
-  });
+  exists_cache_.try_emplace({field, packet_set}, result);
+  return result;
 }
 
 std::string PacketSetManager::ToString(PacketSetHandle packet_set) const {
@@ -431,18 +514,22 @@ std::string PacketSetManager::ToString(PacketSetHandle packet_set) const {
 
     if (IsFullSet(packet_set) || IsEmptySet(packet_set)) continue;
 
+    // Complemented handles are printed as separate nodes, so the output
+    // reflects the semantics of each node.
+    const bool complement = IsComplemented(packet_set);
     const DecisionNode& node = GetNodeOrDie(packet_set);
     std::string field =
         absl::StrFormat("%v:'%s'", node.field,
                         absl::CEscape(field_manager_.GetFieldName(node.field)));
-    for (const auto& [value, branch] : node.branch_by_field_value) {
+    for (auto [value, branch] : node.branch_by_field_value) {
+      branch = ComplementIf(complement, branch);
       absl::StrAppendFormat(&result, "  %s == %d -> %v\n", field, value,
                             branch);
       if (IsFullSet(branch) || IsEmptySet(branch)) continue;
       bool new_branch = visited.insert(branch).second;
       if (new_branch) work_list.push(branch);
     }
-    PacketSetHandle fallthrough = node.default_branch;
+    PacketSetHandle fallthrough = ComplementIf(complement, node.default_branch);
     absl::StrAppendFormat(&result, "  %s == * -> %v\n", field, fallthrough);
     if (IsFullSet(fallthrough) || IsEmptySet(fallthrough)) continue;
     bool new_branch = visited.insert(fallthrough).second;
@@ -478,17 +565,8 @@ absl::Status PacketSetManager::CheckInternalInvariants() const {
   // Invariant: Proper and sentinel node indices are disjoint.
   RET_CHECK(nodes_.size() <= PacketSetHandle::kMinSentinel);
 
-  // Invariant: `packet_by_node_[n] = s` iff `nodes_[s.node_index_] == n`.
-  for (const auto& [node, packet] : packet_by_node_) {
-    RET_CHECK(packet.node_index_ < nodes_.size());
-    RET_CHECK(nodes_[packet.node_index_] == node);
-  }
-  for (int i = 0; i < nodes_.size(); ++i) {
-    const DecisionNode& node = nodes_[i];
-    auto it = packet_by_node_.find(node);
-    RET_CHECK(it != packet_by_node_.end());
-    RET_CHECK(it->second == PacketSetHandle(i));
-  }
+  // Invariant: Each node is stored exactly once.
+  RETURN_IF_ERROR(nodes_.CheckInternalInvariants());
 
   // Node Invariants.
   for (int i = 0; i < nodes_.size(); ++i) {
@@ -496,6 +574,10 @@ absl::Status PacketSetManager::CheckInternalInvariants() const {
     // Invariant: `branch_by_field_value` is non-empty.
     // Maintained by `NodeToPacket`.
     RET_CHECK(!node.branch_by_field_value.empty());
+
+    // Invariant: `default_branch` is not complemented.
+    // Maintained by `NodeToPacket`.
+    RET_CHECK(!IsComplemented(node.default_branch));
 
     // Invariant: node field is strictly smaller than sub-node fields.
     RET_CHECK(IsFullSet(node.default_branch) ||
@@ -526,13 +608,16 @@ void PacketSetManager::GetConcretePacketsDfs(
     return;
   }
 
+  const bool complement = IsComplemented(packet_set);
   const DecisionNode& node = GetNodeOrDie(packet_set);
   std::string node_field = field_manager_.GetFieldName(node.field);
 
-  GetConcretePacketsDfs(node.default_branch, current_packet, result);
+  GetConcretePacketsDfs(ComplementIf(complement, node.default_branch),
+                        current_packet, result);
   for (const auto& [value, branch] : node.branch_by_field_value) {
     current_packet[node_field] = value;
-    GetConcretePacketsDfs(branch, current_packet, result);
+    GetConcretePacketsDfs(ComplementIf(complement, branch), current_packet,
+                          result);
   }
   current_packet.erase(node_field);
 }

@@ -24,7 +24,9 @@
 #include "netkat/frontend.h"
 #include "netkat/packet.h"
 #include "netkat/packet_set.h"
+#include "netkat/packet_set_handle.h"
 #include "netkat/packet_transformer.h"
+#include "netkat/packet_transformer_handle.h"
 
 namespace netkat {
 namespace {
@@ -92,11 +94,13 @@ absl::Status AnalysisEngine::CheckOutputSatisfiesProperty(
     const Predicate& property) {
   PacketSetManager& set_manager =
       packet_transformer_manager_.GetPacketSetManager();
+  // We compile the program first, so it determines the field order (see
+  // `PacketTransformerManager::Compile`).
+  PacketTransformerHandle program_handle =
+      packet_transformer_manager_.Compile(program.ToProto());
   PacketSetHandle compiled_input = set_manager.Compile(input_packets.ToProto());
   PacketSetHandle compiled_property = set_manager.Compile(property.ToProto());
 
-  PacketTransformerHandle program_handle =
-      packet_transformer_manager_.Compile(program.ToProto());
   PacketSetHandle program_output =
       packet_transformer_manager_.Push(compiled_input, program_handle);
   return SatisfyProperty(set_manager, program_output, compiled_property);
@@ -104,10 +108,10 @@ absl::Status AnalysisEngine::CheckOutputSatisfiesProperty(
 
 bool AnalysisEngine::ProgramForwardsAnyPacket(const Policy& program,
                                               const Predicate& packets) {
-  PacketTransformerHandle user_packet_handle =
-      packet_transformer_manager_.Filter(packets.ToProto());
   PacketTransformerHandle program_handle =
       packet_transformer_manager_.Compile(program.ToProto());
+  PacketTransformerHandle user_packet_handle =
+      packet_transformer_manager_.Filter(packets.ToProto());
   return packet_transformer_manager_.Sequence(user_packet_handle,
                                               program_handle) !=
          packet_transformer_manager_.Deny();
@@ -143,11 +147,13 @@ bool AnalysisEngine::CheckInputProducesExactOutput(
     const Predicate& output_packets) {
   PacketSetManager& set_manager =
       packet_transformer_manager_.GetPacketSetManager();
+  PacketTransformerHandle program_handle =
+      packet_transformer_manager_.Compile(program.ToProto());
   PacketSetHandle compiled_input = set_manager.Compile(input_packets.ToProto());
   PacketSetHandle compiled_output =
       set_manager.Compile(output_packets.ToProto());
-  PacketSetHandle program_output = packet_transformer_manager_.Push(
-      compiled_input, packet_transformer_manager_.Compile(program.ToProto()));
+  PacketSetHandle program_output =
+      packet_transformer_manager_.Push(compiled_input, program_handle);
   return program_output == compiled_output;
 }
 
@@ -156,11 +162,13 @@ bool AnalysisEngine::CheckInputProducesAtMostGivenOutput(
     const Predicate& output_packets) {
   PacketSetManager& set_manager =
       packet_transformer_manager_.GetPacketSetManager();
+  PacketTransformerHandle program_handle =
+      packet_transformer_manager_.Compile(program.ToProto());
   PacketSetHandle compiled_input = set_manager.Compile(input_packets.ToProto());
   PacketSetHandle compiled_output =
       set_manager.Compile(output_packets.ToProto());
-  PacketSetHandle program_output = packet_transformer_manager_.Push(
-      compiled_input, packet_transformer_manager_.Compile(program.ToProto()));
+  PacketSetHandle program_output =
+      packet_transformer_manager_.Push(compiled_input, program_handle);
 
   if (program_output == compiled_output) return true;
   if (program_output == set_manager.EmptySet()) return false;

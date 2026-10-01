@@ -95,7 +95,7 @@ class PacketFieldManager {
 
   // Returns the name of the given interned field, assuming it was created by
   // this manager object. Otherwise, the behavior is undefined.
-  std::string GetFieldName(PacketFieldHandle field) const;
+  const std::string& GetFieldName(PacketFieldHandle field) const;
 
   // Dynamically checks all class invariants. Exposed for testing only.
   absl::Status CheckInternalInvariants() const;
