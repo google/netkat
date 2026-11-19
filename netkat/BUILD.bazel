@@ -9,6 +9,7 @@ package(
     default_applicable_licenses = ["//:license"],
     default_visibility = [
         ":__subpackages__",
+        "//platforms/networking/orion/core/acl_manager/plugins/adaptive_routing:__subpackages__",
         "//platforms/networking/orion/routing/netkat:__subpackages__",
     ],
 )

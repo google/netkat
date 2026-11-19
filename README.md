@@ -68,5 +68,5 @@ limitations under the License.
 ```
 
 This can be done automatically using
-[addlicense](https://github.com/google/addlicense) as follows: `sh addlicense -c
-"The NetKAT authors" -l apache .`
+[addlicense](https://github.com/google/addlicense) as follows:
+`sh addlicense -c "The NetKAT authors" -l apache .`
